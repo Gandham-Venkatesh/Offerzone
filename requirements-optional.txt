@@ -1,0 +1,3 @@
+# Optional speed-ups. Install them on a server or GitHub Actions; skip them on Termux if they fail to build.
+lxml>=4.9         # much faster HTML parsing
+curl_cffi>=0.7    # store requests use a real Chrome TLS handshake instead of Python's

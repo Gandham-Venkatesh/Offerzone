@@ -1,0 +1,36 @@
+# Pages read straight from the stores, every scan:   URL | price | label     (price and label are optional)
+#
+# PRODUCT PAGE   The price is your TARGET: you are alerted when the product reaches it. It also alerts
+#                when the product falls 50% or more below the price this monitor has been seeing for it.
+#
+# CATEGORY or SEARCH PAGE   The price is a FLOOR: "nothing on this page should cost this little".
+#                Use a category sorted cheapest-first. A Rs 60,000 laptop mispriced at Rs 600 becomes the
+#                cheapest laptop on the store, so it shows up at the top of that one page. This is how a
+#                price error is caught at the store itself, with no deal channel involved.
+#                  - The first read of a page only records what is normal on it. After that, anything NEW
+#                    at or under the floor alerts, and so does anything that FALLS to it.
+#                  - Accessories, spares and refurbished units are skipped.
+#                  - Every product on the page is also checked against traps.txt and its own price history.
+#                  - "% off MRP" alone is ignored here: listings are full of permanently "90% off" items.
+#                Pick the floor well below the cheapest real product of that category. --doctor shows the
+#                cheapest item on each page and warns if ordinary products already sit under your floor.
+#
+# Pace: one store is asked for a page only every 6-10 seconds, so about 6 pages per store per minute.
+# A longer list still works; each page just comes round less often.
+#
+# To be confirmed by  python -m lootwatch --doctor  on the machine that will run this:
+#   - Amazon and Flipkart often refuse cloud-server addresses (CAPTCHA / HTTP 403). When they do, the
+#     monitor backs off and reports the page as failing instead of pretending it is fine.
+#   - Blinkit, Zepto and Swiggy Instamart build their pages in the app for your delivery location, so a
+#     plain page fetch usually finds no prices.
+
+# --- from your old script's targets
+https://www.amazon.in/s?k=nothing+phone
+https://www.flipkart.com/search?q=nothing+phone
+
+# --- examples (remove the leading "# " and put in real links)
+# https://www.amazon.in/dp/B0XXXXXXXX | 5000 | Nothing Phone 3a
+# https://www.flipkart.com/some-product/p/itmxxxxxxxx?pid=MOBXXXXXXXXXXXXX | 5000
+# https://www.amazon.in/s?k=smartphone+5g
+# https://www.flipkart.com/search?q=tws+earbuds
+# https://www.myntra.com/puma-shoes

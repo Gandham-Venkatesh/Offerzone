@@ -1,0 +1,5 @@
+# Optional RSS / Atom feeds, one URL per line. Entries are judged exactly like Telegram posts.
+# Any deal blog or forum with a feed works. None are enabled by default; --doctor checks the ones you add.
+#
+# Examples (remove the leading "# " to enable):
+# https://www.reddit.com/r/dealsforindia/new/.rss

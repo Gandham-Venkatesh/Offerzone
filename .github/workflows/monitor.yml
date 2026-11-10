@@ -1,0 +1,97 @@
+name: Loot monitor
+
+# Free on a PUBLIC repository (standard runners cost nothing there). On a private
+# repository this schedule would use far more than the free monthly minutes.
+
+on:
+  schedule:
+    # Every 5 minutes is the shortest schedule GitHub allows, and runs can start late
+    # when GitHub is busy. That is why each run keeps scanning for nearly five minutes
+    # (one scan per minute) instead of looking once and leaving.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "run = scan now | doctor = report which sources work | test-ntfy = send one test push"
+        type: choice
+        default: run
+        options: [run, doctor, test-ntfy]
+
+permissions:
+  contents: read
+  actions: write # only used to delete this workflow's own older state caches
+
+concurrency:
+  group: loot-monitor
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MODE: ${{ inputs.mode || 'run' }}
+      # Secrets (Settings -> Secrets and variables -> Actions -> Secrets)
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+      NTFY_HEALTH_TOPIC: ${{ secrets.NTFY_HEALTH_TOPIC }}
+      HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+      # Optional tuning (same page -> Variables). Anything left unset uses the built-in default.
+      NTFY_SERVER: ${{ vars.NTFY_SERVER }}
+      MIN_DISCOUNT: ${{ vars.MIN_DISCOUNT }}
+      URGENT_MIN_SAVING: ${{ vars.URGENT_MIN_SAVING }}
+      WATCH_DROP_PCT: ${{ vars.WATCH_DROP_PCT }}
+      MAX_POST_AGE_MIN: ${{ vars.MAX_POST_AGE_MIN }}
+      DAILY_ALERT_LIMIT: ${{ vars.DAILY_ALERT_LIMIT }}
+      HEARTBEAT_HOUR: ${{ vars.HEARTBEAT_HOUR }}
+      EXTRA_STORE_DOMAINS: ${{ vars.EXTRA_STORE_DOMAINS }}
+      LOOP_SECONDS: ${{ vars.LOOP_SECONDS || '280' }}
+      DB_PATH: state/lootwatch.db
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install
+        run: |
+          pip install --quiet -r requirements.txt -r requirements-optional.txt
+          mkdir -p state
+
+      # What has already been seen and alerted travels from run to run in the Actions cache.
+      # It holds no secrets: the ntfy topic and token are never written to it.
+      - name: Restore state
+        if: env.MODE == 'run'
+        uses: actions/cache/restore@v6
+        with:
+          path: state
+          key: lootwatch-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: lootwatch-state-
+
+      - name: Scan
+        run: |
+          case "$MODE" in
+            doctor) python -m lootwatch --doctor ;;
+            test-ntfy) python -m lootwatch --test-ntfy ;;
+            *) python -m lootwatch --max-runtime "$LOOP_SECONDS" ;;
+          esac
+
+      - name: Save state
+        if: always() && env.MODE == 'run'
+        uses: actions/cache/save@v6
+        with:
+          path: state
+          key: lootwatch-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Remove older state caches
+        if: always() && env.MODE == 'run'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --key lootwatch-state- --sort created_at --order desc \
+            --limit 100 --json id --jq '.[3:][].id' \
+            | xargs -r -n 1 gh cache delete --repo "$GITHUB_REPOSITORY"

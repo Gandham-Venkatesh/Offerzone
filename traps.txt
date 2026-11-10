@@ -1,0 +1,22 @@
+# Keyword traps:   keywords | max price
+#
+# If a deal post (or a product on a watched search page) names one of the keywords at or
+# under the max price, you get an URGENT alert - even when the post gives no MRP and never
+# says "price error". This is what catches "Nothing Phone @ 400".
+#
+#   - Separate alternative keywords with commas.
+#   - Set the max price well below anything the product could normally cost.
+#   - Accessories ("iPhone 16 case", "cover for Nothing Phone"), refurbished units and EMI
+#     amounts are ignored automatically.
+#   - Keep keywords specific. "oneplus nord" would also match the ₹1,599 "OnePlus Nord Buds";
+#     "ps5" would match every ₹1,999 PS5 game.
+#
+# These are examples. Edit them to the things you would actually buy.
+
+nothing phone, cmf phone | 6000
+iphone | 12000
+macbook | 20000
+ipad | 6000
+samsung galaxy s24, samsung galaxy s25, galaxy z fold, galaxy z flip | 10000
+oneplus 13, oneplus 15 | 5000
+gulab jamun, rasgulla | 20

@@ -1,0 +1,243 @@
+"""Parsers for Telegram previews, feeds and store pages, run on hand-built pages.
+
+These fixtures reproduce the markup the parsers rely on (ids, data attributes,
+JSON-LD). They prove the logic; `--doctor` is what confirms the live sites still
+serve that markup.
+"""
+
+import json
+import time
+import unittest
+
+from lootwatch.sources.feeds import FeedError, parse_feed
+from lootwatch.sources.stores import extract_page, parse_amount
+from lootwatch.sources.telegram import parse_channel_page
+from lootwatch.textparse import parse_text
+from tests.helpers import _LANDING, channel_html
+
+
+class TelegramPages(unittest.TestCase):
+    def test_posts_text_links_and_time(self):
+        now = int(time.time())
+        html = channel_html("LootChan", [
+            {"id": 101, "ts": now - 60, "html":
+                '<b>Price Error</b> <i class="emoji" style="background-image:url(x)"><b>😱</b></i><br/>'
+                'Nothing Phone (3a) Pro <s>₹60,000</s> ₹400 only<br/><br/>'
+                '<a href="https://fkrt.cc/abc" target="_blank" rel="noopener">https://fkrt.cc/abc</a>'},
+            {"id": 102, "ts": now - 5, "html": 'boAt 141 @ ₹899<br/>MRP ₹4,490', "buttons": ["https://amzn.to/xyz"]},
+        ])
+        page = parse_channel_page(html, "LootChan", "https://t.me/s/LootChan")
+        self.assertEqual(page.status, "ok")
+        self.assertEqual(page.title, "LootChan Deals")
+        self.assertEqual([p.post_id for p in page.posts], [101, 102])
+        first, second = page.posts
+        self.assertEqual(first.text.splitlines()[0], "Price Error 😱")
+        self.assertIn("₹60,000 ₹400 only", first.text)
+        self.assertEqual(first.links, ["https://fkrt.cc/abc"])
+        self.assertEqual(first.url, "https://t.me/LootChan/101")
+        self.assertAlmostEqual(first.ts, now - 60, delta=1)
+        # The crossed-out amount reaches the text parser as the MRP.
+        parsed = parse_text(first.analysis_text)
+        self.assertEqual((parsed.price, parsed.mrp), (400, 60000))
+        # Line breaks survive, and inline "Buy Now" buttons count as links.
+        self.assertEqual(second.text, "boAt 141 @ ₹899\nMRP ₹4,490")
+        self.assertEqual(second.links, ["https://amzn.to/xyz"])
+
+    def test_channel_without_public_preview(self):
+        page = parse_channel_page(_LANDING.format(name="ghost"), "ghost", "https://t.me/ghost")
+        self.assertEqual(page.status, "no_preview")
+        page = parse_channel_page(_LANDING.format(name="ghost"), "ghost")  # redirect not visible
+        self.assertEqual(page.status, "no_preview")
+
+    def test_empty_and_unrecognised_pages(self):
+        self.assertEqual(parse_channel_page(channel_html("quiet", []), "quiet").status, "empty")
+        self.assertEqual(parse_channel_page("<html><body>maintenance</body></html>", "x").status, "unrecognised")
+
+    def test_instant_view_links_are_unwrapped(self):
+        html = channel_html("c", [{"id": 1, "ts": time.time(), "html":
+            'Deal <a href="https://t.me/iv?url=https%3A%2F%2Fwww.amazon.in%2Fdp%2FB0ABCDEFGH&rhash=1">link</a> '
+            '<a href="?q=%23loot">#loot</a>'}])
+        self.assertEqual(parse_channel_page(html, "c").posts[0].links, ["https://www.amazon.in/dp/B0ABCDEFGH"])
+
+
+RSS = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Deals</title>
+<item><title>boAt Airdopes 141 @ ₹899 (MRP ₹4,490)</title><link>https://example.in/deal/1</link>
+<guid>deal-1</guid><pubDate>Tue, 10 Nov 2026 09:30:00 +0530</pubDate>
+<description><![CDATA[<p>Grab it <a href="https://amzn.to/abc">here</a><br>Limited stock</p>]]></description></item>
+<item><title>Second</title><link>https://example.in/deal/2</link></item>
+</channel></rss>"""
+
+ATOM = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>r/deals</title>
+<entry><id>t3_abc</id><title>[Amazon] Sony XM5 for ₹400 (MRP ₹34,990) price error</title>
+<link href="https://www.reddit.com/r/x/comments/abc/"/><updated>2026-11-10T04:00:00+00:00</updated>
+<content type="html">&lt;a href="https://www.amazon.in/dp/B0ABCDEFGH"&gt;link&lt;/a&gt;</content></entry>
+</feed>"""
+
+
+class Feeds(unittest.TestCase):
+    def test_rss(self):
+        items = parse_feed(RSS)
+        self.assertEqual(len(items), 2)
+        first = items[0]
+        self.assertEqual(first.title, "boAt Airdopes 141 @ ₹899 (MRP ₹4,490)")
+        self.assertEqual(first.url, "https://example.in/deal/1")
+        self.assertEqual(first.links, ["https://amzn.to/abc"])
+        self.assertIn("Limited stock", first.text)
+        self.assertEqual(time.strftime("%Y-%m-%d %H:%M", time.gmtime(first.ts)), "2026-11-10 04:00")
+        self.assertIsNone(items[1].ts)
+        self.assertNotEqual(items[0].item_id, items[1].item_id)
+
+    def test_atom(self):
+        item = parse_feed(ATOM)[0]
+        self.assertIn("Sony XM5", item.title)
+        self.assertEqual(item.url, "https://www.reddit.com/r/x/comments/abc/")
+        self.assertEqual(item.links, ["https://www.amazon.in/dp/B0ABCDEFGH"])
+        self.assertEqual(time.strftime("%H:%M", time.gmtime(item.ts)), "04:00")
+
+    def test_rejects_non_feeds_and_entity_tricks(self):
+        with self.assertRaises(FeedError):
+            parse_feed("<html><body>Just a moment...</body></html>")
+        with self.assertRaises(FeedError):
+            parse_feed('<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]><rss><channel/></rss>')
+        with self.assertRaises(FeedError):
+            parse_feed("not xml at all")
+
+
+AMAZON_PRODUCT = """<html><head><title>Nothing Phone (3a) : Amazon.in</title></head><body>
+<span id="productTitle" class="a-size-large">  Nothing Phone (3a) 5G (Black, 8GB RAM, 128GB Storage)  </span>
+<div id="corePriceDisplay_desktop_feature_div">
+ <span class="a-price aok-align-center reinventPricePriceToPayMargin priceToPay">
+  <span class="a-offscreen"> </span><span aria-hidden="true"><span class="a-price-symbol">₹</span>
+  <span class="a-price-whole">24,999<span class="a-price-decimal">.</span></span></span></span>
+ <span class="a-size-small aok-offscreen">M.R.P.: ₹27,999</span>
+ <span class="a-price a-text-price basisPrice" data-a-strike="true"><span class="a-offscreen">₹27,999</span></span>
+</div><div id="availability"><span>In stock</span></div>
+<div id="similar"><span class="a-price"><span class="a-offscreen">₹199</span></span></div>
+</body></html>"""
+
+AMAZON_UNAVAILABLE = """<html><body><span id="productTitle">Old Phone</span>
+<div id="availability"><span class="a-color-price">Currently unavailable.</span></div></body></html>"""
+
+AMAZON_SEARCH = """<html><body><div class="s-main-slot">
+<div data-component-type="s-search-result" data-asin="B0AAAAAAA1" class="s-result-item">
+ <h2 aria-label="Sponsored Ad – Nothing Phone (3a) 5G (Black, 128GB)"><a href="/sspa/click?x=1"><span>Nothing Phone (3a) 5G</span></a></h2>
+ <span class="a-price" data-a-color="base"><span class="a-offscreen">₹24,999</span></span>
+ <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹27,999</span></span></div>
+<div data-component-type="s-search-result" data-asin="B0AAAAAAA2" class="s-result-item">
+ <h2><a href="/dp/B0AAAAAAA2"><span>Back Cover for Nothing Phone 3a</span></a></h2>
+ <span class="a-price"><span class="a-offscreen">₹149</span></span>
+ <span class="a-price a-text-price"><span class="a-offscreen">₹999</span></span></div>
+<div data-component-type="s-search-result" data-asin="" class="s-result-item"><h2>widget</h2></div>
+<div data-component-type="s-search-result" data-asin="B0AAAAAAA3"><h2><span>No price shown</span></h2></div>
+</div></body></html>"""
+
+FLIPKART_SEARCH = """<html><body><div class="DOjaWF">
+<div data-id="MOBH4DQFG8NKFRDY"><div class="xQ7z"><a class="k7wcnx" target="_blank"
+  href="/nothing-phone-3a/p/itm0123abcd?pid=MOBH4DQFG8NKFRDY&amp;lid=LSTX"><img alt="Nothing Phone (3a) (Black, 128 GB)" src="x.jpg"/>
+  <div class="zZ1a">Nothing Phone (3a) (Black, 128 GB)</div><div class="qq9"><div class="Aa1">₹24,999</div>
+  <div class="Bb2">₹27,999</div><div class="Cc3"><span>10% off</span></div></div></a></div></div>
+<div data-id="ACCGZZZZZZZZZZZZ"><a title="Flip Cover for Nothing Phone 3a" href="/cover/p/itmcover?pid=ACCGZZZZZZZZZZZZ">Flip Cover</a>
+  <div>₹199</div></div>
+<div data-id="not-a-product"><div>₹5</div></div>
+</div></body></html>"""
+
+JSON_LD_PRODUCT = """<html><head><title>x</title>
+<script id="jsonLD" type="application/ld+json">[{"@context":"http://schema.org","@type":"Product",
+"name":"Nothing Phone (3a) (Black, 128 GB)","offers":{"@type":"Offer","priceCurrency":"INR","price":24999}},
+{"@type":"BreadcrumbList","itemListElement":[]}]</script></head>
+<body><div class="p1">₹24,999</div><div class="p2">₹27,999</div><div>10% off</div></body></html>"""
+
+
+class StorePages(unittest.TestCase):
+    def test_parse_amount(self):
+        self.assertEqual(parse_amount("₹1,49,999.00"), 149999.0)
+        self.assertEqual(parse_amount("M.R.P.: ₹27,999"), 27999.0)
+        self.assertEqual(parse_amount(16999), 16999.0)
+        self.assertIsNone(parse_amount("Currently unavailable"))
+        self.assertIsNone(parse_amount(None))
+        self.assertIsNone(parse_amount(0))
+
+    def test_amazon_product_page(self):
+        result = extract_page("https://www.amazon.in/Nothing-Phone/dp/B0ABCDEFGH?th=1", AMAZON_PRODUCT)
+        self.assertEqual(result.kind, "product")
+        offer = result.offers[0]
+        self.assertEqual(offer.key, "amazon:B0ABCDEFGH")
+        self.assertEqual(offer.title, "Nothing Phone (3a) 5G (Black, 8GB RAM, 128GB Storage)")
+        self.assertEqual((offer.price, offer.mrp), (24999.0, 27999.0))
+        self.assertEqual(offer.url, "https://www.amazon.in/dp/B0ABCDEFGH")
+
+    def test_amazon_unavailable_and_unrecognised(self):
+        result = extract_page("https://www.amazon.in/dp/B0ABCDEFGH", AMAZON_UNAVAILABLE)
+        self.assertEqual((result.kind, result.offers), ("product", []))
+        result = extract_page("https://www.amazon.in/dp/B0ABCDEFGH", "<html><body>hello</body></html>")
+        self.assertEqual(result.kind, "none")
+
+    def test_amazon_search_page(self):
+        result = extract_page("https://www.amazon.in/s?k=nothing+phone", AMAZON_SEARCH)
+        self.assertEqual(result.kind, "listing")
+        self.assertEqual([o.key for o in result.offers], ["amazon:B0AAAAAAA1", "amazon:B0AAAAAAA2"])
+        first = result.offers[0]
+        self.assertEqual(first.title, "Nothing Phone (3a) 5G (Black, 128GB)")
+        self.assertEqual((first.price, first.mrp), (24999.0, 27999.0))
+        self.assertEqual(first.url, "https://www.amazon.in/dp/B0AAAAAAA1")
+
+    def test_flipkart_search_page_without_relying_on_class_names(self):
+        result = extract_page("https://www.flipkart.com/search?q=nothing+phone", FLIPKART_SEARCH)
+        self.assertEqual(result.kind, "listing")
+        self.assertEqual([o.key for o in result.offers], ["flipkart:MOBH4DQFG8NKFRDY", "flipkart:ACCGZZZZZZZZZZZZ"])
+        phone, cover = result.offers
+        self.assertEqual(phone.title, "Nothing Phone (3a) (Black, 128 GB)")
+        self.assertEqual((phone.price, phone.mrp), (24999.0, 27999.0))
+        self.assertTrue(phone.url.startswith("https://www.flipkart.com/nothing-phone-3a/p/itm0123abcd?pid=MOBH4DQFG8NKFRDY"))
+        self.assertEqual((cover.title, cover.price, cover.mrp), ("Flip Cover for Nothing Phone 3a", 199.0, None))
+
+    def test_flipkart_product_page_via_json_ld(self):
+        url = "https://www.flipkart.com/nothing-phone-3a/p/itm0123abcd?pid=MOBH4DQFG8NKFRDY"
+        result = extract_page(url, JSON_LD_PRODUCT)
+        self.assertEqual(result.kind, "product")
+        offer = result.offers[0]
+        self.assertEqual(offer.key, "flipkart:MOBH4DQFG8NKFRDY")
+        self.assertEqual((offer.price, offer.mrp), (24999.0, 27999.0))
+
+    def test_generic_store_with_meta_tags(self):
+        html = ('<html><head><meta property="og:title" content="Gulab Jamun 1 kg"/>'
+                '<meta property="product:price:amount" content="249.00"/></head><body></body></html>')
+        result = extract_page("https://shop.example.in/p/gulab-jamun", html)
+        self.assertEqual(result.kind, "product")
+        self.assertEqual((result.offers[0].title, result.offers[0].price), ("Gulab Jamun 1 kg", 249.0))
+
+    def test_embedded_app_json_is_mined_for_products(self):
+        data = {"props": {"pageProps": {"results": [
+            {"productId": "p1", "name": "Haldiram's Gulab Jamun 1 kg", "sellingPrice": 199, "mrp": 250, "slug": "/pn/gj/p1"},
+            {"productId": "p2", "name": "Rasgulla 1 kg", "price": {"mrp": 240, "discounted": 180}},
+            {"id": "x", "name": "Delivery slot", "price": 25},
+            {"name": "Banner", "title": "Sale", "items": []},
+        ]}}}
+        html = f'<html><body><script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script></body></html>'
+        result = extract_page("https://quick.example.in/search?q=sweets", html)
+        self.assertEqual(result.kind, "listing")
+        by_key = {o.key: o for o in result.offers}
+        self.assertEqual(set(by_key), {"quick.example.in:p1", "quick.example.in:p2"})
+        self.assertEqual((by_key["quick.example.in:p1"].price, by_key["quick.example.in:p1"].mrp), (199.0, 250.0))
+        self.assertEqual(by_key["quick.example.in:p1"].url, "https://quick.example.in/pn/gj/p1")
+        self.assertEqual((by_key["quick.example.in:p2"].price, by_key["quick.example.in:p2"].mrp), (180.0, 240.0))
+
+    def test_window_assignment_json(self):
+        data = {"searchData": {"results": {"products": [
+            {"productId": 111, "productName": "Puma Sneakers", "price": 1499, "mrp": 5999, "landingPageUrl": "sneakers/puma/111/buy"},
+        ]}}}
+        html = f"<html><body><script>window.__myx = {json.dumps(data)};</script></body></html>"
+        result = extract_page("https://www.myntra.com/puma-sneakers", html)
+        self.assertEqual([(o.key, o.price, o.mrp) for o in result.offers], [("myntra.com:111", 1499.0, 5999.0)])
+        self.assertEqual(result.offers[0].url, "https://www.myntra.com/sneakers/puma/111/buy")
+
+    def test_page_with_nothing_useful(self):
+        result = extract_page("https://quick.example.in/search?q=x", "<html><body><div id='root'></div></body></html>")
+        self.assertEqual(result.kind, "none")
+        self.assertIn("JavaScript", result.note)
+
+
+if __name__ == "__main__":
+    unittest.main()
