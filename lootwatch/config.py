@@ -193,6 +193,8 @@ class Settings:
     tz_offset_minutes: int = 330  # IST
     healthcheck_url: str = ""
 
+    use_channels: bool = True  # read deal channels and feeds on this machine
+    use_store_pages: bool = True  # read watchlist.txt store pages on this machine
     resolve_links: bool = True
     use_curl_cffi: str = "auto"  # auto | on | off
     curl_impersonate: str = "chrome124"  # browser profile for curl_cffi; newer ones are not always better
@@ -236,6 +238,8 @@ class Settings:
             heartbeat_hour=int(_num("HEARTBEAT_HOUR", 9)),
             tz_offset_minutes=int(_num("TZ_OFFSET_MINUTES", 330)),
             healthcheck_url=_get("HEALTHCHECK_URL", ""),
+            use_channels=_flag("USE_CHANNELS", True),
+            use_store_pages=_flag("USE_STORE_PAGES", True),
             resolve_links=_flag("RESOLVE_LINKS", True),
             use_curl_cffi=_get("USE_CURL_CFFI", "auto").lower(),
             curl_impersonate=_get("CURL_IMPERSONATE", "chrome124"),
@@ -256,10 +260,14 @@ class Settings:
         return s
 
     def load_lists(self) -> None:
-        self.channels = load_channels(Path(self.channels_file))
-        self.watchlist = load_watchlist(Path(self.watchlist_file))
+        """Read the list files. A half that is switched off on this machine is left empty."""
         self.traps = load_traps(Path(self.traps_file))
-        self.feeds = [u for u in read_lines(Path(self.feeds_file)) if re.match(r"^https?://", u, re.I)]
+        self.channels, self.feeds, self.watchlist = [], [], []
+        if self.use_channels:
+            self.channels = load_channels(Path(self.channels_file))
+            self.feeds = [u for u in read_lines(Path(self.feeds_file)) if re.match(r"^https?://", u, re.I)]
+        if self.use_store_pages:
+            self.watchlist = load_watchlist(Path(self.watchlist_file))
 
     @property
     def deny_pattern(self) -> Optional["re.Pattern[str]"]:

@@ -92,11 +92,11 @@ class CommandLine(CleanEnv):
                             traps_file=str(root / "traps.txt"), feeds_file=str(root / "feeds.txt"))
         with self.assertNoLogs("lootwatch", level="WARNING"):
             settings.load_lists()
-        self.assertGreaterEqual(len(settings.channels), 10)
+        self.assertEqual(len(settings.channels), 10)
         self.assertIn("desidime", settings.channels)
         self.assertEqual(len(settings.channels), len({c.lower() for c in settings.channels}))
         urls = [w.url for w in settings.watchlist]
-        self.assertEqual(len(urls), 16)
+        self.assertEqual(len(urls), 23)
         self.assertIn("https://www.amazon.in/s?k=nothing+phone", urls)
         laptops = next(w for w in settings.watchlist if "1375424031%2Cp_36" in w.url)
         self.assertEqual((laptops.target, laptops.label), (5000.0, "Amazon laptops under 5,000"))
@@ -117,6 +117,16 @@ class CommandLine(CleanEnv):
         push = self.web.pushes[0]
         self.assertEqual((push["topic"], push["priority"]), ("t1", 5))
         self.assertIn("₹400", push["title"])
+
+    def test_each_half_can_be_switched_off_per_machine(self):
+        self.write("channels.txt", "alpha\n")
+        self.write("watchlist.txt", f"{self.web.base}/p/x | 500\n")
+        os.environ["USE_CHANNELS"] = "0"
+        settings = Settings.from_env(); settings.load_lists()
+        self.assertEqual((settings.channels, len(settings.watchlist)), ([], 1))
+        os.environ["USE_CHANNELS"], os.environ["USE_STORE_PAGES"] = "1", "0"
+        settings = Settings.from_env(); settings.load_lists()
+        self.assertEqual((settings.channels, settings.watchlist), (["alpha"], []))
 
     def test_nothing_to_watch_is_an_error(self):
         self.assertEqual(main(["--once", "--ntfy-server", self.web.base]), 1)
@@ -188,6 +198,15 @@ class Doctor(CleanEnv):
         out = io.StringIO()
         self.assertEqual(run_doctor(settings, out), 2)
         self.assertIn("would be blind", out.getvalue())
+        self.assertNotIn("blocks or breaks Telegram", out.getvalue())  # it answered; it just has no preview
+
+    def test_a_network_that_cannot_reach_telegram_is_named_as_such(self):
+        settings = Settings(ntfy_server=self.web.base, telegram_base_url="http://127.0.0.1:9/s", use_curl_cffi="off")
+        settings.channels = ["one", "two"]
+        out = io.StringIO()
+        run_doctor(settings, out)
+        self.assertIn("this network blocks or breaks Telegram's", out.getvalue())
+        self.assertIn("USE_CHANNELS=0", out.getvalue())
 
 
 class Transport(unittest.TestCase):
@@ -214,7 +233,7 @@ class Transport(unittest.TestCase):
                                       "Enter the characters you see below</form></body></html>")
         fetcher = Fetcher("off")
         result = fetcher.get(self.web.base + "/captcha")
-        self.assertEqual((result.ok, result.blocked), (False, "challenge page"))
+        self.assertEqual((result.ok, result.blocked), (False, "challenge page (Robot Check)"))
         again = fetcher.get(self.web.base + "/page")  # same site: now cooling down
         self.assertTrue(again.skipped)
         self.assertTrue(again.error.startswith("cooldown"))

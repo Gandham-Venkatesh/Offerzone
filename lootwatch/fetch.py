@@ -58,11 +58,18 @@ _CHALLENGE_WEAK = re.compile(
 )
 
 
-def looks_like_challenge(html: str) -> bool:
+def challenge_marker(html: str) -> str:
+    """The tell-tale text of an anti-bot page, or '' for an ordinary page."""
     head = html[:200_000]
-    if len(html) < 400_000 and _CHALLENGE_STRONG.search(head):
-        return True
-    return len(html) < 20_000 and bool(_CHALLENGE_WEAK.search(head))
+    strong = _CHALLENGE_STRONG.search(head) if len(html) < 400_000 else None
+    if strong:
+        return re.sub(r"<title>\s*", "", strong.group(0), flags=re.I)[:40]
+    weak = _CHALLENGE_WEAK.search(head) if len(html) < 20_000 else None
+    return weak.group(0)[:40] if weak else ""
+
+
+def looks_like_challenge(html: str) -> bool:
+    return bool(challenge_marker(html))
 
 
 @dataclass
@@ -250,7 +257,7 @@ class Fetcher:
             if resp.headers.get("x-amzn-waf-action"):
                 result.blocked = "AWS WAF challenge"  # Amazon answers 202/403 with this header instead of a page
             elif result.status == 200 and site.policy.sniff_challenge and looks_like_challenge(result.text):
-                result.blocked = "challenge page"
+                result.blocked = f"challenge page ({challenge_marker(result.text)})"
         except Exception as exc:  # requests / curl errors, decoding problems
             result.error = _describe(exc)
         return result

@@ -15,10 +15,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "run = scan now | doctor = report which sources work | test-ntfy = send one test push"
+        description: "run = scan now | doctor = report which sources work (doctor-detail lists every post) | test-ntfy = send one test push"
         type: choice
         default: run
-        options: [run, doctor, test-ntfy]
+        options: [run, doctor, doctor-detail, test-ntfy]
 
 permissions:
   contents: read
@@ -48,6 +48,8 @@ jobs:
       DAILY_ALERT_LIMIT: ${{ vars.DAILY_ALERT_LIMIT }}
       HEARTBEAT_HOUR: ${{ vars.HEARTBEAT_HOUR }}
       EXTRA_STORE_DOMAINS: ${{ vars.EXTRA_STORE_DOMAINS }}
+      USE_CHANNELS: ${{ vars.USE_CHANNELS }}
+      USE_STORE_PAGES: ${{ vars.USE_STORE_PAGES }}
       LOOP_SECONDS: ${{ vars.LOOP_SECONDS || '280' }}
       DB_PATH: state/lootwatch.db
     steps:
@@ -78,6 +80,7 @@ jobs:
         run: |
           case "$MODE" in
             doctor) python -m lootwatch --doctor ;;
+            doctor-detail) python -m lootwatch --doctor --verbose ;;
             test-ntfy) python -m lootwatch --test-ntfy ;;
             *) python -m lootwatch --max-runtime "$LOOP_SECONDS" ;;
           esac

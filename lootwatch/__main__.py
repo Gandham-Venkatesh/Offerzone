@@ -45,7 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
     cfg.add_argument("--watchlist-file", help="product / search URLs to price-check every scan (default: watchlist.txt)")
     cfg.add_argument("--traps-file", help="'keywords | max price' lines (default: traps.txt)")
     cfg.add_argument("--feeds-file", help="RSS/Atom feed URLs (default: feeds.txt)")
-    parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="debug logging; with --doctor, also print every post and product it read")
     parser.add_argument("--version", action="version", version=f"lootwatch {__version__}")
     return parser
 
@@ -93,7 +94,7 @@ def main(argv=None) -> int:
         return 0 if result.ok else 1
 
     if args.doctor:
-        return run_doctor(settings)
+        return run_doctor(settings, verbose=args.verbose)
 
     if not (settings.channels or settings.feeds or settings.watchlist):
         log.error("nothing to watch: %s, %s and %s are all empty or missing",

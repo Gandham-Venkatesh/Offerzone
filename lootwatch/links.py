@@ -37,7 +37,7 @@ TRUSTED_SHORTENERS = (
 )
 # Deal communities and blogs: not shops, but a link to their own deal page is not a scam shop either.
 DEAL_SITES = (
-    "desidime.com", "indiafreestuff.in", "freekaamaal.com", "bigtricks.in", "flipshope.com", "grabon.in",
+    "desidime.com", "ddime.in", "indiafreestuff.in", "freekaamaal.com", "bigtricks.in", "flipshope.com", "grabon.in",
     "dealsmagnet.com", "pricehistoryapp.com", "pricehistory.app", "buyhatke.com", "smartprix.com", "reddit.com",
 )
 # Anyone can point these anywhere, so they are only trusted once they resolve to a store.

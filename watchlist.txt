@@ -43,12 +43,20 @@ https://www.amazon.in/s?rh=n%3A1375425031%2Cp_36%3A-150000&s=price-asc-rank | 15
 https://www.amazon.in/gp/bestsellers/electronics/1805560031 | | Amazon best-selling smartphones
 https://www.amazon.in/gp/bestsellers/computers/1375424031 | | Amazon best-selling laptops
 
-# --- Flipkart category pages, cheapest first. These formats are from memory and NOT yet confirmed:
-#     --doctor will show whether they load and what the cheapest item is.
+# --- Flipkart category pages, cheapest first. Confirmed readable from a home connection (10 Nov 2026).
+#     The plain mobiles page is all feature phones under Rs 1,100; that is fine: a mispriced phone at
+#     Rs 400 would sort above them. The "smartphones only" line uses a filter that is not yet confirmed.
 https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&sort=price_asc | 2000 | Flipkart mobiles
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=price_asc | 2500 | Flipkart smartphones only
 https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc | 5000 | Flipkart laptops
 https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=price_asc | 3000 | Flipkart TVs
 https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=price_asc | 2000 | Flipkart tablets
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=price_asc | 3000 | Flipkart refrigerators
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=price_asc | 3000 | Flipkart washing machines
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=price_asc | 5000 | Flipkart air conditioners
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=price_asc | 1500 | Flipkart monitors
+https://www.flipkart.com/gaming-consoles/pr?sid=4rr%2Cx1m&sort=price_asc | 3000 | Flipkart gaming consoles
+https://www.flipkart.com/dslr-mirrorless/pr?sid=jek%2Cp31%2Ctrv&sort=price_asc | 3000 | Flipkart cameras
 
 # --- searches (products on them alert through traps.txt and their own price history)
 https://www.amazon.in/s?k=nothing+phone

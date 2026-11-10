@@ -2,34 +2,27 @@
 # Every channel is read through its public web preview (https://t.me/s/<name>) - no account needed.
 # Private invite links (t.me/+xxxx) cannot be read this way.
 #
-# >>> Put the channel(s) you already trust FIRST. That is the single most useful edit in this file. <<<
+# This is the safety net, not the main detector: the store pages in watchlist.txt are.
+# Put channels you trust here; delete the lot to switch channels off.
 #
-# The list below is a starter set found through web search in Nov 2026. It could not be
-# checked live while this was written, so run  python -m lootwatch --doctor  once:
-# it marks each channel OK / WARN (quiet for days) / FAIL (no public preview), and you prune from there.
+# All of the channels below were readable from GitHub's servers and posting on 10 Nov 2026.
+# Telegram's website is blocked on some Indian home/mobile networks: if --doctor shows every
+# channel failing to connect there, run the channel half somewhere else (USE_CHANNELS=0 at home).
 
-# --- all-category loot / price-error channels
-magiXdeals                    # Magixdeals 3.0
-Magixdeals_Magix              # Magixdeals 2.0 (price-drop deals)
+# --- all-category deal channels
+Magixdeals_Magix              # Magixdeals 2.0
 Loot_Dealsx                   # Trending Loot Deals
 desidime                      # DesiDime - Deals and Offers (official)
 DesidimeHot                   # DesiDime - Handpicked Deals
 lootersindia                  # Price History Deals 2.0
-Indiafreestuffin              # Indiafreestuff Deals & Coupons
 bigtricksin                   # Bigtricks Official
 freekaamaalindia              # FreeKaaMaal Official
 flipshope                     # Flipshope - Deals and Offers
-TRICKSpoint                   # Trickspoint
-dcloots_loots_offers_deals    # DC Loots
 
 # --- quick commerce and food (Blinkit, Zepto, Swiggy Instamart, BigBasket)
-Dcloots_offers_tricks         # DC Loots offers & tricks: grocery and food-delivery loots
-FoodJunction                  # FRJ food coupons: Swiggy, Zomato, Blinkit, Zepto, Instamart
+FoodJunction                  # FRJ food coupons
 swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots
 
-# --- more candidates (remove the leading "# " to try one; --doctor tells you if it is readable)
-# TheLootFactory
-# lootersjunction
-# dealzbroadcast
-# offervsdeals
-# GrabOnIndiaOfficial
+# --- removed after the first live check (dead or no public preview):
+#     magiXdeals (no post for a month), TRICKSpoint, dcloots_loots_offers_deals,
+#     Dcloots_offers_tricks, Indiafreestuffin
