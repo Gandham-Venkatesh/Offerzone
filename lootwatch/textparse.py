@@ -206,7 +206,12 @@ _FILLER = re.compile(
     r"|flipkart|myntra|ajio|jiomart|meesho|croma|zepto|blinkit|instamart|swiggy|tata|cliq|nykaa|ram|rom|storage"
     r"|ssd|hdd|variant|colour|color|black|white|blue|green|red|grey|gray|silver|gold|pink|purple|pro|max|plus"
     r"|ultra|lite|mini|all|any|per|you|your|this|that|its|are|not|but|can|will|has|have|must|very|too|rupees"
-    r"|actual|usual|normal|original|rate|cost|drop|dropped|back|available|unit|units|each)$",
+    r"|actual|usual|normal|original|rate|cost|drop|dropped|back|available|unit|units|each"
+    # words of a sale, a shop or a sales pitch: they announce a product, they do not name one
+    r"|billion|day|days|great|india|indian|festival|festive|republic|diwali|dussehra|season|end|year|sales|savings"
+    r"|summer|winter|monsoon|freedom|independence|prime|minutes|exclusive|launched|latest|model|brand|sealed|genuine"
+    r"|official|unlocked|edition|version|vijay|reliance|digital|unbelievable|crazy|insane|massive|huge|lowest|loots"
+    r"|quick|grab|hurry|missed|case|part|game|changer|remote|chance|try|both|also|then|than|just|about|today)$",
     re.I,
 )
 
@@ -285,20 +290,33 @@ class ParsedText:
 
     @property
     def claim_price(self) -> Optional[float]:
-        """The price a stated percentage applies to ("₹6,294 / 80% off"): the one price written
-        beside it, else the one price in the whole text."""
+        """The price a stated percentage applies to: the one price written beside it ("₹6,294 /
+        80% off"), or on a bare price line directly above or below it.
+
+        A price anywhere else in the post belongs to something else. A daily digest reads
+        "Jiomart 99% off" on one line and "Atomberg fan - Rs 2700" three lines down.
+        """
+        if self.pct_pos < 0:
+            return None
         usable = [a for a in self.amounts if a.kind in ("sell", "plain")]
-        if self.pct_pos >= 0:
-            seg = self.text.count("\n", 0, self.pct_pos)
-            line = _line_index(self.text, self.pct_pos)
-            for group in ([a for a in usable if a.seg == seg], [a for a in usable if a.line == line]):
-                values = {a.value for a in group}
+        seg = self.text.count("\n", 0, self.pct_pos)
+        line = _line_index(self.text, self.pct_pos)
+        for group in ([a for a in usable if a.seg == seg], [a for a in usable if a.line == line]):
+            values = {a.value for a in group}
+            if len(values) == 1:
+                return next(iter(values))
+            if values:
+                return None  # two prices beside the percentage: no telling which one it means
+        lines = self.text.replace("\n" + SOFT, " " + SOFT).split("\n")
+        for step in (1, -1):
+            number = line + step
+            while 0 <= number < len(lines) and not re.search(r"\w", lines[number]):
+                number += step
+            if 0 <= number < len(lines) and naming_words(lines[number]) < 2:
+                values = {a.value for a in usable if a.line == number}
                 if len(values) == 1:
                     return next(iter(values))
-                if values:
-                    return None  # two prices beside the percentage: no telling which one it means
-        values = {a.value for a in usable}
-        return next(iter(values)) if len(values) == 1 else None
+        return None
 
 
 def _line_index(text: str, position: int) -> int:

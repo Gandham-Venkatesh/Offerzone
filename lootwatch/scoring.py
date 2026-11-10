@@ -55,6 +55,20 @@ _LINKED = re.compile(
     r"|supports?)\s+(?:the\s+)?(?:[\w()+.\-]+\s+){0,3}$",
     re.I,
 )
+# Makers of cases, chargers and cables name their products after the device: "OtterBox React Apple
+# iPhone 14 PRO Stardust Clear" has no accessory noun in it at all.
+_ACCESSORY_MAKERS = re.compile(
+    r"\b(?:otterbox|spigen|esr|ringke|caseology|uag|urban\s+armor|nillkin|supcase|zagg|belkin|anker|baseus|ugreen"
+    r"|portronics|ambrane|stuffcool|dbrand|pitaka|torras|benks|raegr|kapaver|tarkan|incipio|speck|casetify|urbn"
+    r"|amazon\s*basics|solimo|duracell|wecool|dailyobjects|macmerise)\b",
+    re.I,
+)
+_DEVICE_BRAND = re.compile(
+    r"\b(?:apple|samsung|oneplus|nothing|cmf(?:\s+by\s+nothing)?|google|xiaomi|redmi|realme|vivo|oppo|motorola|sony"
+    r"|microsoft|nintendo|asus|hp|dell|lenovo|acer)\s*$",
+    re.I,
+)
+_PHRASE_END = re.compile(r"[^\w\s+'&.]|\.\s")  # punctuation, symbols and emoji end a phrase; "v2.0" does not
 # "... with free case", "charger not included": the accessory word is a side note, the product is the real thing.
 _SIDE_NOTE = re.compile(r"\b(?:with|without|free|includes?|including|plus|in\s*box|inbox)\b|[+&]", re.I)
 _NOT_PART = re.compile(r"^[^,|]{0,12}\b(?:not\s+included|sold\s+separately|not\s+in\s*(?:the\s+)?box|excluded)\b", re.I)
@@ -108,7 +122,12 @@ def is_accessory(text: str, keyword_start: int, keyword_end: Optional[int] = Non
     before = text[seg_start:keyword_start]
     if _NOT_NEW.search(text[seg_start:seg_end]) or _USED_BEFORE.search(before):
         return True
-    if _ACCESSORY_ADJACENT.search(before):
+    if _ACCESSORY_ADJACENT.search(before) or _ACCESSORY_MAKERS.search(before):
+        return True
+    # "<Maker> <model> Apple iPhone 14 PRO <colour>": the keyword closes another product's name.
+    # Two or more naming words run straight into it, with nothing but its own brand in between.
+    phrase = _DEVICE_BRAND.sub("", _PHRASE_END.split(before)[-1])
+    if naming_words(phrase) >= 2:
         return True
     linked = _LINKED.search(before)
     if linked:

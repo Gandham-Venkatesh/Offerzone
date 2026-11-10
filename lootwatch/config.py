@@ -15,7 +15,7 @@ log = logging.getLogger("lootwatch")
 # deal never says. ("credit card" is deliberately absent: half of all genuine deals mention a card offer.)
 DEFAULT_DENY_WORDS = (
     "quiz answers, refer and earn, refer & earn, demat, personal loan, instant loan, rummy, betting, "
-    "casino, lottery, mod apk, colour prediction, color prediction"
+    "casino, lottery, mod apk, colour prediction, color prediction, hot threads"
 )
 
 

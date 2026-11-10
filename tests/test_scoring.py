@@ -147,6 +147,40 @@ class TextVerdicts(unittest.TestCase):
         # A range or a budget is not a price.
         self.assertIsNone(self.tier("Flat 80% Off On Puma Shoes Starting ₹599"))
 
+    def test_a_percentage_and_a_price_must_stand_together(self):
+        # Real post, 10 Nov 2026: a daily digest. "99% off" belongs to one thread, "Rs 2700" to another.
+        digest = ("🔥Top 5 Hot Threads Today\n🌡1332° - Jiomart 99% off\nhttps://ddime.in/h6WF\n"
+                  "🌡572° - Cred Deals of the Day & Daily Rewards (10th November)\nhttps://ddime.in/h6WG\n"
+                  "🌡520° - Atomberg Renesa Elite Smart |Voice Control| High Air Flow - Rs 2700\nhttps://ddime.in/h6WH")
+        self.assertIsNone(self.tier(digest))  # digests are on the default ignore list ("hot threads")
+        plain = make_settings()
+        plain.deny_words = ""
+        verdict = evaluate_text(digest, plain)
+        self.assertEqual((verdict.tier, verdict.price), (TIER_HIGH, None))  # and without it: a bare claim, never "₹2,700 at 99% off"
+        # A bare price line next to the percentage line does belong to it.
+        verdict = evaluate_text("Sony WH-1000XM5\nPrice: ₹400\nDiscount: 99% off\nhttps://amzn.to/x", plain)
+        self.assertEqual((verdict.tier, verdict.price), (TIER_URGENT, 400))
+
+    def test_accessories_named_after_the_device_without_any_accessory_word(self):
+        s = make_settings("iphone | 12000\nnothing phone | 6000\n")
+
+        def tier(text):
+            verdict = evaluate_text(text, s)
+            return verdict.tier if verdict else None
+
+        # Real post, 10 Nov 2026: an OtterBox case.
+        for text in ("🔥 HOT DEAL 🔥\nOtterBox React Apple iPhone 14 PRO Stardust Clear @ 2922\nhttps://amznn.cc/tf7f1gf",
+                     "Spigen Ultra Hybrid iPhone 16 Pro @ 999", "Zeskit CineFlex Apple iPhone 16 Pro Max @ 1499",
+                     "Mivi DuoPods Nothing Phone 3a edition @ 899"):
+            with self.subTest(text=text):
+                self.assertIsNone(tier(text))
+        # Sale and shop words in front of the name do not make it an accessory.
+        for text in ("Flipkart Big Billion Days Apple iPhone 16 at ₹9,999", "Brand new sealed Apple iPhone 16 @ 9,999",
+                     "Vijay Sales Apple iPhone 16 @ 9,999", "🔥 HOT DEAL 🔥\nApple iPhone 14 PRO (Deep Purple, 128 GB) @ 2922",
+                     "Sony XM5 and Nothing Phone (3a) both at ₹400", "Latest model Nothing Phone (3a) at ₹400"):
+            with self.subTest(text=text):
+                self.assertEqual(tier(text), TIER_URGENT)
+
     def test_error_wording_variants_and_denials(self):
         for text in ("PRICE-ERROR Sony XM5 @ 4999", "Mistake Price: Sony XM5 @ 4999", "Amazon Bug: Sony XM5 @ 4999"):
             with self.subTest(text=text):

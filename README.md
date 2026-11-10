@@ -76,7 +76,13 @@ between), accessories and refurbished units. Every number above is a setting.
 
 A trap only takes the price written for that product: on its own line, on a price line right
 below its name, or in the same " | " part of a line. A bank discount, a budget heading ("Under
-₹10k") or the price of the next product in a list is never borrowed.
+₹10k") or the price of the next product in a list is never borrowed. It does not fire on things
+named after the product: cases, chargers and the like, anything "for" or "compatible with" it,
+and names in which another product's name runs straight into it ("OtterBox React Apple iPhone
+14 Pro").
+
+A stated percentage only counts together with a price written beside it. Daily digest posts
+("Top 5 Hot Threads Today") are on the default ignore list.
 
 ## Where to run it
 
