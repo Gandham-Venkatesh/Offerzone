@@ -174,11 +174,16 @@ class Settings:
     ntfy_token: str = ""
     ntfy_health_topic: str = ""
 
-    min_discount: float = 80.0  # % off needed for an alert
-    urgent_min_saving: float = 2000.0  # rupees saved needed to make it an URGENT alert
-    urgent_discount: float = 95.0  # ...or at least this % off, whatever the rupee amount
+    # The priority ladder for a stated discount (see scoring.py):
+    min_discount: float = 80.0  # from here: a quiet alert, if it saves urgent_min_saving or more
+    high_discount: float = 90.0  # from here: a high-priority alert, if it saves min_saving or more
+    urgent_discount: float = 95.0  # from here: max priority, if it saves urgent_min_saving or more
+    min_saving: float = 1000.0
+    urgent_min_saving: float = 2000.0
+    big_saving: float = 20000.0  # at high_discount or more, a saving this large is urgent on its own
+    loot_price: float = 10.0  # a price this low ("Rs 1 deal") counts even when the rupee saving is small
     watch_drop_pct: float = 50.0  # % drop against a watched product's own usual price
-    floor_mrp_ratio: float = 4.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
+    floor_mrp_ratio: float = 3.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
 
     interval: int = 60
     workers: int = 8
@@ -223,10 +228,14 @@ class Settings:
             ntfy_token=_get("NTFY_TOKEN", ""),
             ntfy_health_topic=_get("NTFY_HEALTH_TOPIC", ""),
             min_discount=_num("MIN_DISCOUNT", 80.0),
-            urgent_min_saving=_num("URGENT_MIN_SAVING", 2000.0),
+            high_discount=_num("HIGH_DISCOUNT", 90.0),
             urgent_discount=_num("URGENT_DISCOUNT", 95.0),
+            min_saving=_num("MIN_SAVING", 1000.0),
+            urgent_min_saving=_num("URGENT_MIN_SAVING", 2000.0),
+            big_saving=_num("BIG_SAVING", 20000.0),
+            loot_price=_num("LOOT_PRICE", 10.0),
             watch_drop_pct=_num("WATCH_DROP_PCT", 50.0),
-            floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 4.0),
+            floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 3.0),
             interval=int(_num("CHECK_INTERVAL", 60)),
             workers=int(_num("MAX_WORKERS", 8)),
             max_post_age_min=_num("MAX_POST_AGE_MIN", 20.0),

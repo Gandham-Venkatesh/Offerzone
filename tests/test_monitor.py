@@ -109,7 +109,7 @@ class EndToEnd(unittest.TestCase):
     def test_trending_across_channels_upgrades_a_quiet_deal_to_urgent(self):
         now = time.time()
         self.web.redirects["/r/c"] = "https://www.flipkart.com/cable/p/itmcable1?pid=ACCCABLE00000001"
-        text = f'boAt cable @ ₹99 (MRP ₹999) <a href="{self.web.base}/r/c">buy</a>'
+        text = f'boAt cable @ ₹99 (MRP ₹1,999) <a href="{self.web.base}/r/c">buy</a>'
         monitor = self.monitor()
         self.web.post("alpha", 1, text, now - 30)
         monitor.cycle()
@@ -221,7 +221,7 @@ class EndToEnd(unittest.TestCase):
         self.settings.daily_alert_limit = 2
         now = time.time()
         for index in range(4):
-            self.web.post("alpha", index + 1, f"Cable model {index}X{index} @ ₹99 (MRP ₹999)", now - 10)
+            self.web.post("alpha", index + 1, f"Cable model {index}X{index} @ ₹99 (MRP ₹1,999)", now - 10)
         monitor = self.monitor()
         monitor.cycle()
         self.assertEqual([p["priority"] for p in self.web.pushes], [4, 4])  # two high alerts, then the budget bites

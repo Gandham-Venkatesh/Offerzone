@@ -105,6 +105,8 @@ _PCT = re.compile(
     re.I,
 )
 
+_CAPPED = re.compile(r"\s*(?:up\s?to|max(?:imum)?\.?)\s*(?:₹|rs)", re.I)
+
 _ERROR_PHRASE = re.compile(
     r"\b(?:pric(?:e|ing)\s*(?:error|mistake|glitch|bug)|error\s*(?:price|deal|loot)|wrong\s*price|mis-?priced"
     r"|glitch(?:\s*(?:deal|loot|price))?|bug\s*(?:price|deal|loot)|price\s*by\s*mistake)\b",
@@ -118,6 +120,7 @@ _EXPIRED = re.compile(
     r"|\b(?:deal|loot|offer|sale|stock)\s+(?:is\s+)?(?:over|ended|gone|closed|finished)\b"
     r"|\bprice\s+(?:increased|hiked|is\s+back|back\s+to\s+normal)\b"
     r"|\bno\s+longer\s+available\b"
+    r"|\[\s*(?:over|expired|ended|oos|sold\s*out)\s*\]"
     r"|\b(?:now|already|currently|is|its|it's|went|gone|got)\s+(?:oos|out\s+of\s+stock)\b"
     r"|\b(?:oos|out\s+of\s+stock)\s+now\b"
     r"|^\W*(?:oos|out\s+of\s+stock)\b(?!\s+(?:soon|anytime|any\s+time|fast|quickly|in\b))",
@@ -192,6 +195,12 @@ class ParsedText:
         if self.price is not None and self.mrp and self.mrp > self.price:
             return self.mrp - self.price
         return 0.0
+
+    @property
+    def lone_price(self) -> Optional[float]:
+        """The price, when the text names exactly one (as in "₹6,294 / 80% off")."""
+        values = {a.value for a in self.amounts if a.kind in ("sell", "plain")}
+        return next(iter(values)) if len(values) == 1 else None
 
 
 def _to_value(num: str, suffix: Optional[str]) -> Optional[float]:
@@ -312,6 +321,8 @@ def _percent_claims(text: str) -> Tuple[Optional[float], Optional[float]]:
         post = re.sub(r"\s+", "", (match.group("post") or "").lower())
         if pre in ("extra", "additional", "addl", "addl.") or post in ("cashback", "back"):
             continue  # stacking coupons and cashback are not the headline discount
+        if _CAPPED.match(text[match.end():match.end() + 24]):
+            continue  # "80% off up to ₹160" is a capped coupon, not a product at 80% off
         if pre == "upto":
             upto = max(upto or 0.0, pct)
         elif post or pre in ("flat", "min", "min.", "minimum", "atleast", "save", "saving"):

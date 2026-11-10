@@ -87,7 +87,7 @@ _POLICIES: Tuple[Tuple[str, Policy], ...] = (
     # so their content must never be able to look like a block. Telegram refuses with a status code.
     ("t.me", Policy(0.8, 1.6, 60, 900, sniff_challenge=False)),
     ("amazon.in", Policy(6.0, 10.0, 300, 7200, True)),
-    ("flipkart.com", Policy(6.0, 10.0, 300, 7200, True)),
+    ("flipkart.com", Policy(5.0, 8.0, 300, 7200, True)),
     ("myntra.com", Policy(6.0, 10.0, 300, 7200, True)),
     ("blinkit.com", Policy(6.0, 10.0, 300, 7200, True)),
     ("zepto.com", Policy(6.0, 10.0, 300, 7200, True)),

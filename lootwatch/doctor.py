@@ -17,7 +17,7 @@ from .config import Settings
 from .fetch import HAS_CURL_CFFI, Fetcher
 from .links import TRUSTED_KINDS, classify_host, deal_links, host_of
 from .monitor import _age, _first_line, short_url
-from .scoring import TIER_HIGH, TIER_URGENT, evaluate_text, is_side_product
+from .scoring import TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_text, is_side_product
 from .sources.feeds import FeedError, parse_feed
 from .sources.stores import extract_page
 from .sources.telegram import parse_channel_page
@@ -52,9 +52,11 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
           f"{'yes, profile ' + fetcher.profile if fetcher.impersonation else 'no' if not HAS_CURL_CFFI else 'off'}", file=out)
     print(f"ntfy: server {settings.ntfy_server} | topic {'set' if settings.ntfy_topic else 'NOT SET'} | "
           f"token {'set' if settings.ntfy_token else 'not set'}", file=out)
-    print(f"alert rule: >= {settings.min_discount:.0f}% off; urgent at >= {settings.urgent_discount:.0f}% off, when saving "
-          f">= {fmt_inr(settings.urgent_min_saving)}, under a page's floor, or on a trap | {len(settings.traps)} traps loaded",
-          file=out)
+    print(f"deal posts: {settings.urgent_discount:.0f}%+ off saving {fmt_inr(settings.urgent_min_saving)}+ is urgent | "
+          f"{settings.high_discount:.0f}%+ saving {fmt_inr(settings.min_saving)}+ (or priced {fmt_inr(settings.loot_price)} or less) is high | "
+          f"{settings.min_discount:.0f}%+ saving {fmt_inr(settings.urgent_min_saving)}+ is quiet", file=out)
+    print(f"store pages: under a page's floor, a trap ({len(settings.traps)} loaded), your target, or a "
+          f"{settings.watch_drop_pct:.0f}% fall from its usual price is urgent", file=out)
     if not settings.use_channels:
         print("deal channels and feeds: switched off on this machine (USE_CHANNELS=0)", file=out)
     if not settings.use_store_pages:
@@ -95,7 +97,7 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
             age = _age(now - post.ts) if post.ts else "?"
             details.append(f"          #{post.post_id} {age:>9} | {mark} | {_one_line(post.analysis_text, 260)}")
         detail = (f"{len(page.posts)} posts, newest {newest} | would alert: {tiers[TIER_URGENT]} urgent, "
-                  f"{tiers[TIER_HIGH]} high")
+                  f"{tiers[TIER_HIGH]} high, {tiers[TIER_NORMAL]} quiet")
         stale = stamps and now - max(stamps) > 3 * 86400
         print(_row("WARN" if stale else "OK", "@" + channel, detail + (" | quiet for days" if stale else "")), file=out)
         if sample:

@@ -208,6 +208,22 @@ class StorePages(unittest.TestCase):
         self.assertTrue(phone.url.startswith("https://www.flipkart.com/nothing-phone-3a/p/itm0123abcd?pid=MOBH4DQFG8NKFRDY"))
         self.assertEqual((cover.title, cover.price, cover.mrp), ("Flip Cover for Nothing Phone 3a", 199.0, None))
 
+    def test_flipkart_mrp_split_across_text_nodes(self):
+        # On the live site the crossed-out MRP is "₹", an HTML comment, then the digits: three nodes.
+        html = """<html><body>
+        <div data-id="MOBAAAAAAAAAAAA1"><a href="/lava-bold/p/itm1?pid=MOBAAAAAAAAAAAA1"><img alt="LAVA Bold N4 Lite (Gold, 32 GB)"/>
+          <div class="x1">₹600</div><div class="x2">₹<!-- -->8,299</div><div class="x3"><span>92% off</span></div>
+          <div>Upto ₹5,750 Off on Exchange</div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA2"><a href="/itel/p/itm2?pid=MOBAAAAAAAAAAAA2"><img alt="itel A100C (Black, 64 GB)"/>
+          <div class="x1">₹9,999</div><div>Upto ₹12,000 Off on Exchange</div><div>No Cost EMI from ₹1,667/month</div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA3"><a href="/ai/p/itm3?pid=MOBAAAAAAAAAAAA3"><img alt="Ai+ Pulse 2 (Green, 64 GB)"/>
+          <div class="x1">₹8,999</div><div><span>25% off</span></div></a></div>
+        </body></html>"""
+        offers = {o.key[-1]: o for o in extract_page("https://www.flipkart.com/mobiles/pr?sid=tyy,4io", html).offers}
+        self.assertEqual((offers["1"].price, offers["1"].mrp), (600.0, 8299.0))
+        self.assertEqual((offers["2"].price, offers["2"].mrp), (9999.0, None))   # exchange / EMI amounts are not an MRP
+        self.assertEqual((offers["3"].price, offers["3"].mrp), (8999.0, 11999.0))  # worked back from "25% off"
+
     def test_flipkart_product_page_via_json_ld(self):
         url = "https://www.flipkart.com/nothing-phone-3a/p/itm0123abcd?pid=MOBH4DQFG8NKFRDY"
         result = extract_page(url, JSON_LD_PRODUCT)

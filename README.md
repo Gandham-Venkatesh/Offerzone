@@ -35,27 +35,43 @@ Each scan (default: every 60 seconds) it looks in three places, in this order of
 
 ## How loud each alert is
 
+**From a store page** (always max priority): something under a category page's floor · a trap ·
+your target price · a fall of `WATCH_DROP_PCT` from the price the monitor has been seeing.
+
+**From a deal post**, the priority follows the discount, and each rung also needs real money
+saved. That second condition is there because of what real channels post all day: a ₹79 cleaning
+kit with a ₹999 "MRP" is "92% off".
+
 | Alert | ntfy priority | When |
 |---|---|---|
-| **Urgent** | 5 (max) | 95% off or more (`URGENT_DISCOUNT`) · at least `MIN_DISCOUNT` off **and** saving `URGENT_MIN_SAVING` or more · something under a category page's floor · a trap fires · a watched product hits your target or falls `WATCH_DROP_PCT` from its usual price · a post says price error / glitch · a quiet deal appears in 3 channels within 20 minutes |
-| **High** | 4 | At least `MIN_DISCOUNT` off but small-ticket or stated less clearly · an urgent-looking post whose short link could not be checked (shown with a note) |
-| **Quiet** | 3 | A post whose link leads to a site that is not a known store. Shown with a warning, never loud: this is where look-alike scam shops turn up |
+| **Urgent** | 5 (max) | 95% off or more, saving ₹2,000 or more · 90% off or more, saving ₹20,000 or more · the post says price error / glitch · a trap |
+| **High** | 4 | 90% off or more, saving ₹1,000 or more, or priced ₹10 or less (a "₹1 deal") · only a percentage is given and it is 95% or more |
+| **Quiet** | 3 | 80% off or more, saving ₹2,000 or more · any post whose link leads to a site that is not a known store (with a warning) |
 
-Ignored: "upto 90% off" banners, cashback/coupon/recharge amounts, posts that say the deal is
-over, posts older than 20 minutes, accessories and refurbished units on store pages.
+A deal already alerted that turns up in three channels within 20 minutes goes up one level.
+
+Ignored: "upto 90% off" banners, capped coupons ("80% off up to ₹160"), cashback and recharge
+amounts, posts marked over or expired, posts older than 20 minutes, accessories and refurbished
+units on store pages. Every number above is a setting.
 
 ## Where to run it
 
-The stores decide this more than the code does. Reports from people who do this, and the
-warnings in similar open-source projects, agree that Amazon, Flipkart and the quick-commerce
-apps often refuse data-centre addresses on the first request, while an ordinary home or mobile
-connection is tolerated at a gentle pace. So:
+What the first live checks showed (10 November 2026):
 
-| Where | Store pages | Channels | Notes |
+| Where | Flipkart pages | Amazon pages | Deal channels |
 |---|---|---|---|
-| **A device at home** (old Android phone with Termux, a PC or laptop that stays on, a Raspberry Pi) | Best chance | Yes | A true 60-second loop. The catch is that it must stay on and online |
-| **GitHub Actions** (public repo) | Often refused | Yes | Free, no card. Runs start late when GitHub is busy. See the cautions below |
-| **A small cloud server** | Often refused | Yes | Always on. Oracle's free tier has Mumbai and Hyderabad regions but needs a card |
+| **GitHub Actions** (public repo, free, no card) | Readable | Refused | Readable |
+| **A phone at home** (Termux, plain install) | Readable | Refused | Not reachable on that network |
+
+- **Flipkart** answers both, and its pages are parsed correctly.
+- **Amazon** answers both with a JavaScript check that only a real browser passes. The monitor
+  does not try to get round it, so Amazon pages ship switched off. Amazon deals still arrive
+  through the channels.
+- **Telegram's website** is blocked or broken on some Indian networks. Where that is so, the
+  channel half has to run somewhere else (`USE_CHANNELS=0` on that machine).
+
+So GitHub Actions can run everything that works today. A device at home or a small server gives a
+steadier 60-second loop, with the cautions below.
 
 Run `python -m lootwatch --doctor` on the machine you are considering. It prints, for every
 channel and store page, whether that machine can read it.
@@ -139,11 +155,10 @@ give the **max priority** category a loud, distinct sound and let it override Do
 ### Choosing category pages and floors
 
 - Use a **leaf category** (Laptops, not Computers) with a **price cap** and **cheapest-first** sort.
-  On Amazon: `https://www.amazon.in/s?rh=n%3A<category id>%2Cp_36%3A-<cap in paise>&s=price-asc-rank`.
-  `watchlist.txt` ships with the IDs for phones, laptops, TVs, tablets, fridges, washing machines,
-  air conditioners and monitors.
+  On Flipkart: `https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc`. `watchlist.txt` ships
+  with phones, laptops, TVs, tablets, fridges, washing machines, air conditioners and monitors.
 - Set the **floor** well below the cheapest real product of that category.
-- A new item under the floor only alerts if its list price is at least `FLOOR_MRP_RATIO` (4) times
+- A new item under the floor only alerts if its list price is at least `FLOOR_MRP_RATIO` (3) times
   the floor. That is what keeps toy laptops and phone cases quiet.
 - Categories where cheap things with huge "MRPs" are normal (smart watches, earbuds) do not suit
   floors. Use traps for those.
@@ -174,11 +189,13 @@ python -m lootwatch               # scan forever
 | `NTFY_TOPIC` | – | **Required.** Your ntfy topic |
 | `NTFY_TOKEN` | – | ntfy access token (optional) |
 | `NTFY_SERVER` | `https://ntfy.sh` | Use your own ntfy server if you have one |
-| `MIN_DISCOUNT` | `80` | Percent off needed for any alert |
-| `URGENT_DISCOUNT` | `95` | Percent off that makes an alert max priority by itself |
-| `URGENT_MIN_SAVING` | `2000` | Rupees saved that make an alert max priority |
+| `MIN_DISCOUNT` | `80` | Lowest discount in a deal post that can alert |
+| `HIGH_DISCOUNT` / `URGENT_DISCOUNT` | `90` / `95` | The upper rungs of the discount ladder |
+| `MIN_SAVING` / `URGENT_MIN_SAVING` / `BIG_SAVING` | `1000` / `2000` / `20000` | Rupees saved needed on each rung |
+| `LOOT_PRICE` | `10` | A price this low counts even when the rupee saving is small |
+| `USE_CHANNELS` / `USE_STORE_PAGES` | `1` / `1` | Switch either half off on a machine that cannot reach it |
 | `WATCH_DROP_PCT` | `50` | Fall against a watched product's own usual price |
-| `FLOOR_MRP_RATIO` | `4` | A new item under a floor needs a list price this many times the floor |
+| `FLOOR_MRP_RATIO` | `3` | A new item under a floor needs a list price this many times the floor |
 | `MAX_POST_AGE_MIN` | `20` | Channel posts older than this are ignored |
 | `DEDUP_HOURS` | `12` | Same deal is not pushed again within this time unless it gets 10% cheaper |
 | `TRENDING_CHANNELS` / `TRENDING_WINDOW_MIN` | `3` / `20` | When a quiet deal turns urgent |
@@ -203,15 +220,14 @@ python -m lootwatch               # scan forever
 
 ## What has and has not been verified
 
-Verified by the test suite (`python -m unittest discover -s tests -t .`, Python 3.11 to 3.13):
-price parsing, alert priorities, floors, traps, de-duplication across sources and restarts,
-trusted-link handling, delivery retries, the daily budget, the health alarms, and the whole path
-from a change on a (local, simulated) page to the JSON that reaches ntfy.
-
-**Not yet verified against the live sites.** The first `--doctor` run on your real host is the
-actual test of which channels are readable, whether the stores answer that host, and whether
-their pages still match the parsers. The Amazon category IDs and URL parts in `watchlist.txt`
-were confirmed from Amazon's own indexed URLs; the Flipkart ones are from memory.
+- **Test suite** (`python -m unittest discover -s tests -t .`, Python 3.11 to 3.13): price parsing,
+  priorities, floors, traps, de-duplication across sources and restarts, link trust, delivery
+  retries, the daily budget, the health alarms, and the whole path from a change on a simulated
+  page to the JSON that reaches ntfy.
+- **Live, 10 November 2026:** the Telegram reader on ten channels, the Flipkart category and
+  search pages, and the priority ladder replayed against about 200 real posts.
+- **Not verified:** Amazon (refused), Myntra and other stores (never tried live), quick commerce
+  (not read at all), and how many minutes Flipkart's listing pages lag a price change.
 
 Price errors are often cancelled by the store, and channel posts can be wrong or bait. Check the
 price on the store's own page before paying, and never pay on a site you do not recognise.

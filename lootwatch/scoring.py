@@ -1,17 +1,20 @@
 """Decide whether something is worth a push, and how loudly.
 
-Tiers map straight onto ntfy priorities:
+Tiers map straight onto ntfy priorities.
 
-* URGENT (5) - looks like a real price error: says so in words, trips one of
-  your keyword traps, or is a stated price/MRP pair at or beyond the discount
-  threshold with a large rupee saving.
-* HIGH (4)   - at or beyond the discount threshold, but small-ticket or less certain.
-* NORMAL (3) - shown without sound; used for deals whose link could not be
-  tied to a known store.
+For a deal post (a channel message or feed entry) the priority follows the discount, and each
+rung also needs real money saved, because percent-off alone is cheap talk: on real channels a
+₹79 cleaning kit with a ₹999 "MRP" is posted as "92% off" every day.
 
-"% off MRP" alone is a weak signal in India (a ₹99 cable with a ₹1,999 MRP is
-"95% off" every day), which is why the rupee saving, your traps and a product's
-own price history carry the urgent tier.
+* URGENT (5) - 95% off or more saving ₹2,000 or more; 90% off or more saving ₹20,000 or more;
+               a keyword trap; "price error" wording.
+* HIGH (4)   - 90% off or more saving ₹1,000 or more, or at a give-away price (₹10 or less).
+* NORMAL (3) - 80% off or more saving ₹2,000 or more; also any deal whose link could not be
+               tied to a known store.
+
+For a product read from a store page the signals are stronger and all urgent: it appeared under
+its category page's price floor, it hit your target, it tripped a trap, or it fell far below the
+price this monitor has been seeing for it.
 """
 
 from __future__ import annotations
@@ -116,21 +119,54 @@ def evaluate_text(text: str, settings: Settings) -> Optional[Verdict]:
         return Verdict(TIER_URGENT, f"trap '{trap.name}' at or under {fmt_inr(trap.max_price)}", price, mrp, discount,
                        label="Trap hit")
 
-    confident = parsed.pair_conf in ("labelled", "arrow")
-    discount = parsed.calc_discount if parsed.pair_conf else 0.0
-    price, mrp = parsed.price, (parsed.mrp if parsed.pair_conf else None)
-
     if parsed.error_phrase:
-        return Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp, discount, label="Price error?")
+        price = parsed.price
+        mrp = parsed.mrp if parsed.pair_conf else None
+        return Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp,
+                       parsed.calc_discount if parsed.pair_conf else 0.0, label="Price error?")
 
-    if parsed.pair_conf and discount >= settings.min_discount:
-        if confident and (parsed.saving >= settings.urgent_min_saving or discount >= settings.urgent_discount):
-            return Verdict(TIER_URGENT, f"{discount:.0f}% off, saves {fmt_inr(parsed.saving)}", price, mrp, discount)
-        reason = f"{discount:.0f}% off MRP" if confident else f"{discount:.0f}% off (prices not labelled)"
-        return Verdict(TIER_HIGH, reason, price, mrp, discount, needs_trusted_link=not confident)
+    # 1. A stated price and MRP.
+    if parsed.pair_conf:
+        confident = parsed.pair_conf in ("labelled", "arrow")
+        discount = parsed.calc_discount
+        tier = _ladder(discount, parsed.saving, parsed.price, settings)
+        if tier:
+            reason = f"{discount:.0f}% off, saves {fmt_inr(parsed.saving)}"
+            if not confident:
+                tier = min(tier, TIER_HIGH)
+                reason += " (prices not labelled)"
+            return Verdict(tier, reason, parsed.price, parsed.mrp, discount, needs_trusted_link=not confident)
+        return None
 
-    if parsed.pct_claim is not None and parsed.pct_claim >= settings.min_discount:
-        return Verdict(TIER_HIGH, f"claims {parsed.pct_claim:.0f}% off", price, None, parsed.pct_claim)
+    # 2. A stated price and a stated percentage ("₹6,294 / 80% off"): the saving follows from the two.
+    claim, lone = parsed.pct_claim, parsed.lone_price
+    if claim is not None and lone is not None and 0 < claim < 100:
+        saving = lone * claim / (100.0 - claim)
+        tier = _ladder(claim, saving, lone, settings)
+        if tier:
+            return Verdict(tier, f"stated as {claim:.0f}% off, about {fmt_inr(saving)} saved", lone, None, claim)
+        return None
+
+    # 3. Only a percentage, no price at all: worth a look only when it is extreme.
+    if claim is not None and claim >= settings.urgent_discount and lone is None:
+        return Verdict(TIER_HIGH, f"claims {claim:.0f}% off", None, None, claim)
+    return None
+
+
+def _ladder(discount: float, saving: float, price: Optional[float], settings: Settings) -> Optional[int]:
+    """Priority for a stated discount. Percent-off alone is cheap talk in India (a ₹79 gadget with a
+    ₹999 "MRP" is "92% off" every day), so each rung also needs real rupees saved, or a give-away price."""
+    loot = price is not None and price <= settings.loot_price
+    if discount >= settings.urgent_discount:
+        if saving >= settings.urgent_min_saving:
+            return TIER_URGENT
+        return TIER_HIGH if (saving >= settings.min_saving or loot) else None
+    if discount >= settings.high_discount:
+        if saving >= settings.big_saving:
+            return TIER_URGENT  # an iPhone at ₹6,999: "only" 91% off, but ₹72,000 is not a rounding error
+        return TIER_HIGH if (saving >= settings.min_saving or loot) else None
+    if discount >= settings.min_discount:
+        return TIER_NORMAL if saving >= settings.urgent_min_saving else None
     return None
 
 

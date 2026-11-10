@@ -9,7 +9,7 @@
 #                price error is caught at the store itself, with no deal channel involved.
 #                  - The first read of a page only records what is normal on it. After that, anything NEW
 #                    at or under the floor alerts, and so does anything that FALLS to it.
-#                  - A NEW item under the floor counts only if its list price (MRP) is at least 4x the
+#                  - A NEW item under the floor counts only if its list price (MRP) is at least 3x the
 #                    floor (FLOOR_MRP_RATIO): toy laptops and phone cases stay quiet.
 #                  - Accessories, spares and refurbished units are skipped.
 #                  - Every product on the page is also checked against traps.txt and its own price history.
@@ -26,43 +26,47 @@
 #   - Blinkit, Zepto and Swiggy Instamart build their pages in the app for your delivery location, so a
 #     plain page fetch usually finds no prices.
 
-# --- Amazon.in category pages with a price cap, cheapest first.
-# URL = category (rh=n:<id>) + price cap in paise (p_36:-<cap>) + cheapest-first sort. These parts were
-# confirmed from Amazon's own URLs. The floor after the "|" matches the cap.
-https://www.amazon.in/s?rh=n%3A1805560031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon smartphones under 2,000
-https://www.amazon.in/s?rh=n%3A1375424031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon laptops under 5,000
-https://www.amazon.in/s?rh=n%3A1389396031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon TVs under 3,000
-https://www.amazon.in/s?rh=n%3A1375458031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon tablets under 2,000
-https://www.amazon.in/s?rh=n%3A1380365031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon refrigerators under 3,000
-https://www.amazon.in/s?rh=n%3A1380369031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon washing machines under 3,000
-https://www.amazon.in/s?rh=n%3A3474656031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon air conditioners under 5,000
-https://www.amazon.in/s?rh=n%3A1375425031%2Cp_36%3A-150000&s=price-asc-rank | 1500 | Amazon monitors under 1,500
-
-# --- Amazon best sellers: real, popular products. No floor: each alerts when it falls 50% below
-#     the price this monitor has been seeing for it, or trips a trap.
-https://www.amazon.in/gp/bestsellers/electronics/1805560031 | | Amazon best-selling smartphones
-https://www.amazon.in/gp/bestsellers/computers/1375424031 | | Amazon best-selling laptops
-
-# --- Flipkart category pages, cheapest first. Confirmed readable from a home connection (10 Nov 2026).
-#     The plain mobiles page is all feature phones under Rs 1,100; that is fine: a mispriced phone at
-#     Rs 400 would sort above them. The "smartphones only" line uses a filter that is not yet confirmed.
-https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&sort=price_asc | 2000 | Flipkart mobiles
-https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=price_asc | 2500 | Flipkart smartphones only
+# --- Flipkart category pages, cheapest first. Every one of these was read correctly from GitHub's servers
+#     and from a home connection on 10 Nov 2026. Each floor sits well below the cheapest real product the
+#     page showed that day (smartphones from Rs 8,299, laptops Rs 14,990, TVs Rs 5,749, fridges Rs 6,990,
+#     washing machines Rs 5,149, air conditioners Rs 22,490, monitors Rs 2,499).
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=price_asc | 2500 | Flipkart smartphones
 https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc | 5000 | Flipkart laptops
-https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=price_asc | 3000 | Flipkart TVs
-https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=price_asc | 2000 | Flipkart tablets
-https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=price_asc | 3000 | Flipkart refrigerators
-https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=price_asc | 3000 | Flipkart washing machines
-https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=price_asc | 5000 | Flipkart air conditioners
-https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=price_asc | 1500 | Flipkart monitors
-https://www.flipkart.com/gaming-consoles/pr?sid=4rr%2Cx1m&sort=price_asc | 3000 | Flipkart gaming consoles
-https://www.flipkart.com/dslr-mirrorless/pr?sid=jek%2Cp31%2Ctrv&sort=price_asc | 3000 | Flipkart cameras
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=price_asc | 2000 | Flipkart TVs
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=price_asc | 1500 | Flipkart tablets
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=price_asc | 2500 | Flipkart refrigerators
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=price_asc | 2000 | Flipkart washing machines
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=price_asc | 7000 | Flipkart air conditioners
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=price_asc | 900 | Flipkart monitors
+
+# --- Flipkart's most popular products. No floor: each one alerts when it falls 50% below the price this
+#     monitor has been seeing for it, or trips a trap.
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity | | Flipkart popular smartphones
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=popularity | | Flipkart popular laptops
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=popularity | | Flipkart popular TVs
+
+# --- not confirmed yet (a brand filter in the same style as the smartphones one; --doctor will show)
+https://www.flipkart.com/gaming-consoles/pr?sid=4rr%2Cx1m&p%5B%5D=facets.brand%255B%255D%3DSony&p%5B%5D=facets.brand%255B%255D%3DMicrosoft&p%5B%5D=facets.brand%255B%255D%3DNintendo&sort=price_asc | 5000 | Flipkart consoles
 
 # --- searches (products on them alert through traps.txt and their own price history)
-https://www.amazon.in/s?k=nothing+phone
 https://www.flipkart.com/search?q=nothing+phone
 
+# --- Amazon.in: switched off. On 10 Nov 2026 Amazon answered both GitHub's servers and a home phone with a
+#     JavaScript check that only a real browser passes, so these pages cannot be read by this monitor today.
+#     They are kept here (category + price cap in paise + cheapest first) for a machine where --doctor shows
+#     them as OK: remove the leading "# " to try.
+# https://www.amazon.in/s?rh=n%3A1805560031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon smartphones under 2,000
+# https://www.amazon.in/s?rh=n%3A1375424031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon laptops under 5,000
+# https://www.amazon.in/s?rh=n%3A1389396031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon TVs under 3,000
+# https://www.amazon.in/s?rh=n%3A1375458031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon tablets under 2,000
+# https://www.amazon.in/s?rh=n%3A1380365031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon refrigerators under 3,000
+# https://www.amazon.in/s?rh=n%3A1380369031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon washing machines under 3,000
+# https://www.amazon.in/s?rh=n%3A3474656031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon air conditioners under 5,000
+# https://www.amazon.in/s?rh=n%3A1375425031%2Cp_36%3A-150000&s=price-asc-rank | 1500 | Amazon monitors under 1,500
+# https://www.amazon.in/gp/bestsellers/electronics/1805560031 | | Amazon best-selling smartphones
+# https://www.amazon.in/gp/bestsellers/computers/1375424031 | | Amazon best-selling laptops
+# https://www.amazon.in/s?k=nothing+phone
+
 # --- examples (remove the leading "# " and put in real links)
-# https://www.amazon.in/dp/B0XXXXXXXX | 5000 | Nothing Phone 3a
-# https://www.flipkart.com/some-product/p/itmxxxxxxxx?pid=MOBXXXXXXXXXXXXX | 5000
+# https://www.flipkart.com/some-product/p/itmxxxxxxxx?pid=MOBXXXXXXXXXXXXX | 5000 | a product with a target price
 # https://www.myntra.com/puma-shoes?sort=discount

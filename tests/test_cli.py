@@ -84,7 +84,7 @@ class CommandLine(CleanEnv):
         self.assertEqual((settings.min_discount, settings.urgent_min_saving, settings.interval), (80.0, 2000.0, 60))
         self.assertEqual((settings.ntfy_topic, settings.ntfy_token, settings.ntfy_server), ("", "", "https://ntfy.sh"))
         self.assertEqual((settings.heartbeat_hour, settings.daily_alert_limit), (9, 200))
-        self.assertEqual((settings.urgent_discount, settings.floor_mrp_ratio, settings.curl_impersonate), (95.0, 4.0, "chrome124"))
+        self.assertEqual((settings.urgent_discount, settings.floor_mrp_ratio, settings.curl_impersonate), (95.0, 3.0, "chrome124"))
 
     def test_shipped_list_files_parse_cleanly(self):
         root = Path(__file__).resolve().parent.parent
@@ -96,18 +96,12 @@ class CommandLine(CleanEnv):
         self.assertIn("desidime", settings.channels)
         self.assertEqual(len(settings.channels), len({c.lower() for c in settings.channels}))
         urls = [w.url for w in settings.watchlist]
-        self.assertEqual(len(urls), 23)
-        self.assertIn("https://www.amazon.in/s?k=nothing+phone", urls)
-        laptops = next(w for w in settings.watchlist if "1375424031%2Cp_36" in w.url)
-        self.assertEqual((laptops.target, laptops.label), (5000.0, "Amazon laptops under 5,000"))
-        best = next(w for w in settings.watchlist if "bestsellers/computers" in w.url)
-        self.assertEqual((best.target, best.label), (None, "Amazon best-selling laptops"))
-        # every Amazon cap in the URL (paise) matches the floor after the "|" (rupees)
-        import re
-        for item in settings.watchlist:
-            cap = re.search(r"p_36%3A-(\d+)", item.url)
-            if cap:
-                self.assertEqual(int(cap.group(1)) / 100, item.target, item.url)
+        self.assertEqual(len(urls), 13)
+        self.assertTrue(all("flipkart.com" in u for u in urls), "Amazon pages ship switched off")
+        laptops = next(w for w in settings.watchlist if w.label == "Flipkart laptops")
+        self.assertEqual(laptops.target, 5000.0)
+        popular = next(w for w in settings.watchlist if w.label == "Flipkart popular laptops")
+        self.assertIsNone(popular.target)
         self.assertGreaterEqual(len(settings.traps), 4)
         self.assertEqual(settings.feeds, [])
 
@@ -147,7 +141,7 @@ class Doctor(CleanEnv):
         now = time.time()
         self.web.redirects["/r/x"] = "https://www.amazon.in/dp/B0ABCDEFGH"
         self.web.post("alpha", 1, 'Sony XM5 @ ₹400 (MRP ₹34,990) <a href="https://amzn.to/abc">x</a>', now - 90)
-        self.web.post("alpha", 2, 'USB cable @ ₹99 (MRP ₹999) <a href="https://lootshop.example/p/1">x</a>', now - 30)
+        self.web.post("alpha", 2, 'USB cable @ ₹99 (MRP ₹1,999) <a href="https://lootshop.example/p/1">x</a>', now - 30)
         self.web.post("quiet", 1, "hello", now - 10 * 86400)
         self.web.no_preview.add("ghost")
         self.web.pages["/feed.xml"] = '<?xml version="1.0"?><rss version="2.0"><channel><item><title>A @ ₹1 (MRP ₹9,000)</title></item></channel></rss>'
@@ -172,7 +166,7 @@ class Doctor(CleanEnv):
         code = run_doctor(settings, out)
         report = out.getvalue()
         self.assertEqual(code, 0)
-        self.assertRegex(report, r"OK\s+@alpha\s+2 posts, newest 30s ago \| would alert: 1 urgent, 1 high")
+        self.assertRegex(report, r"OK\s+@alpha\s+2 posts, newest 30s ago \| would alert: 1 urgent, 1 high, 0 quiet")
         self.assertIn("99% off · ₹400 (MRP ₹34,990)", report)
         self.assertRegex(report, r"WARN\s+@quiet .*quiet for days")
         self.assertRegex(report, r"FAIL\s+@ghost\s+no public preview")
@@ -252,7 +246,7 @@ class Transport(unittest.TestCase):
         self.assertFalse(fetch.policy_for("t.me").sniff_challenge)
         self.assertTrue(fetch.policy_for("www.amazon.in").sniff_challenge)
         self.assertTrue(fetch.policy_for("www.amazon.in").impersonate)
-        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 6.0)
+        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 5.0)
 
     def test_amazon_waf_answer_counts_as_a_refusal(self):
         self.web.status_for["/waf"] = 202

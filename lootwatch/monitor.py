@@ -309,9 +309,10 @@ class Monitor:
                     self._count("duplicates")
                     return False
                 if trending and not louder:
+                    # Channels copy each other, so a repeat is weak evidence: one step louder, no more.
                     self.db.set(f"trend:{fingerprint}", int(now))
-                    verdict.tier = TIER_URGENT
-                    payload = dict(payload, priority=TIER_URGENT, tags=_TAGS[TIER_URGENT],
+                    verdict.tier = min(TIER_URGENT, prev_tier + 1)
+                    payload = dict(payload, priority=verdict.tier, tags=_TAGS[verdict.tier],
                                    title=f"Now in {sources} channels: {payload.get('title', '')}"[:180])
                 elif cheaper:
                     payload = dict(payload, title=f"Lower now: {payload.get('title', '')}"[:180])

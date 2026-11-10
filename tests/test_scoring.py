@@ -4,7 +4,7 @@ from pathlib import Path
 
 from lootwatch.config import Settings, load_traps
 from lootwatch.db import PriceInfo
-from lootwatch.scoring import TIER_HIGH, TIER_URGENT, evaluate_offer, evaluate_text, is_accessory, is_side_product
+from lootwatch.scoring import TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_offer, evaluate_text, is_accessory, is_side_product
 
 
 def make_settings(traps: str = "") -> Settings:
@@ -31,14 +31,48 @@ class TextVerdicts(unittest.TestCase):
         self.assertIn("99% off", verdict.headline)
         self.assertIn("₹400 (MRP ₹34,990)", verdict.headline)
 
-    def test_small_ticket_is_high_not_urgent(self):
-        self.assertEqual(self.tier("USB cable @ ₹99 (MRP ₹999)"), TIER_HIGH)  # 90% off but saves ₹900
+    def test_priority_ladder(self):
+        cases = [
+            # 95%+ : urgent when it saves real money, high when it is a give-away price, else nothing
+            ("Sony WH-1000XM5 @ ₹400 (MRP ₹34,990)", TIER_URGENT),
+            ("Gulab Jamun 1kg @ ₹1 (MRP ₹250)", TIER_HIGH),
+            ("Amul Butter 500g @ ₹9 (MRP ₹285)", TIER_HIGH),
+            ("USB cable @ ₹29 (MRP ₹999)", None),                     # 97% off a "₹999" cable: everyday noise
+            ("Smart band @ ₹99 (MRP ₹1,999)", TIER_HIGH),              # 95%, saves ₹1,900
+            # 90-95% : high when it saves ₹1,000+, urgent when it saves ₹20,000+
+            ("Sounce cleaning kit\nDeal Price: ₹79 (MRP ₹999)", None),
+            ("Fire-Boltt watch @ ₹1,099 (MRP ₹14,999)", TIER_HIGH),
+            ("iPhone 16 (128 GB)\nDeal Price: ₹6,999 (MRP ₹79,900)", TIER_URGENT),
+            # 80-90% : a quiet alert, only when it saves ₹2,000+
+            ("wipro 9W LED Bulb\nDeal Price: ₹46 (MRP ₹240)", None),
+            ("Beetel Power Bank\nDeal Price: ₹890 (MRP ₹4999)", TIER_NORMAL),
+            ("Symbol Jogger\nDeal Price: ₹349 (MRP ₹2599)", TIER_NORMAL),
+            # under 80%
+            ("boAt Rockerz 450 @ ₹1,499 (MRP ₹3,990)", None),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(self.tier(text), expected)
 
-    def test_priority_follows_the_discount(self):
-        self.assertIsNone(self.tier("Sunflower oil 1L @ ₹120 (MRP ₹199)"))          # 40% off: nothing
-        self.assertEqual(self.tier("Amul Butter 500g @ ₹55 (MRP ₹285)"), TIER_HIGH)   # 81% off: high
-        self.assertEqual(self.tier("Amul Butter 500g @ ₹9 (MRP ₹285)"), TIER_URGENT)  # 97% off: urgent, small as it is
-        self.assertEqual(self.tier("Gulab Jamun 1kg @ ₹1 (MRP ₹250)"), TIER_URGENT)
+    def test_price_with_a_stated_percentage(self):
+        # DesiDime's format: a price and a percentage, no MRP. The saving follows from the two.
+        verdict = evaluate_text("🔥 Nothing Earbuds Pro\n💰 ₹400 / 99% off\n🔗 On Flipkart", make_settings())
+        self.assertEqual((verdict.tier, verdict.price, verdict.mrp), (TIER_URGENT, 400, None))
+        self.assertIn("about ₹39,600 saved", verdict.reason)
+        self.assertEqual(self.tier("🧹 MILAGROW Robotic Vacuum Cleaner\n💰 ₹6,294 / 80% off"), TIER_NORMAL)
+        self.assertIsNone(self.tier("🌿 Plant Stand\n💰 ₹290 / 82% off"))
+        self.assertEqual(self.tier("Jiomart 99% off - Rs. 1\nRead More - https://ddime.in/h6UM"), TIER_HIGH)
+        self.assertIsNone(self.tier("77% off on - Samsung 24-Inch Curved Monitor - Rs. 3735"))
+
+    def test_percentage_alone_needs_to_be_extreme(self):
+        self.assertIsNone(self.tier("86% Off - LED Motorcycle Driving Spot Lights\nhttps://fkm.asia/4zn5"))
+        self.assertIsNone(self.tier("Min 80% Off Bewakoof Clothing."))
+        self.assertIsNone(self.tier("Flat 85% off on Puma shoes today"))
+        self.assertEqual(self.tier("96% Off - Philips Trimmer\nhttps://fkm.asia/x"), TIER_HIGH)
+
+    def test_capped_coupons_and_closed_deals_are_not_deals(self):
+        self.assertIsNone(self.tier("SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)"))
+        self.assertIsNone(self.tier("[ OVER ] Big Loot ₹1 (MRP ₹5,000) : https://instamart.in/item/x"))
 
     def test_below_threshold_is_ignored(self):
         self.assertIsNone(self.tier("boAt Rockerz 450 @ ₹1,499 (MRP ₹3,990)"))  # 62%
@@ -49,9 +83,6 @@ class TextVerdicts(unittest.TestCase):
 
     def test_upto_claims_do_not_alert(self):
         self.assertIsNone(self.tier("Upto 90% off on Fashion, shop now"))
-
-    def test_exact_claim_without_prices_is_high(self):
-        self.assertEqual(self.tier("Flat 85% off on Puma shoes today"), TIER_HIGH)
 
     def test_expired_and_denied_posts_are_ignored(self):
         self.assertIsNone(self.tier("Price error deal over ❌ expired"))
@@ -153,7 +184,8 @@ class OfferVerdicts(unittest.TestCase):
         self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=1999))
         self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=9999))
         self.assertIsNone(self.floor("Mini Notebook", 999, self.NEW, mrp=None))
-        self.assertIsNotNone(self.floor("Lenovo IdeaPad Slim 3", 999, self.NEW, mrp=16000))  # 4 x the floor
+        self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=11999))
+        self.assertIsNotNone(self.floor("Lenovo IdeaPad Slim 3", 999, self.NEW, mrp=12000))  # 3 x the floor
 
     def test_first_read_of_a_listing_is_only_a_baseline(self):
         self.assertIsNone(self.floor("HP Laptop 15s", 600, self.NEW, baseline=True))

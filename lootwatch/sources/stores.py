@@ -176,6 +176,38 @@ def _amazon_listing(soup: BeautifulSoup) -> PageResult:
 
 
 # -------------------------------------------------------------- Flipkart ----
+_RUPEE_IN_TEXT = re.compile(r"₹\s*([\d,]+(?:\.\d{1,2})?)")
+_PCT_OFF = re.compile(r"(\d{1,2})\s*%\s*off", re.I)
+
+
+def _price_and_mrp(text: str) -> tuple:
+    """(price, mrp) from the visible text of one product card.
+
+    The first ₹ amount is the selling price. The crossed-out MRP follows it directly; some sites
+    (Flipkart) render it as "₹" and the digits in separate text nodes, which is why this works on
+    the card's joined text and not on individual nodes. When only "N% off" is shown, the MRP is
+    worked back from it.
+    """
+    amounts = [(m.start(), m.end(), parse_amount(m.group(1))) for m in _RUPEE_IN_TEXT.finditer(text)]
+    amounts = [a for a in amounts if a[2]]
+    if not amounts:
+        return None, None
+    _, price_end, price = amounts[0]
+    mrp = None
+    if len(amounts) > 1 and amounts[1][0] - price_end <= 3 and amounts[1][2] > price:
+        mrp = amounts[1][2]
+    pct = _PCT_OFF.search(text)
+    if pct and 0 < int(pct.group(1)) < 100:
+        stated = int(pct.group(1))
+        # The percentage is shown rounded, and near 90%+ one point moves the implied MRP a long way,
+        # so accept any crossed-out price consistent with the stated figure give or take 1.5 points.
+        low = price / (1 - max(stated - 1.5, 0.0) / 100.0)
+        high = price / (1 - min(stated + 1.5, 99.5) / 100.0)
+        if mrp is None or not low <= mrp <= high:
+            mrp = round(price / (1 - stated / 100.0))  # no usable crossed-out price: work it back
+    return price, _clean_mrp(price, mrp)
+
+
 def _flipkart_listing(soup: BeautifulSoup) -> PageResult:
     offers: List[Offer] = []
     seen = set()
@@ -184,8 +216,8 @@ def _flipkart_listing(soup: BeautifulSoup) -> PageResult:
         if not re.fullmatch(r"[A-Z0-9]{10,20}", pid) or pid in seen:
             continue
         link = card.select_one('a[href*="/p/"]')
-        prices = _rupee_values(card)
-        if not link or not prices:
+        price, mrp = _price_and_mrp(card.get_text(" ", strip=True))
+        if not link or not price:
             continue
         title_el = card.select_one("a[title]")
         image = card.select_one("img[alt]")
@@ -193,8 +225,6 @@ def _flipkart_listing(soup: BeautifulSoup) -> PageResult:
         title = title.strip() or link.get_text(" ", strip=True)[:200]
         if not title:
             continue
-        price = prices[0]
-        mrp = _clean_mrp(price, prices[1] if len(prices) > 1 else None)
         href = urljoin("https://www.flipkart.com", str(link.get("href", "")))
         seen.add(pid)
         offers.append(Offer(f"flipkart:{pid}", "flipkart.com", title, price, mrp, href))
@@ -349,10 +379,15 @@ def _meta(soup: BeautifulSoup, *names: str) -> str:
 
 def _struck_after(soup: BeautifulSoup, price: float) -> Optional[float]:
     """The first larger ₹ amount shown right after the selling price (the crossed-out MRP)."""
-    values = _rupee_values(soup)[:40]
-    for index, value in enumerate(values):
-        if abs(value - price) < 0.5:
-            return next((v for v in values[index + 1:index + 4] if v > price), None)
+    body = soup.body or soup
+    text = body.get_text(" ", strip=True)[:60000]
+    values = [(m.end(), parse_amount(m.group(1))) for m in _RUPEE_IN_TEXT.finditer(text)][:60]
+    for index, (end, value) in enumerate(values):
+        if value and abs(value - price) < 0.5:
+            for _, later in values[index + 1:index + 4]:
+                if later and later > price:
+                    return later
+            return None
     return None
 
 
