@@ -145,13 +145,18 @@ On Android, an old phone left on its charger does this without touching your mai
 5. **Run workflow → `doctor`.** The log lists what GitHub's servers can and cannot read.
 6. The schedule is on: a run starts every 5 minutes and scans once a minute until the next is due.
    To pause it: Actions → Loot monitor → "..." → Disable workflow.
+7. If no run starts by itself (GitHub's scheduler can leave a new repository waiting for hours, and
+   on 10 November 2026 it started none in six): **Settings → Secrets and variables → Actions →
+   Variables → New repository variable**, name `KEEP_RUNNING`, value `1`, then start one run by
+   hand (Run workflow → `run`). Each run then starts the next when it ends. Set the variable to
+   `0`, or cancel the run in progress, to stop.
 
 Cautions for this route:
 
 - Scheduled runs start late when GitHub is busy, sometimes by many minutes.
 - GitHub's terms say hosted runners are for work related to the repository's software, not a
-  general-purpose always-on job. A personal monitor like this is a grey area; if you rely on it,
-  a home device or a server is the proper home.
+  general-purpose always-on job. A personal monitor like this is a grey area, and `KEEP_RUNNING`
+  makes it run without a break; if you rely on it, a home device or a server is the proper home.
 - Schedules in a public repository are switched off after 60 days without repository activity.
 - Run logs are public. They show deal text, never your topic or token.
 

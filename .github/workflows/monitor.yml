@@ -8,6 +8,11 @@ on:
   # GitHub is busy. That is why each run keeps scanning for nearly five minutes (one scan
   # per minute) instead of looking once and leaving.
   # To pause the monitor: Actions tab -> Loot monitor -> "..." -> Disable workflow.
+  #
+  # GitHub's scheduler sometimes does not start runs at all (new repositories especially).
+  # For that case there is a switch, off by default: set the repository variable KEEP_RUNNING
+  # to 1 (Settings -> Secrets and variables -> Actions -> Variables) and start one run by hand.
+  # From then on every run starts the next one when it ends. Set it back to 0 to stop.
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
@@ -65,6 +70,9 @@ jobs:
       WATCHLIST_FILE: ${{ inputs.watchlist_file || 'watchlist.txt' }}
       DB_PATH: state/lootwatch.db
     steps:
+      - name: Note the start time
+        run: echo "STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
@@ -116,3 +124,15 @@ jobs:
           gh cache list --repo "$GITHUB_REPOSITORY" --key lootwatch-state- --sort created_at --order desc \
             --limit 100 --json id --jq '.[3:][].id' \
             | xargs -r -n 1 gh cache delete --repo "$GITHUB_REPOSITORY"
+
+      # Only with KEEP_RUNNING=1 (see the top of this file). Not after a cancelled run, so
+      # cancelling a run stops the chain. A run that ended early waits out its five minutes
+      # first: a broken run must never turn into a rapid loop.
+      - name: Start the next run
+        if: ${{ !cancelled() && env.MODE == 'run' && vars.KEEP_RUNNING == '1' && github.ref == 'refs/heads/main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          elapsed=$(( $(date +%s) - STARTED_AT ))
+          if [ "$elapsed" -lt 270 ]; then sleep $(( 270 - elapsed )); fi
+          gh workflow run monitor.yml --repo "$GITHUB_REPOSITORY" --ref main -f mode=run
