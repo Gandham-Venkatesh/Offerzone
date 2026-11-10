@@ -177,7 +177,10 @@ def _amazon_listing(soup: BeautifulSoup) -> PageResult:
 
 # -------------------------------------------------------------- Flipkart ----
 _RUPEE_IN_TEXT = re.compile(r"₹\s*([\d,]+(?:\.\d{1,2})?)")
-_PCT_OFF = re.compile(r"(\d{1,2})\s*%\s*off", re.I)
+_PCT_OFF = re.compile(r"(\d{1,3})\s*%\s*off", re.I)
+# "Upto ₹15,250 Off on Exchange", "No Cost EMI from ₹1,383/month": amounts of an offer, never the price.
+_OFFER_BEFORE = re.compile(r"(?:\bup\s?to|\bextra|\bsave|\bfrom|\bflat)\s*$", re.I)
+_OFFER_AFTER = re.compile(r"^\s*(?:off\b|/\s*mo|per\s+month|a\s+month|cash\s?back|emi\b|discount)", re.I)
 
 
 def _price_and_mrp(text: str) -> tuple:
@@ -186,10 +189,17 @@ def _price_and_mrp(text: str) -> tuple:
     The first ₹ amount is the selling price. The crossed-out MRP follows it directly; some sites
     (Flipkart) render it as "₹" and the digits in separate text nodes, which is why this works on
     the card's joined text and not on individual nodes. When only "N% off" is shown, the MRP is
-    worked back from it.
+    worked back from it. A card with no price of its own (unavailable, coming soon) yields nothing,
+    even if it still carries an exchange or EMI line.
     """
-    amounts = [(m.start(), m.end(), parse_amount(m.group(1))) for m in _RUPEE_IN_TEXT.finditer(text)]
-    amounts = [a for a in amounts if a[2]]
+    amounts = []
+    for match in _RUPEE_IN_TEXT.finditer(text):
+        value = parse_amount(match.group(1))
+        if not value:
+            continue
+        if _OFFER_BEFORE.search(text[max(0, match.start() - 14):match.start()]) or _OFFER_AFTER.match(text[match.end():match.end() + 16]):
+            continue
+        amounts.append((match.start(), match.end(), value))
     if not amounts:
         return None, None
     _, price_end, price = amounts[0]
@@ -197,12 +207,14 @@ def _price_and_mrp(text: str) -> tuple:
     if len(amounts) > 1 and amounts[1][0] - price_end <= 3 and amounts[1][2] > price:
         mrp = amounts[1][2]
     pct = _PCT_OFF.search(text)
-    if pct and 0 < int(pct.group(1)) < 100:
-        stated = int(pct.group(1))
+    stated = int(pct.group(1)) if pct else 0
+    if 0 < stated < 100:
         # The percentage is shown rounded, and near 90%+ one point moves the implied MRP a long way,
         # so accept any crossed-out price consistent with the stated figure give or take 1.5 points.
+        # From 98% up there is no upper limit: a ₹74,990 laptop at ₹149 is 99.8% off and still
+        # shown as "99% off", and that is exactly the card that must keep its real list price.
         low = price / (1 - max(stated - 1.5, 0.0) / 100.0)
-        high = price / (1 - min(stated + 1.5, 99.5) / 100.0)
+        high = float("inf") if stated >= 98 else price / (1 - (stated + 1.5) / 100.0)
         if mrp is None or not low <= mrp <= high:
             mrp = round(price / (1 - stated / 100.0))  # no usable crossed-out price: work it back
     return price, _clean_mrp(price, mrp)

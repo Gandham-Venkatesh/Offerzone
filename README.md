@@ -9,9 +9,11 @@ a small server.
 Each scan (default: every 60 seconds) it looks in three places, in this order of importance:
 
 1. **Store category pages with a price floor** (`watchlist.txt`). A page such as "Laptops on
-   Amazon, capped at ₹5,000, cheapest first" normally holds nothing but odds and ends. A ₹60,000
-   laptop mispriced at ₹600 lands on it. The monitor alerts when something appears there whose
-   list price says it should cost far more, or when something it has been watching falls to it.
+   Flipkart, cheapest first" normally starts with the cheapest real laptops. A ₹60,000 laptop
+   mispriced at ₹600 lands at the top of it. The monitor alerts when something appears under the
+   page's floor whose list price says it should cost far more, when something it has been
+   watching falls to it, and when a product it has never seen turns up on the page at 85% or
+   more off its own list price (a dropped digit: ₹74,990 shown as ₹7,499).
    This is read from the store itself; no deal channel is involved. It is the automated form of
    the "masterlinks" that deal hunters check by hand.
 2. **Products and keywords you name.** Product pages in `watchlist.txt` alert on your target
@@ -23,7 +25,8 @@ Each scan (default: every 60 seconds) it looks in three places, in this order of
 ## What it cannot do
 
 - **It cannot watch every product.** Amazon and Flipkart list hundreds of millions. It watches
-  the pages you give it, about 6 pages per store per minute. Choose them deliberately.
+  the pages you give it, about 6 pages per store per minute. Choose them deliberately. An error
+  on a product that is not among the first 20 to 40 results of a watched page is invisible to it.
 - **It cannot promise to beat the channels.** A store's search pages can lag a price change by
   minutes, and an error on a page you are not watching is invisible to it.
 - **It cannot force a store to answer.** Stores often refuse requests from cloud servers
@@ -35,8 +38,17 @@ Each scan (default: every 60 seconds) it looks in three places, in this order of
 
 ## How loud each alert is
 
-**From a store page** (always max priority): something under a category page's floor · a trap ·
-your target price · a fall of `WATCH_DROP_PCT` from the price the monitor has been seeing.
+**From a store page:**
+
+| Alert | ntfy priority | When |
+|---|---|---|
+| **Urgent** | 5 (max) | something under a category page's floor · a trap (with a list price that fits the device) · your target price · a fall of `WATCH_DROP_PCT` from the price the monitor has been seeing · a product new to a floor page at 95% or more off its list price |
+| **High** | 4 | a product new to a floor page at `NEW_LISTING_DISCOUNT` (85%) or more off its list price · a product page at 80% or more off on its first check |
+| **Quiet** | 3 | a listing named like a trap product whose card shows no list price that fits it (spare parts are named after the phone too) |
+
+Whatever is on a page the first time it is read counts as normal and stays quiet. A product is
+reported once per event: again only when it falls clearly further, or when the same mistake is
+made again after it had gone from the page for a day.
 
 **From a deal post**, the priority follows the discount, and each rung also needs real money
 saved. That second condition is there because of what real channels post all day: a ₹79 cleaning
@@ -50,9 +62,21 @@ kit with a ₹999 "MRP" is "92% off".
 
 A deal already alerted that turns up in three channels within 20 minutes goes up one level.
 
-Ignored: "upto 90% off" banners, capped coupons ("80% off up to ₹160"), cashback and recharge
-amounts, posts marked over or expired, posts older than 20 minutes, accessories and refurbished
-units on store pages. Every number above is a setting.
+An alert is held at **High**, whatever the discount, when the reading itself is unsure: the two
+prices are not labelled, a second amount stands where the price should be, the price needs a
+qualifying purchase ("₹1 on orders above ₹2,999"), the post hints that the deal may be over, or
+its link could not be checked. A link that leads to a site that is not a known store keeps the
+alert at Quiet, and copies of the post in other channels never lift it above that.
+
+Ignored: "upto 90% off" banners, capped coupons ("80% off up to ₹160"), amounts that belong to an
+offer (cashback, coupons, bank and exchange discounts, EMIs, recharges), ranges ("under ₹999",
+"starting ₹599"), percentages that describe the product ("90% less oil"), posts that announce
+the deal is over, posts older than 20 minutes (60 when the channel itself could not be read in
+between), accessories and refurbished units. Every number above is a setting.
+
+A trap only takes the price written for that product: on its own line, on a price line right
+below its name, or in the same " | " part of a line. A bank discount, a budget heading ("Under
+₹10k") or the price of the next product in a list is never borrowed.
 
 ## Where to run it
 
@@ -196,7 +220,10 @@ python -m lootwatch               # scan forever
 | `USE_CHANNELS` / `USE_STORE_PAGES` | `1` / `1` | Switch either half off on a machine that cannot reach it |
 | `WATCH_DROP_PCT` | `50` | Fall against a watched product's own usual price |
 | `FLOOR_MRP_RATIO` | `3` | A new item under a floor needs a list price this many times the floor |
+| `NEW_LISTING_DISCOUNT` | `85` | A product new to a floor page, above the floor, alerts from this % off its list price |
+| `ABSENCE_HOURS` | `24` | A reported product that was gone this long is judged afresh when it returns |
 | `MAX_POST_AGE_MIN` | `20` | Channel posts older than this are ignored |
+| `LATE_POST_MIN` | `60` | After a gap in reading a channel (a late run), posts up to this old are still judged |
 | `DEDUP_HOURS` | `12` | Same deal is not pushed again within this time unless it gets 10% cheaper |
 | `TRENDING_CHANNELS` / `TRENDING_WINDOW_MIN` | `3` / `20` | When a quiet deal turns urgent |
 | `DAILY_ALERT_LIMIT` | `200` | Stays inside ntfy.sh's free daily allowance; urgent alerts get the last of it |
@@ -210,11 +237,18 @@ python -m lootwatch               # scan forever
 ## It tells you when it is not working
 
 - **"Loot monitor started"** after the first scan that can reach your phone.
-- **"Loot monitor is blind"** (high priority) if every deal channel and feed fails three scans in a row,
-  and "recovered" when they return.
-- Any single source that fails ten scans in a row is reported once, with the reason.
-- A daily summary: scans done, posts read, alerts sent, sources failing.
-- Undelivered alerts are kept and retried, then dropped after 30 minutes (a late loot alert is noise).
+- **"Loot monitor is blind"** (high priority) when not one deal channel or feed could be read for
+  three scans in a row, whether they failed, refused or hung; "recovered" when they return.
+- **"Store pages unreadable (site)"** (high priority) when no watched page of a store could be
+  read for ten scans in a row, and "readable again" when that ends.
+- Any single source that fails ten scans in a row is reported once, with the reason, and again
+  only after it has worked in between. A listing whose products still load but no longer show
+  list prices counts as failing: the floor rules cannot work without them.
+- A daily summary: scans done, posts read, alerts sent, sources working, failing or not read yet.
+- Undelivered alerts are kept and retried for 30 minutes, then given up (a late loot alert is
+  noise). A run that had to give one up ends with an error, so GitHub Actions or systemd shows
+  it as failed: with a wrong or expired `NTFY_TOKEN` that is how you find out. If the product
+  is still at that price on a store page, a fresh alert is raised.
 - A site that answers 403/429/503 or shows a CAPTCHA is left alone for a growing cool-down. The
   monitor does not solve CAPTCHAs or rotate proxies.
 
@@ -223,7 +257,8 @@ python -m lootwatch               # scan forever
 - **Test suite** (`python -m unittest discover -s tests -t .`, Python 3.11 to 3.13): price parsing,
   priorities, floors, traps, de-duplication across sources and restarts, link trust, delivery
   retries, the daily budget, the health alarms, and the whole path from a change on a simulated
-  page to the JSON that reaches ntfy.
+  page to the JSON that reaches ntfy. A review by independent readers found 24 ways an alert
+  could be missed or ring falsely; each has a test built from the reviewer's own example.
 - **Live, 10 November 2026:** the Telegram reader on ten channels, the Flipkart category and
   search pages, and the priority ladder replayed against about 200 real posts.
 - **Not verified:** Amazon (refused), Myntra and other stores (never tried live), quick commerce

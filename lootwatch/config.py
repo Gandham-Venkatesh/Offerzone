@@ -184,10 +184,13 @@ class Settings:
     loot_price: float = 10.0  # a price this low ("Rs 1 deal") counts even when the rupee saving is small
     watch_drop_pct: float = 50.0  # % drop against a watched product's own usual price
     floor_mrp_ratio: float = 3.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
+    new_listing_discount: float = 85.0  # a NEW item above a floor alerts from this % off its list price
+    absence_hours: float = 24.0  # a product unseen for this long is judged afresh when it returns
 
     interval: int = 60
     workers: int = 8
     max_post_age_min: float = 20.0
+    late_post_min: float = 60.0  # after a gap in reading a channel, posts up to this old are still judged
     dedup_hours: float = 12.0
     trending_channels: int = 3
     trending_window_min: float = 20.0
@@ -236,9 +239,12 @@ class Settings:
             loot_price=_num("LOOT_PRICE", 10.0),
             watch_drop_pct=_num("WATCH_DROP_PCT", 50.0),
             floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 3.0),
+            new_listing_discount=_num("NEW_LISTING_DISCOUNT", 85.0),
+            absence_hours=_num("ABSENCE_HOURS", 24.0),
             interval=int(_num("CHECK_INTERVAL", 60)),
             workers=int(_num("MAX_WORKERS", 8)),
             max_post_age_min=_num("MAX_POST_AGE_MIN", 20.0),
+            late_post_min=_num("LATE_POST_MIN", 60.0),
             dedup_hours=_num("DEDUP_HOURS", 12.0),
             trending_channels=int(_num("TRENDING_CHANNELS", 3)),
             trending_window_min=_num("TRENDING_WINDOW_MIN", 20.0),

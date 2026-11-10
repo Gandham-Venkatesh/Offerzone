@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections
 import concurrent.futures
+import hashlib
 import json
 import logging
 import re
@@ -27,9 +28,9 @@ from .sources.telegram import parse_channel_page
 log = logging.getLogger("lootwatch")
 
 OUTBOX_MAX_AGE = 30 * 60  # a loot alert delivered later than this is only noise
-OUTBOX_MAX_ATTEMPTS = 8
-FAIL_STREAK_NOTE = 10  # cycles in a row before a source is reported as broken
-BLIND_STREAK = 3  # cycles in a row with every deal feed failing before the "blind" alarm
+FAIL_STREAK_NOTE = 10  # scans in a row before a source is reported as broken
+BLIND_STREAK = 3  # scans in a row without reading a single deal source before the "blind" alarm
+SITE_FAIL_STREAK = 10  # scans in a row without reading any watched page of a store before saying so
 _TAGS = {TIER_URGENT: ["rotating_light"], TIER_HIGH: ["fire"], TIER_NORMAL: ["label"]}
 
 
@@ -37,6 +38,15 @@ def short_url(url: str, limit: int = 70) -> str:
     parts = urlsplit(url)
     text = (parts.hostname or "") + parts.path + ("?" + parts.query if parts.query else "")
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def source_key(kind: str, url: str) -> str:
+    """The name under which one feed or store page keeps its state.
+
+    It is built from the whole address: two long addresses that differ only at the end (the same
+    category sorted two ways) must not share a baseline or a health record.
+    """
+    return f"{kind}:{hashlib.sha1(url.encode('utf-8')).hexdigest()[:12]}"
 
 
 def _age(seconds: float) -> str:
@@ -95,6 +105,14 @@ class Monitor:
         self._last_ping = 0.0
         self._warned_no_topic = False
         self._stop = threading.Event()
+        self._cycle_no = 0
+        self._deal_reads = 0  # deal sources read successfully in the scan under way
+        self._site_scan: Dict[str, List[tuple]] = {}  # store host -> [(read ok, reason)] in that scan
+        # Readable names for the sources, for notes and logs (state is kept under source_key()).
+        self._names: Dict[str, str] = {f"tg:{c}": f"@{c}" for c in settings.channels}
+        self._names.update({source_key("feed", u): short_url(u, 50) for u in settings.feeds})
+        self._names.update({source_key("watch", w.url): w.label or short_url(w.url, 50) for w in settings.watchlist})
+        self._watch_hosts = {source_key("watch", w.url): host_of(w.url) for w in settings.watchlist}
 
     def stop(self) -> None:
         self._stop.set()
@@ -102,6 +120,29 @@ class Monitor:
     def _count(self, key: str, amount: int = 1) -> None:
         with self._stats_lock:
             self.stats[key] += amount
+
+    def _display(self, source: str) -> str:
+        return self._names.get(source, source)
+
+    def _deal_source_read(self) -> None:
+        with self._stats_lock:
+            self._deal_reads += 1
+
+    def _site_result(self, host: str, ok: bool, reason: str = "") -> None:
+        with self._stats_lock:
+            self._site_scan.setdefault(host, []).append((ok, reason))
+
+    def _max_post_age(self, previous_ok: Optional[float], now: float) -> float:
+        """How old a post may be and still be news.
+
+        Normally MAX_POST_AGE_MIN. When the source could not be read for a while (a run that
+        started late, an outage), everything published since it was last read still counts, up
+        to LATE_POST_MIN: the monitor could not have seen it any earlier.
+        """
+        normal = self.s.max_post_age_min * 60
+        if previous_ok is None:
+            return normal
+        return max(normal, min(now - previous_ok + 120, self.s.late_post_min * 60))
 
     # ------------------------------------------------------------ sources ---
     def _scan_channel(self, channel: str, deadline: float) -> None:
@@ -122,7 +163,9 @@ class Monitor:
             self.db.health_fail(source, reason)
             self._count("source_failures")
             return
+        previous_ok = self.db.last_ok(source)
         self.db.health_ok(source, len(page.posts))
+        self._deal_source_read()
         first_contact = self.db.get(f"boot:{source}") == ""
         fresh = self.db.unseen(source, [str(p.post_id) for p in page.posts])
         if first_contact:
@@ -131,13 +174,14 @@ class Monitor:
             return
         self.db.mark_seen(source, fresh)
         now = time.time()
+        max_age = self._max_post_age(previous_ok, now)
         for post in page.posts:
             if str(post.post_id) not in fresh:
                 continue
             self._count("posts")
             if post.ts is None and first_contact:
                 continue  # cannot tell how old it is; never alert on a channel's backlog
-            if post.ts is not None and now - post.ts > self.s.max_post_age_min * 60:
+            if post.ts is not None and now - post.ts > max_age:
                 self._count("stale")
                 continue
             try:
@@ -146,7 +190,7 @@ class Monitor:
                 log.exception("failed to process %s", post.url)
 
     def _scan_feed(self, url: str, deadline: float) -> None:
-        source = f"feed:{short_url(url, 60)}"
+        source = source_key("feed", url)
         result = self.fetcher.get(url, headers={"Accept": "application/atom+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.5"},
                                   deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
@@ -161,7 +205,9 @@ class Monitor:
             self.db.health_fail(source, str(exc))
             self._count("source_failures")
             return
+        previous_ok = self.db.last_ok(source)
         self.db.health_ok(source, len(items))
+        self._deal_source_read()
         first_contact = self.db.get(f"boot:{source}") == ""
         fresh = self.db.unseen(source, [i.item_id for i in items])
         if first_contact:
@@ -170,13 +216,14 @@ class Monitor:
             return
         self.db.mark_seen(source, fresh)
         now = time.time()
+        max_age = self._max_post_age(previous_ok, now)
         for item in items:
             if item.item_id not in fresh:
                 continue
             self._count("posts")
             if item.ts is None and first_contact:
                 continue
-            if item.ts is not None and now - item.ts > self.s.max_post_age_min * 60:
+            if item.ts is not None and now - item.ts > max_age:
                 self._count("stale")
                 continue
             try:
@@ -185,7 +232,8 @@ class Monitor:
                 log.exception("failed to process feed item %s", item.url)
 
     def _scan_watch(self, item: WatchItem, deadline: float) -> None:
-        source = f"watch:{short_url(item.url, 60)}"
+        source = source_key("watch", item.url)
+        host = host_of(item.url)
         result = self.fetcher.get(item.url, deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
             return
@@ -193,22 +241,44 @@ class Monitor:
         if not result.ok:
             self.db.health_fail(source, result.problem)
             self._count("source_failures")
+            self._site_result(host, False, result.problem)
             return
         page = extract_page(item.url, result.text)
         if page.kind == "none":
             self.db.health_fail(source, page.note)
             self._count("source_failures")
+            self._site_result(host, False, page.note)
             return
-        self.db.health_ok(source, len(page.offers))
+        self._site_result(host, True)
+        previous_ok = self.db.last_ok(source)
         listing = page.kind == "listing"
+        # A listing that used to show list prices and now shows none has changed its layout: the
+        # products still parse, but the rules that lean on the list price have gone blind. Say so
+        # through the health record, and keep judging what can still be judged.
+        if listing and len(page.offers) >= 5 and not any(o.mrp for o in page.offers) and self.db.get(f"mrps:{source}"):
+            self.db.health_fail(source, "products are listed but none shows a list price any more (layout change?)")
+            self._count("source_failures")
+        else:
+            self.db.health_ok(source, len(page.offers))
+            if listing and any(o.mrp for o in page.offers) and not self.db.get(f"mrps:{source}"):
+                self.db.set(f"mrps:{source}", 1)
         # The first read of a search/category page only records what is normal on it. Everything
         # after that is judged against that picture, so the page's permanently cheap items stay quiet.
         baseline = listing and self.db.get(f"boot:{source}") == ""
+        now = time.time()
         for offer in page.offers:
             self._count("prices")
             info = self.db.record_price(offer.key, offer.store, offer.title, offer.url, offer.price, offer.mrp)
+            if info.last_age is not None:
+                # "Back after a long absence" only means something if this page was being read
+                # while the product was away. After an outage of the monitor itself, nothing left.
+                seen_at = now - info.last_age
+                if previous_ok is None or previous_ok - seen_at < self.s.absence_hours * 3600:
+                    info.last_age = 0.0
             verdict = evaluate_offer(offer.title, offer.price, offer.mrp, info, self.s,
                                      target=item.target, listing=listing, baseline=baseline)
+            if baseline or verdict:
+                self.db.mark_quiet(offer.key, offer.price, alerted=bool(verdict))  # this price is no longer news
             if not verdict:
                 continue
             name = offer.title if listing else (item.label or offer.title)
@@ -258,11 +328,12 @@ class Monitor:
                 return
             if strange_host:
                 # Possibly a look-alike shop: show it, quietly, and say why.
-                verdict.tier = TIER_NORMAL
+                verdict.tier = verdict.max_tier = TIER_NORMAL
                 verdict.flags.append(f"link goes to {strange_host}, not a known store - check before you pay")
             else:
                 # We simply could not tell (short link timed out, ...): do not bury it, do not shout either.
                 verdict.tier = min(verdict.tier, TIER_HIGH)
+                verdict.max_tier = min(verdict.max_tier, TIER_HIGH)
                 verdict.flags.append(f"could not check where the link goes: {unchecked} - look at the address before you pay")
             best_link = candidates[0]
         elif not candidates and verdict.needs_trusted_link:
@@ -271,6 +342,7 @@ class Monitor:
 
         lines = [text[:600].strip(), ""]
         lines.extend("⚠ " + flag for flag in verdict.flags)
+        lines.extend("Note: " + note for note in verdict.notes)
         footer = [verdict.reason, label]
         if ts:
             footer.append("posted " + _age(time.time() - ts))
@@ -301,18 +373,21 @@ class Monitor:
                 _, prev_tier, prev_price, _ = previous
                 cheaper = verdict.price is not None and prev_price is not None and verdict.price <= prev_price * 0.9
                 louder = verdict.tier > prev_tier
-                trending = (
-                    sources >= self.s.trending_channels and prev_tier < TIER_URGENT
-                    and self.db.get(f"trend:{fingerprint}") == ""
-                )
-                if not (cheaper or louder or trending):
+                raised = 0
+                if (not louder and sources >= self.s.trending_channels and prev_tier < TIER_URGENT
+                        and self.db.get(f"trend:{fingerprint}") == ""):
+                    # Channels copy each other, so a repeat is weak evidence: one step louder, no more,
+                    # and never past what this post's link and wording allow. Copy-paste across
+                    # channels is also how scam posts spread.
+                    raised = min(verdict.max_tier, prev_tier + 1)
+                    raised = raised if raised > prev_tier else 0
+                if not (cheaper or louder or raised):
                     self._count("duplicates")
                     return False
-                if trending and not louder:
-                    # Channels copy each other, so a repeat is weak evidence: one step louder, no more.
+                if raised:
                     self.db.set(f"trend:{fingerprint}", int(now))
-                    verdict.tier = min(TIER_URGENT, prev_tier + 1)
-                    payload = dict(payload, priority=verdict.tier, tags=_TAGS[verdict.tier],
+                    verdict.tier = raised
+                    payload = dict(payload, priority=raised, tags=["warning"] if verdict.flags else _TAGS[raised],
                                    title=f"Now in {sources} channels: {payload.get('title', '')}"[:180])
                 elif cheaper:
                     payload = dict(payload, title=f"Lower now: {payload.get('title', '')}"[:180])
@@ -341,29 +416,44 @@ class Monitor:
             if not self._warned_no_topic:
                 log.warning("NTFY_TOPIC is not set: alerts are only being logged, not pushed")
                 self._warned_no_topic = True
-            self.db.mark_sent(alert_id)
+            # Nothing reached a phone, so this must neither count as sent nor hide a later copy of the deal.
+            self.db.drop_alert(alert_id)
             return False
         if time.time() < self._ntfy_pause_until:
-            self.db.mark_attempt(alert_id)
-            return False
+            return False  # ntfy asked us to wait; waiting is not a failed attempt
         result = self.notifier.send(payload)
         if result.ok:
             self.db.mark_sent(alert_id)
             self._count(f"sent_{TIER_NAMES.get(tier, 'other')}")
             return True
         self.db.mark_attempt(alert_id)
+        self._count("send_failures")
         if result.status == 429:
             self._ntfy_pause_until = time.time() + min(900.0, max(30.0, result.retry_after))
-        self._count("send_failures")
+        elif 400 <= result.status < 500 and result.status not in (401, 403):
+            # ntfy refuses this very message (malformed, too large): sending it again cannot help,
+            # and neither would raising the same alert again.
+            self._give_up(alert_id, f"ntfy rejected it with HTTP {result.status}", reopen=False)
         return False
+
+    def _give_up(self, alert_id: int, why: str, reopen: bool = True) -> None:
+        """Write off an alert that could not be delivered.
+
+        With ``reopen`` its deal may alert afresh: if it was a store product that is still at that
+        price, the next scan raises a new alert, which gets its own half hour of retries.
+        """
+        fingerprint = self.db.drop_alert(alert_id)
+        if fingerprint and reopen:
+            self.db.clear_quiet(fingerprint)
+        self._count("undelivered")
+        log.warning("giving up on an alert: %s", why)
 
     def flush_outbox(self) -> None:
         """Retry alerts that could not be delivered; give up on ones too old to be useful."""
         now = time.time()
         for pending in self.db.pending_alerts():
-            if now - pending.created_at > OUTBOX_MAX_AGE or pending.attempts >= OUTBOX_MAX_ATTEMPTS:
-                self.db.drop_alert(pending.id)
-                log.warning("giving up on an undelivered alert from %s", _age(now - pending.created_at))
+            if now - pending.created_at > OUTBOX_MAX_AGE:
+                self._give_up(pending.id, f"undelivered since {_age(now - pending.created_at)}")
                 continue
             try:
                 payload = json.loads(pending.payload)
@@ -398,11 +488,23 @@ class Monitor:
         if self.db.get("heartbeat_at") == "":
             self.db.set("heartbeat_at", int(started))  # the daily summary counts from the very first scan
         self.flush_outbox()
+        self._cycle_no += 1
+        self._deal_reads = 0
+        self._site_scan = {}
 
-        jobs = [(self._scan_channel, channel) for channel in self.s.channels]
+        # Store pages first, and the channels in a different order each scan: when time runs out,
+        # it must not always be the same sources that go unread.
+        channels = list(self.s.channels)
+        if channels:
+            shift = self._cycle_no % len(channels)
+            channels = channels[shift:] + channels[:shift]
+        jobs = [(self._scan_watch, item) for item in self._watch_batch()]
+        jobs += [(self._scan_channel, channel) for channel in channels]
         jobs += [(self._scan_feed, url) for url in self.s.feeds]
-        jobs += [(self._scan_watch, item) for item in self._watch_batch()]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.s.workers, thread_name_prefix="scan") as pool:
+        # One thread per job (they mostly wait their turn for their site): a site that hangs then
+        # holds up only its own pages, never another site's.
+        threads = max(1, min(32, max(self.s.workers, len(jobs))))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=threads, thread_name_prefix="scan") as pool:
             futures = {pool.submit(fn, arg, deadline): arg for fn, arg in jobs}
             for future in concurrent.futures.as_completed(futures):
                 try:
@@ -411,9 +513,15 @@ class Monitor:
                     log.exception("scan task failed: %r", futures[future])
 
         self.db.incr("hb:cycles")
+        if self._feed_sources():
+            if self._deal_reads:
+                self.db.set("blind:scans", 0)
+            else:
+                self.db.incr("blind:scans")  # failed, refused or never reached in time: all the same to the user
         delta = collections.Counter(self.stats)
         delta.subtract(before)
         self.db.incr("hb:posts", delta.get("posts", 0))
+        self._site_checks()
         self._health_checks()
         self._heartbeat()
         delta["seconds"] = int(time.time() - started)
@@ -421,45 +529,89 @@ class Monitor:
 
     # -------------------------------------------------------- self-checks ---
     def _feed_sources(self) -> List[str]:
-        return [f"tg:{c}" for c in self.s.channels] + [f"feed:{short_url(u, 60)}" for u in self.s.feeds]
+        return [f"tg:{c}" for c in self.s.channels] + [source_key("feed", u) for u in self.s.feeds]
+
+    def _all_sources(self) -> List[str]:
+        return self._feed_sources() + [source_key("watch", w.url) for w in self.s.watchlist]
+
+    def _site_checks(self) -> None:
+        """One clear alarm when a whole store stops answering, instead of a trickle of page notes."""
+        for host, outcomes in self._site_scan.items():
+            if any(ok for ok, _ in outcomes):
+                self.db.set(f"sitefail:{host}", 0)
+                if self.db.get(f"sitealarm:{host}", "0") not in ("", "0"):
+                    self.db.set(f"sitealarm:{host}", 0)
+                    self.notifier.send_status(f"Loot monitor: {host} is readable again",
+                                              f"The watched pages on {host} are being read again.",
+                                              priority=3, tags=("white_check_mark",))
+                continue
+            streak = self.db.incr(f"sitefail:{host}")
+            if streak >= SITE_FAIL_STREAK and self.db.get(f"sitealarm:{host}", "0") in ("", "0"):
+                reason = collections.Counter(why for _, why in outcomes).most_common(1)[0][0]
+                sent = self.notifier.send_status(
+                    f"Loot monitor: store pages unreadable ({host})",
+                    f"No watched page on {host} could be read in the last {streak} scans, so a price error there "
+                    f"cannot be seen right now.\nLast reason: {reason}",
+                    priority=4, tags=("warning",),
+                )
+                if sent.ok or not self.notifier.configured:
+                    self.db.set(f"sitealarm:{host}", int(time.time()))
+                log.error("no watched page on %s has been readable for %d scans: %s", host, streak, reason)
 
     def _health_checks(self) -> None:
         rows = {row[0]: row for row in self.db.health_rows()}
         feeds = self._feed_sources()
         now = time.time()
 
-        # 1. Everything that brings deals in is failing: say so loudly, the monitor is blind.
-        streaks = [rows[s][3] for s in feeds if s in rows]
-        blind = bool(feeds) and len(streaks) == len(feeds) and min(streaks) >= BLIND_STREAK
+        # 1. Nothing that brings deals in could be read for several scans: say so loudly.
+        blind_scans = int(self.db.get("blind:scans", "0") or 0)
+        blind = bool(feeds) and blind_scans >= BLIND_STREAK
         if blind:
             last = float(self.db.get("blind_notified", "0") or 0)
             if now - last > 3 * 3600:
-                errors = collections.Counter(str(rows[s][6]) for s in feeds)
+                errors = collections.Counter(
+                    str(rows[s][6]) if s in rows and rows[s][3] else "not reached in the time a scan allows" for s in feeds
+                )
                 detail = "; ".join(f"{count}× {error}" for error, count in errors.most_common(3))
                 sent = self.notifier.send_status(
                     "Loot monitor is blind",
-                    f"All {len(feeds)} deal sources have failed {min(streaks)} checks in a row, so nothing can be "
-                    f"caught right now.\n{detail}",
+                    f"None of the {len(feeds)} deal sources could be read in the last {blind_scans} scans, so "
+                    f"nothing posted there can be caught right now.\n{detail}",
                     priority=4, tags=("warning",),
                 )
                 if sent.ok or not self.notifier.configured:
                     self.db.set("blind_notified", int(now))
-            log.error("all %d deal sources are failing - the monitor is blind", len(feeds))
+            log.error("no deal source has been readable for %d scans - the monitor is blind", blind_scans)
         elif self.db.get("blind_notified", "0") not in ("", "0") and feeds:
             self.db.set("blind_notified", 0)
             self.notifier.send_status("Loot monitor recovered", "Deal sources are readable again.", priority=3,
                                       tags=("white_check_mark",))
 
-        # 2. Individual sources that have just crossed the "this is broken" line.
-        configured = set(feeds) | {f"watch:{short_url(w.url, 60)}" for w in self.s.watchlist}
-        broken = [rows[s] for s in sorted(configured) if s in rows and rows[s][3] == FAIL_STREAK_NOTE]
+        # 2. Individual sources that have crossed the "this is broken" line: reported once, and
+        #    again only after they have worked in between. Pages of a store that is unreadable as
+        #    a whole are covered by that store's own alarm.
+        broken = []
+        for source in sorted(self._all_sources()):
+            row = rows.get(source)
+            if row is None:
+                continue
+            reported = self.db.get(f"reported:{source}") != ""
+            if row[3] == 0 and reported:
+                self.db.set(f"reported:{source}", "")
+            elif row[3] >= FAIL_STREAK_NOTE and not reported:
+                host = self._watch_hosts.get(source)
+                if host is None or self.db.get(f"sitealarm:{host}", "0") in ("", "0"):
+                    broken.append(row)
         if broken and not blind:
-            listing = "\n".join(f"• {row[0]}: {row[6]}" for row in broken[:12])
-            self.notifier.send_status(
+            listing = "\n".join(f"• {self._display(row[0])}: {row[6]}" for row in broken[:12])
+            sent = self.notifier.send_status(
                 f"{len(broken)} source(s) stopped working",
                 f"Failed {FAIL_STREAK_NOTE} checks in a row:\n{listing}\n\nRun the doctor command for details.",
                 priority=2, tags=("warning",),
             )
+            if sent.ok or not self.notifier.configured:
+                for row in broken:
+                    self.db.set(f"reported:{row[0]}", int(now))
 
         # 3. Dead-man's switch: an outside service notices if these pings ever stop.
         if self.s.healthcheck_url and not blind and now - self._last_ping >= 55:
@@ -484,16 +636,18 @@ class Monitor:
         since = float(self.db.get("heartbeat_at", "0") or 0)
         counts = self.db.sent_counts(since)
         rows = self.db.health_rows()
-        configured = set(self._feed_sources()) | {f"watch:{short_url(w.url, 60)}" for w in self.s.watchlist}
+        configured = set(self._all_sources())
         failing = [r for r in rows if r[0] in configured and r[3] >= FAIL_STREAK_NOTE]
+        unread = configured - {r[0] for r in rows}
         message = (
             f"Since the last note: {self.db.get('hb:cycles', '0')} scans, {self.db.get('hb:posts', '0')} new posts read.\n"
             f"Alerts sent: {counts.get(TIER_URGENT, 0)} urgent, {counts.get(TIER_HIGH, 0)} high, "
             f"{counts.get(TIER_NORMAL, 0)} other.\n"
-            f"Sources: {len(configured) - len(failing)} working, {len(failing)} failing."
+            f"Sources: {len(configured) - len(failing) - len(unread)} working, {len(failing)} failing"
+            + (f", {len(unread)} not read yet" if unread else "") + "."
         )
         if failing:
-            message += "\n" + "\n".join(f"• {r[0]}: {r[6]}" for r in failing[:8])
+            message += "\n" + "\n".join(f"• {self._display(r[0])}: {r[6]}" for r in failing[:8])
         self.notifier.send_status("Loot monitor is running", message, priority=2, tags=("green_heart",))
         self.db.set("heartbeat_at", int(time.time()))
         self.db.set("hb:cycles", 0)
@@ -512,17 +666,32 @@ class Monitor:
             "Loot monitor started",
             f"First scan done: {working} of {len(feeds)} deal sources readable, "
             f"{len(self.s.watchlist)} watchlist pages, {len(self.s.traps)} traps.\n"
-            f"Alerts fire at {self.s.min_discount:.0f}% off or more; price errors arrive as urgent.",
+            f"Deal posts alert from {self.s.min_discount:.0f}% off, louder as the discount grows; a price error "
+            f"on a watched store page arrives as urgent.",
             priority=3, tags=("rocket",),
         )
         if sent.ok:
             self.db.set("started_note", int(time.time()))
 
     # ------------------------------------------------------------ the loop ---
-    def run(self, once: bool = False, max_runtime: Optional[float] = None) -> None:
-        self.db.forget_health(set(self._feed_sources()) | {f"watch:{short_url(w.url, 60)}" for w in self.s.watchlist})
+    def _adopt_old_names(self) -> None:
+        """Earlier versions named a page's state after the first 60 characters of its address.
+        Carry each page's baseline flag over to its new name, so no page has to be re-learnt.
+        (Two pages that shared an old name start afresh: nobody can say whose flag it was.)"""
+        old_names: Dict[str, List[str]] = {}
+        for item in self.s.watchlist:
+            old_names.setdefault(f"watch:{short_url(item.url, 60)}", []).append(source_key("watch", item.url))
+        for old, new in old_names.items():
+            flag = self.db.get(f"boot:{old}")
+            if flag and len(new) == 1 and self.db.get(f"boot:{new[0]}") == "":
+                self.db.set(f"boot:{new[0]}", flag)
+
+    def run(self, once: bool = False, max_runtime: Optional[float] = None) -> int:
+        """Scan until stopped. Returns how many alerts had to be written off undelivered."""
+        self._adopt_old_names()
+        self.db.forget_health(self._all_sources())
         log.info(
-            "watching %d Telegram channels, %d feeds, %d watchlist pages | alert at >=%.0f%% off | every %ds%s",
+            "watching %d Telegram channels, %d feeds, %d watchlist pages | deal posts from %.0f%% off | every %ds%s",
             len(self.s.channels), len(self.s.feeds), len(self.s.watchlist), self.s.min_discount, self.s.interval,
             " | DRY RUN" if self.s.dry_run else "",
         )
@@ -549,3 +718,4 @@ class Monitor:
                 break
             self._stop.wait(pause)
         self.flush_outbox()
+        return int(self.stats.get("undelivered", 0))

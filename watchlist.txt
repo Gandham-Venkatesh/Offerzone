@@ -13,7 +13,11 @@
 #                    floor (FLOOR_MRP_RATIO): toy laptops and phone cases stay quiet.
 #                  - Accessories, spares and refurbished units are skipped.
 #                  - Every product on the page is also checked against traps.txt and its own price history.
-#                  - "% off MRP" alone is ignored here: listings are full of permanently "90% off" items.
+#                  - A product the monitor has never seen, NEW on the page above the floor, alerts when its
+#                    own card shows 85% or more off a list price of at least 3x the floor
+#                    (NEW_LISTING_DISCOUNT): high priority, max priority from 95%. This is what catches a
+#                    dropped digit, a Rs 74,990 laptop at Rs 7,499. Ordinary no-name listings on these pages
+#                    show 50-70% off, and whatever was on the page at the first read never alerts this way.
 #                Pick the floor well below the cheapest real product of that category. --doctor shows the
 #                cheapest item on each page and warns if ordinary products already sit under your floor.
 #

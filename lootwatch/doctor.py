@@ -56,7 +56,8 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
           f"{settings.high_discount:.0f}%+ saving {fmt_inr(settings.min_saving)}+ (or priced {fmt_inr(settings.loot_price)} or less) is high | "
           f"{settings.min_discount:.0f}%+ saving {fmt_inr(settings.urgent_min_saving)}+ is quiet", file=out)
     print(f"store pages: under a page's floor, a trap ({len(settings.traps)} loaded), your target, or a "
-          f"{settings.watch_drop_pct:.0f}% fall from its usual price is urgent", file=out)
+          f"{settings.watch_drop_pct:.0f}% fall from its usual price is urgent | new on a floor page at "
+          f"{settings.new_listing_discount:.0f}%+ off its list price is high ({settings.urgent_discount:.0f}%+ urgent)", file=out)
     if not settings.use_channels:
         print("deal channels and feeds: switched off on this machine (USE_CHANNELS=0)", file=out)
     if not settings.use_store_pages:
@@ -93,7 +94,9 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
                 tiers[verdict.tier] += 1
                 if not sample or verdict.tier == TIER_URGENT:
                     sample = f"{verdict.headline} — {_first_line(post.text, 50)} [{verdict.reason}]"
-            mark = f"P{verdict.tier} {verdict.headline} [{verdict.reason}]" if verdict else "--"
+            mark = "--"
+            if verdict:
+                mark = f"P{verdict.tier} {verdict.headline} [{'; '.join([verdict.reason] + verdict.notes)}]"
             age = _age(now - post.ts) if post.ts else "?"
             details.append(f"          #{post.post_id} {age:>9} | {mark} | {_one_line(post.analysis_text, 260)}")
         detail = (f"{len(page.posts)} posts, newest {newest} | would alert: {tiers[TIER_URGENT]} urgent, "

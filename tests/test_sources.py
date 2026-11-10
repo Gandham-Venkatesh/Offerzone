@@ -224,6 +224,42 @@ class StorePages(unittest.TestCase):
         self.assertEqual((offers["2"].price, offers["2"].mrp), (9999.0, None))   # exchange / EMI amounts are not an MRP
         self.assertEqual((offers["3"].price, offers["3"].mrp), (8999.0, 11999.0))  # worked back from "25% off"
 
+    def test_flipkart_deepest_errors_keep_their_real_list_price(self):
+        # A ₹74,990 laptop at ₹149 is 99.8% off and shown as "99% off". The crossed-out price must
+        # survive: working it back from "99%" would give ₹14,900 and hide the error from the floor rule.
+        html = """<html><body>
+        <div data-id="COMAAAAAAAAAAAA1"><a href="/hp/p/itm1?pid=COMAAAAAAAAAAAA1"><img alt="HP Pavilion 15 Core i5"/>
+          <div>₹149</div><div>₹<!-- -->74,990</div><div><span>99% off</span></div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA2"><a href="/s/p/itm2?pid=MOBAAAAAAAAAAAA2"><img alt="Samsung Galaxy A56 5G"/>
+          <div>₹1</div><div>₹<!-- -->45,999</div><div><span>99% off</span></div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA3"><a href="/l/p/itm3?pid=MOBAAAAAAAAAAAA3"><img alt="LAVA Bold N4 Lite"/>
+          <div>₹8,299</div><div>₹<!-- -->9,999</div><div><span>17% off</span></div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA4"><a href="/x/p/itm4?pid=MOBAAAAAAAAAAAA4"><img alt="Pixel 9 (Obsidian, 256 GB)"/>
+          <div>₹400</div><div>₹<!-- -->79,999</div><div><span>100% off</span></div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA5"><a href="/y/p/itm5?pid=MOBAAAAAAAAAAAA5"><img alt="No-name phone"/>
+          <div>₹2,399</div><div>₹<!-- -->4,000</div><div><span>55% off</span></div></a></div>
+        </body></html>"""
+        offers = {o.key[-1]: o for o in extract_page("https://www.flipkart.com/mobiles/pr?sid=tyy,4io", html).offers}
+        self.assertEqual((offers["1"].price, offers["1"].mrp), (149.0, 74990.0))
+        self.assertEqual((offers["2"].price, offers["2"].mrp), (1.0, 45999.0))
+        self.assertEqual((offers["3"].price, offers["3"].mrp), (8299.0, 9999.0))
+        self.assertEqual((offers["4"].price, offers["4"].mrp), (400.0, 79999.0))
+        # Below 98% the stated figure still wins over an amount that does not fit it.
+        self.assertEqual((offers["5"].price, offers["5"].mrp), (2399.0, 5331.0))
+
+    def test_flipkart_card_without_a_price_is_skipped(self):
+        # "Currently unavailable" / "Coming soon": the exchange or EMI line is not the price.
+        html = """<html><body>
+        <div data-id="COMAAAAAAAAAAAA1"><a href="/a/p/itm1?pid=COMAAAAAAAAAAAA1"><img alt="Acer Aspire 14"/>
+          <div>Currently unavailable</div><div>Upto ₹15,250 Off on Exchange</div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA2"><a href="/b/p/itm2?pid=MOBAAAAAAAAAAAA2"><img alt="Apple iPhone 17 (Black, 256 GB)"/>
+          <div>Coming Soon</div><div>No Cost EMI from ₹7,150/month</div><div>Extra ₹3,000 off on exchange</div></a></div>
+        <div data-id="MOBAAAAAAAAAAAA3"><a href="/c/p/itm3?pid=MOBAAAAAAAAAAAA3"><img alt="LAVA Bold N4 Lite"/>
+          <div>₹8,299</div><div>Upto ₹7,750 Off on Exchange</div></a></div>
+        </body></html>"""
+        result = extract_page("https://www.flipkart.com/laptops/pr?sid=6bo,b5g", html)
+        self.assertEqual([(o.title, o.price, o.mrp) for o in result.offers], [("LAVA Bold N4 Lite", 8299.0, None)])
+
     def test_flipkart_product_page_via_json_ld(self):
         url = "https://www.flipkart.com/nothing-phone-3a/p/itm0123abcd?pid=MOBH4DQFG8NKFRDY"
         result = extract_page(url, JSON_LD_PRODUCT)

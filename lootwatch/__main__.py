@@ -109,12 +109,17 @@ def main(argv=None) -> int:
         monitor.stop()
 
     signal.signal(signal.SIGTERM, _stop)
+    undelivered = 0
     try:
-        monitor.run(once=args.once, max_runtime=args.max_runtime)
+        undelivered = monitor.run(once=args.once, max_runtime=args.max_runtime)
     except KeyboardInterrupt:
         log.info("stopped")
     finally:
         db.close()
+    if undelivered:
+        # A non-zero exit is how a scheduled run (GitHub Actions, systemd) gets itself noticed.
+        log.error("%d alert(s) could not be delivered through ntfy and were given up on", undelivered)
+        return 3
     return 0
 
 

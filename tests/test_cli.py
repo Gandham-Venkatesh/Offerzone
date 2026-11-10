@@ -19,6 +19,8 @@ from tests.helpers import FakeWeb
 _SETTING_NAMES = [
     "NTFY_SERVER", "NTFY_TOPIC", "NTFY_TOKEN", "NTFY_HEALTH_TOPIC", "MIN_DISCOUNT", "URGENT_MIN_SAVING",
     "WATCH_DROP_PCT", "CHECK_INTERVAL", "MAX_WORKERS", "MAX_POST_AGE_MIN", "DEDUP_HOURS", "TRENDING_CHANNELS",
+    "HIGH_DISCOUNT", "URGENT_DISCOUNT", "MIN_SAVING", "BIG_SAVING", "LOOT_PRICE", "FLOOR_MRP_RATIO", "NEW_LISTING_DISCOUNT",
+    "ABSENCE_HOURS", "LATE_POST_MIN", "USE_CHANNELS", "USE_STORE_PAGES", "CURL_IMPERSONATE",
     "TRENDING_WINDOW_MIN", "DAILY_ALERT_LIMIT", "STARTUP_NOTE", "HEARTBEAT_HOUR", "TZ_OFFSET_MINUTES",
     "HEALTHCHECK_URL", "RESOLVE_LINKS", "USE_CURL_CFFI", "TELEGRAM_BASE_URL", "DENY_WORDS",
     "EXTRA_STORE_DOMAINS", "DB_PATH", "CHANNELS_FILE", "WATCHLIST_FILE", "TRAPS_FILE", "FEEDS_FILE", "LOG_LEVEL",
@@ -85,6 +87,7 @@ class CommandLine(CleanEnv):
         self.assertEqual((settings.ntfy_topic, settings.ntfy_token, settings.ntfy_server), ("", "", "https://ntfy.sh"))
         self.assertEqual((settings.heartbeat_hour, settings.daily_alert_limit), (9, 200))
         self.assertEqual((settings.urgent_discount, settings.floor_mrp_ratio, settings.curl_impersonate), (95.0, 3.0, "chrome124"))
+        self.assertEqual((settings.new_listing_discount, settings.absence_hours, settings.late_post_min), (85.0, 24.0, 60.0))
 
     def test_shipped_list_files_parse_cleanly(self):
         root = Path(__file__).resolve().parent.parent
@@ -122,6 +125,16 @@ class CommandLine(CleanEnv):
         settings = Settings.from_env(); settings.load_lists()
         self.assertEqual((settings.channels, settings.watchlist), (["alpha"], []))
 
+    def test_run_ends_with_an_error_when_an_alert_could_not_be_delivered(self):
+        self.write("channels.txt", "alpha\n")
+        os.environ.update({"TELEGRAM_BASE_URL": self.web.base + "/s", "NTFY_TOPIC": "t1", "HEARTBEAT_HOUR": "-1",
+                           "STARTUP_NOTE": "0", "USE_CURL_CFFI": "off"})
+        self.web.post("alpha", 1, "Price error: Sony XM5 @ ₹400 (MRP ₹34,990)", time.time() - 15)
+        self.web.ntfy_status = 400  # ntfy rejects the message outright
+        self.assertEqual(main(["--once", "--ntfy-server", self.web.base]), 3)
+        self.web.ntfy_status = 200
+        self.assertEqual(main(["--once", "--ntfy-server", self.web.base]), 0)
+
     def test_nothing_to_watch_is_an_error(self):
         self.assertEqual(main(["--once", "--ntfy-server", self.web.base]), 1)
 
@@ -155,7 +168,7 @@ class Doctor(CleanEnv):
         settings.feeds = [self.web.base + "/feed.xml"]
         from lootwatch.config import WatchItem
 
-        listing = {"items": [{"id": "a", "name": "Toy Laptop", "price": 999, "mrp": 1999},
+        listing = {"items": [{"id": "a", "name": "Mini Notebook 11 inch", "price": 999, "mrp": 1999},
                              {"id": "b", "name": "HP Laptop 15s", "price": 42990, "mrp": 59990},
                              {"id": "c", "name": "Laptop Skin compatible with HP", "price": 199, "mrp": 999}]}
         self.web.pages["/laptops"] = f'<script type="application/json">{json.dumps(listing)}</script>'
@@ -177,7 +190,7 @@ class Doctor(CleanEnv):
         self.assertRegex(report, r"FAIL\s+127\.0\.0\.1.*blank\s+no product data found")
         self.assertRegex(report, r"FAIL\s+127\.0\.0\.1.*blocked\s+127\.0\.0\.1: HTTP 403")
         self.assertRegex(report, r"OK\s+Laptops floor\s+listing: 3 product\(s\) \| cheapest Laptop Skin compatible with HP ₹199")
-        self.assertIn("note: 1 of 3 are already at or under your ₹4,000 floor", report)  # the toy; the skin is an accessory
+        self.assertIn("note: 1 of 3 are already at or under your ₹4,000 floor", report)  # the notebook; the skin is an accessory
         self.assertIn("Telegram channels readable: 2/3", report)
         # Once a site refuses one page, its other pages are not tried again straight away - and the report says why.
         self.assertRegex(report, r"FAIL\s+127\.0\.0\.1.*after-the-refusal\s+127\.0\.0\.1: cooldown \d+s after HTTP 403")

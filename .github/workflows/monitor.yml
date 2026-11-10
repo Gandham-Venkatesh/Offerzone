@@ -52,8 +52,10 @@ jobs:
       BIG_SAVING: ${{ vars.BIG_SAVING }}
       LOOT_PRICE: ${{ vars.LOOT_PRICE }}
       FLOOR_MRP_RATIO: ${{ vars.FLOOR_MRP_RATIO }}
+      NEW_LISTING_DISCOUNT: ${{ vars.NEW_LISTING_DISCOUNT }}
       WATCH_DROP_PCT: ${{ vars.WATCH_DROP_PCT }}
       MAX_POST_AGE_MIN: ${{ vars.MAX_POST_AGE_MIN }}
+      LATE_POST_MIN: ${{ vars.LATE_POST_MIN }}
       DAILY_ALERT_LIMIT: ${{ vars.DAILY_ALERT_LIMIT }}
       HEARTBEAT_HOUR: ${{ vars.HEARTBEAT_HOUR }}
       EXTRA_STORE_DOMAINS: ${{ vars.EXTRA_STORE_DOMAINS }}
@@ -86,6 +88,9 @@ jobs:
           key: lootwatch-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: lootwatch-state-
 
+      # The scan ends with an error when an alert could not be delivered through ntfy for half an
+      # hour (a wrong token, ntfy unreachable). GitHub then marks the run as failed, which is the
+      # one way a run can get itself noticed.
       - name: Scan
         run: |
           case "$MODE" in

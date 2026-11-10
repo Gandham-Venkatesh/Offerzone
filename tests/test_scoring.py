@@ -70,6 +70,92 @@ class TextVerdicts(unittest.TestCase):
         self.assertIsNone(self.tier("Flat 85% off on Puma shoes today"))
         self.assertEqual(self.tier("96% Off - Philips Trimmer\nhttps://fkm.asia/x"), TIER_HIGH)
 
+    def test_a_price_written_right_before_the_word_mrp(self):
+        for text in ("Samsung Galaxy A55 5G @ ₹400 MRP ₹45,999", "Deal Price: ₹400 MRP: ₹45,999", "at Rs.400 MRP Rs.45,999",
+                     "@400 MRP 45999", "Price ₹400 MRP (MRP ₹45,999)", "X ₹34,990 MRP ₹400 only",
+                     "Redmi Note 13 Pro Max ₹999 (MRP ₹24,999)", "Nike Air Max @499 (MRP ₹12,995)"):
+            with self.subTest(text=text):
+                self.assertEqual(self.tier(text), TIER_URGENT)
+
+    def test_offer_amounts_never_become_the_deal_price(self):
+        for text in ("HP 15 Laptop i5 13th Gen at ₹62,999 (MRP ₹89,999) + ₹4,000 Bank Discount",
+                     "Samsung 43 inch 4K TV @ 24,990 (MRP ₹52,900) + ₹1500 SBI Discount",
+                     "HP 15 Laptop at ₹62,999 + ₹4,000 Bank Discount (MRP ₹89,999)",
+                     "Loot For Needy : Air Purifier @12499.\nApply ₹500 Off Coupon : https://x.to/a\nRegular Price ₹19999.\n"
+                     "Filter @599 : https://x.to/b",
+                     "Loot For Needy : 1.5 Ton AC @31999.\nBank Offer ₹2000 : https://x.to/a\nRegular Price ₹45999.",
+                     "Laptop MRP ₹65,000. Pay ₹2,708 x 24 months", "Hero Splendor MRP ₹82,000 | Down payment ₹3,999",
+                     "Laptop ₹55,990 (MRP ₹1,05,000) + mouse for ₹1", "Samsung TV ₹24,990 (MRP ₹52,900), installation for ₹499"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.tier(text))
+
+    def test_an_unsure_reading_is_held_at_high(self):
+        # A second, very different amount stands where the price should be.
+        verdict = evaluate_text("Laptop ₹62,999 + ₹4,000 something (MRP ₹89,999)", self.s)
+        self.assertEqual((verdict.tier, verdict.max_tier), (TIER_HIGH, TIER_HIGH))
+        self.assertIn("another amount", verdict.reason)
+        # A give-away price that needs a qualifying purchase (the real "₹1 air fryer" post, and its usual wordings).
+        for text in ("Make A Cart Value Above ₹2999+ & Get kent ₹8000 Airfryer at ₹1",
+                     "Make A Cart Value Above ₹2999+ & Get kent Airfryer Worth ₹8000 at ₹1",
+                     "Instamart : Get Boat Earbuds Worth ₹2,499 At ₹9 On Orders Above ₹999",
+                     "Earbuds worth ₹2,999 at ₹1 with phone purchase", "Tata Play Binge worth ₹2,388 @ ₹1 for 1st month"):
+            with self.subTest(text=text):
+                self.assertEqual(self.tier(text), TIER_HIGH)
+
+    def test_a_percentage_that_describes_the_product_is_not_a_discount(self):
+        for text in ("INALSA Air Fryer 4.2L 1400W, 90% Less Oil, Timer @ 2,499", "Save 90% oil @ 2,499",
+                     "Livpure RO Water Purifier (99% less water wastage) @ 6999", "🌟Philips Air Fryer with 90% Less Fat at ₹6,999.",
+                     "Samsung AC 5 star, 95% savings on bill @ 31,990",
+                     "KENT Classic Hot Air Fryer 4L 1300 W | Vapour Steam Technology | 80% Less Oil @ 2999"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.tier(text))
+
+    def test_hot_loot_wording_does_not_cancel_the_alert(self):
+        base = "Samsung Galaxy A55 5G (8GB/256GB)\nDeal Price: ₹400 (MRP ₹45999)\nhttps://amzn.to/x\n"
+        for last in ("Hurry before it's OOS", "Grab fast before it is out of stock", "Already OOS in some pincodes, check yours",
+                     "Almost sold out, be quick", "Grab before it's sold out", "Fast!! Stock over anytime", "Offer over soon",
+                     "Order before the deal is gone", "Back in stock! (was sold out earlier)",
+                     "Again Live 🔥 (last time expired in 5 min)", "Coupon expired? Try without coupon, still ₹400"):
+            with self.subTest(last=last):
+                self.assertEqual(self.tier(base + last), TIER_URGENT)
+        # Stock wording inside a longer sentence: sent one step quieter, with a note, instead of dropped.
+        verdict = evaluate_text(base + "Blue colour is out of stock now, black available", self.s)
+        self.assertEqual((verdict.tier, verdict.max_tier), (TIER_HIGH, TIER_HIGH))
+        self.assertIn("may already be over", verdict.notes[0])
+        self.assertIsNone(self.tier("Symbol Jogger\nDeal Price: ₹349 (MRP ₹2599)\nBlue is out of stock now, black available"))
+        # A post that announces the end stays silent.
+        for last in ("Expired", "Sold out in 2 min", "OOS", "Deal over ❌"):
+            with self.subTest(last=last):
+                self.assertIsNone(self.tier(base + last))
+
+    def test_layouts_without_a_labelled_mrp(self):
+        # A real channel layout: the usual price sits after a pipe, behind a coupon amount.
+        self.assertEqual(self.tier("Air Conditioner Loot @1999 : https://amzn.to/4j4F0Xv\n*Apply ₹500 Coupon | Regular ₹45000+"),
+                         TIER_URGENT)
+        # A price and a percentage, with other amounts elsewhere in the post.
+        self.assertEqual(self.tier("💻 HP Pavilion 15 laptop at a huge discount\nA 13th-gen i5 laptop\n💰 ₹9,999 / 92% off\n"
+                                   "💳 ₹1,500 HDFC bank discount\n👉 Read More: https://ddime.in/x"), TIER_URGENT)
+        verdict = evaluate_text("📱 Google Pixel 9 — a ₹79,999 phone for pocket change\n💰 ₹400 / 99% off", make_settings())
+        self.assertEqual((verdict.tier, verdict.price), (TIER_URGENT, 400))
+        self.assertEqual(self.tier("❄ Voltas AC deal\n💰 ₹2,499 / 95% off\n📦 Installation ₹1,499"), TIER_URGENT)
+        # "100% off" beside a price is a rounded 99.5% or more.
+        verdict = evaluate_text("100% off on - ASUS Vivobook 16 Intel Core i5 - (16 GB/512 GB SSD) Laptop - Rs. 400", self.s)
+        self.assertEqual((verdict.tier, verdict.price), (TIER_URGENT, 400))
+        self.assertIn("100% off", verdict.headline)
+        self.assertEqual(self.tier("Jiomart 100% off - Rs. 1"), TIER_HIGH)
+        self.assertIsNone(self.tier("Plant Stand ₹19 / 95% off"))  # ₹361 saved: the rupee rule still applies
+        # A range or a budget is not a price.
+        self.assertIsNone(self.tier("Flat 80% Off On Puma Shoes Starting ₹599"))
+
+    def test_error_wording_variants_and_denials(self):
+        for text in ("PRICE-ERROR Sony XM5 @ 4999", "Mistake Price: Sony XM5 @ 4999", "Amazon Bug: Sony XM5 @ 4999"):
+            with self.subTest(text=text):
+                self.assertEqual(self.tier(text), TIER_URGENT)
+        for text in ("JBL Tune 770NC glitch free audio @ 4999", "Not a price error, Sony XM5 @ 4999 is the regular sale price",
+                     "All price error orders cancelled by Flipkart"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.tier(text))
+
     def test_capped_coupons_and_closed_deals_are_not_deals(self):
         self.assertIsNone(self.tier("SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)"))
         self.assertIsNone(self.tier("[ OVER ] Big Loot ₹1 (MRP ₹5,000) : https://instamart.in/item/x"))
@@ -119,14 +205,68 @@ class TextVerdicts(unittest.TestCase):
 
         for text in ("Spigen case for iPhone 16", "iPhone 16 case @ ₹99", "iPhone 16 Pro Back Cover ₹149",
                      "iPhone 16 tempered glass", "Refurbished iPhone 16 @ ₹9,999", "iPhone 16 (Renewed) ₹8,999",
-                     "20W charger compatible with iPhone 16", "iPhone 16 EMI ₹4,999"):
+                     "20W charger compatible with iPhone 16", "Spigen case iPhone 16 @ 99", "Used iPhone 16 @ 9,999",
+                     "iPhone 16 (Used) at ₹9,999", "Apple AirTag (works with iPhone 16) at ₹2703",
+                     "iPhone 16 MagSafe Power Bank 10000mAh @ 999", "iPhone 16 Pro Max Case with MagSafe @ 299",
+                     "Lanyard for iPhone 16 @ 99"):
             with self.subTest(text=text):
                 self.assertTrue(check(text))
         for text in ("iPhone 16 with free case @ ₹9,999", "iPhone 16 (charger not included) ₹9,999",
                      "iPhone 16 Pro Max 256 GB Natural Titanium", "Apple iPhone 16 @ ₹400 + free cover",
-                     "iPhone 16 128GB @ ₹9,999 | case sold separately"):
+                     "iPhone 16 128GB @ ₹9,999 | case sold separately",
+                     # ordinary words that used to switch a trap off
+                     "In case you missed: iPhone 16 @ 9,999", "Big Billion Days Part 2: iPhone 16 at ₹4,999",
+                     "Game changer loot 🔥 iPhone 16 @ 9,999", "Remote chance but try: iPhone 16 at ₹4,999",
+                     "iPhone 16 at ₹9,999, No Cost EMI available", "iPhone 16 @ 9,999 (used HDFC card)",
+                     "Lowest price ever for iPhone 16: ₹9,999"):
             with self.subTest(text=text):
                 self.assertFalse(check(text))
+
+    def test_trap_takes_only_the_price_written_for_that_product(self):
+        s = make_settings("nothing phone, cmf phone | 6000\niphone | 12000\nmacbook | 20000\nipad | 6000\n"
+                          "samsung galaxy s25 | 10000\noneplus 13 | 5000\n")
+
+        def tier(text):
+            verdict = evaluate_text(text, s)
+            return verdict.tier if verdict else None
+
+        # A bank discount, an exchange bonus, a price cut, an EMI, a budget heading, another product's price.
+        for text in ("🌟iPhone 16 (128GB) at ₹62,999 + ₹4000 Bank Discount.\n🔗https://amzn.to/4a2bvOn",
+                     "iPhone 16 at ₹62,999 + ₹3000 Exchange Bonus", "iPhone 16 Price Dropped By ₹10,000",
+                     "OnePlus 13 at ₹59,999 with ₹5000 bank discount", "Samsung Galaxy S25 ₹8000 Upgrade Bonus | Buy at ₹72,999",
+                     "iPhone 16 at ₹62,999 (Including ₹4000 Bank Discount)", "MacBook Air M4 at ₹83,990 + ₹10000 Bank Discount",
+                     "iPad Air M3 at ₹54,900. ₹4000 Bank Discount", "iPhone 16 ₹62,999 + ₹4000 Bank Offer",
+                     "iPhone 16 on No Cost EMI starting ₹2,917", "iPhone 16 EMI at ₹3,999", "iPhone 16 EMI ₹4,999",
+                     "MacBook Air M4 - just ₹6,999 a month on EMI", "Flat 10% off max ₹500 on iPhone 16",
+                     "🌟BEST Deals On Smartphones (According To Budget).\nMaster Link : https://amzn.to/3TFUNyU\n"
+                     "Under ₹10k : https://amzn.to/4BTIe7Q\nUnder ₹20k : https://amzn.to/4j8vjY9\niPhone : https://amzn.to/4j8vjY5",
+                     "boAt cable @ ₹99\niPhone 16 Pro deals live now", "iPhone 16 Pro deals live now\nboAt cable @ ₹99",
+                     "boAt cable\n₹99\niPhone 16 Pro", "iPhone 16 https://amzn.to/4ab7Rs9",
+                     "🔥Samsung Galaxy S25 at ₹74,999\n👉https://amznn.cc/y\n🔥boAt cable at ₹99\n👉https://amznn.cc/x",
+                     "Yesterday iPhone 16 was at ₹9,999, today back to ₹69,900"):
+            with self.subTest(text=text):
+                self.assertIsNone(tier(text))
+        # Accessories and things that merely work with the product.
+        for text in ("Mobile Tripod Stand with Remote | iPhone & Android | 360° Rotation\nDeal Price: ₹299 (MRP ₹999)",
+                     "iPhone 16 MagSafe Power Bank 10000mAh @ 999", "Apple AirTag (works with iPhone) at ₹2703",
+                     "iPad 10th Gen Smart Folio at ₹2,999", "Portronics MagSafe wallet | iPhone 15/16 | @ 499",
+                     "Used iPhone 13 @ 9,999", "iPhone 13 (Used) at ₹9,999"):
+            with self.subTest(text=text):
+                self.assertIsNone(tier(text))
+        # Every shape that names the product and its price still fires.
+        for text in ("Nothing Phone (3a) ₹400", "iPhone 16 ₹69,900 → ₹9,999", "Loot @ 400 : Nothing Phone (3a)",
+                     "₹400 only - Nothing Phone (3a)", "Nothing Phone (3a) Pro 5G (8GB/256GB)\nDeal Price: ₹400 (MRP ₹45999)",
+                     "Nothing Phone (3a) @ 400 MRP 24,999 😱", "iPhone 16 Pro Max - ₹9,999", "🌟iPhone 16 Pro Max @9,999",
+                     "99% off on - Apple iPhone 16 Pro Max - Rs. 1499", "Nothing Phone (3a) 5G at ₹400, No Cost EMI available",
+                     "In case you missed: Nothing Phone (3a) @ 400", "Big Billion Days Part 2: iPhone 16 at ₹4,999",
+                     "Game changer loot 🔥 Nothing Phone (3a) @ 400", "Nothing Phone (3a) @ 400\nOrder now: https://x.to/y",
+                     "Nothing Phone (3a) | 8GB/256GB | ₹400", "Flipkart BBD | Nothing Phone (3a) | ₹400",
+                     "Loot price ₹400 😱\nNothing Phone (3a) Pro",
+                     "Nothing Phone (3a) Pro 5G\n8GB RAM, 256GB Storage, 50MP Camera\n6.77 inch AMOLED\nDeal Price: ₹400",
+                     "📱 Nothing Phone (3a) — flagship at an unreal price\nA phone everyone wants\n💰 ₹299 / 100% off",
+                     "🔥Apple iPhone 16 at ₹9,999\n👉https://amznn.cc/x\n🔥Samsung Galaxy S25 at ₹74,999\n👉https://amznn.cc/y"):
+            with self.subTest(text=text):
+                self.assertEqual(tier(text), TIER_URGENT)
 
     def test_trap_skips_accessories_named_after_the_product(self):
         self.assertIsNone(self.tier("iPhone 16 case @ ₹99"))
@@ -147,8 +287,17 @@ class OfferVerdicts(unittest.TestCase):
         self.assertIsNone(evaluate_offer("Nothing Phone (3a)", 22999, 27999, steady, self.s))  # an 8% dip
 
     def test_a_drop_is_reported_once_not_on_every_check(self):
-        still_low = PriceInfo(baseline=24999, observations=6, last_price=9000, first_seen=False)
+        still_low = PriceInfo(baseline=24999, observations=6, last_price=9000, first_seen=False, quiet_price=9000,
+                              quiet_alerted=True)
         self.assertIsNone(evaluate_offer("Some Phone", 9000, None, still_low, self.s))
+        self.assertIsNone(evaluate_offer("Some Phone", 8500, None, still_low, self.s))  # a little lower is the same event
+
+    def test_a_clearly_deeper_fall_is_news_again(self):
+        # 60,000 -> 29,000 was reported; three hours later it is mispriced at 400.
+        halved = PriceInfo(baseline=60000, observations=6, last_price=29000, first_seen=False, quiet_price=29000,
+                           quiet_alerted=True)
+        verdict = evaluate_offer("Google Pixel 10 (Obsidian, 128 GB)", 400, None, halved, self.s)
+        self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Price drop"))
 
     def test_first_sighting_never_counts_as_a_drop(self):
         new = PriceInfo(baseline=None, observations=0, last_price=None, first_seen=True)
@@ -181,25 +330,78 @@ class OfferVerdicts(unittest.TestCase):
 
     def test_new_cheap_item_needs_a_list_price_far_above_the_floor(self):
         # Listings are noisy: a toy with a Rs 1,999 or Rs 9,999 "MRP" turning up under a Rs 4,000 floor is not an error.
-        self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=1999))
-        self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=9999))
+        self.assertIsNone(self.floor("Mini Notebook 11 inch", 999, self.NEW, mrp=1999))
+        self.assertIsNone(self.floor("Mini Notebook 11 inch", 999, self.NEW, mrp=9999))
         self.assertIsNone(self.floor("Mini Notebook", 999, self.NEW, mrp=None))
-        self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=11999))
+        self.assertIsNone(self.floor("Mini Notebook 11 inch", 999, self.NEW, mrp=11999))
+        self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=12000))  # a toy, whatever its "MRP"
         self.assertIsNotNone(self.floor("Lenovo IdeaPad Slim 3", 999, self.NEW, mrp=12000))  # 3 x the floor
 
     def test_first_read_of_a_listing_is_only_a_baseline(self):
         self.assertIsNone(self.floor("HP Laptop 15s", 600, self.NEW, baseline=True))
 
     def test_floor_ignores_what_was_already_cheap_and_catches_what_falls(self):
-        always_cheap = PriceInfo(baseline=999, observations=4, last_price=999, first_seen=False)
-        self.assertIsNone(self.floor("Kids Toy Laptop", 999, always_cheap))
+        always_cheap = PriceInfo(baseline=999, observations=4, last_price=999, first_seen=False, quiet_price=999)
+        self.assertIsNone(self.floor("Mini Notebook 11 inch", 999, always_cheap))
         was_normal = PriceInfo(baseline=45000, observations=4, last_price=45000, first_seen=False)
         verdict = self.floor("Dell Inspiron 15", 600, was_normal)
         self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Under the floor"))
         self.assertIn("fell from ₹45,000", verdict.reason)
         self.assertIsNotNone(self.floor("Dell Inspiron 15", 600, was_normal, mrp=None))  # our own history is enough
-        still_there = PriceInfo(baseline=45000, observations=5, last_price=600, first_seen=False)
+        still_there = PriceInfo(baseline=45000, observations=5, last_price=600, first_seen=False, quiet_price=600,
+                                quiet_alerted=True)
         self.assertIsNone(self.floor("Dell Inspiron 15", 600, still_there))  # reported once, not on every scan
+        self.assertIsNotNone(self.floor("Dell Inspiron 15", 500, still_there))  # ...unless it falls clearly further
+
+    def test_a_product_that_comes_back_after_a_long_absence_is_judged_afresh(self):
+        # Day 0: a phone appeared at 400 and alerted. It was fixed and left the cheapest-first page, so
+        # the last price on record is still 400. Three days later the same listing is mispriced again.
+        day = 86400.0
+        back = PriceInfo(baseline=400, observations=1, last_price=400, first_seen=False, last_age=3 * day, quiet_price=400,
+                         quiet_alerted=True)
+        verdict = self.floor("Samsung Galaxy S25 Ultra 5G (Titanium, 256 GB)", 450, back, mrp=129999)
+        self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Under the floor"))
+        minute_ago = PriceInfo(baseline=400, observations=1, last_price=400, first_seen=False, last_age=60.0, quiet_price=400,
+                               quiet_alerted=True)
+        self.assertIsNone(self.floor("Samsung Galaxy S25 Ultra 5G (Titanium, 256 GB)", 450, minute_ago, mrp=129999))
+
+    def test_what_was_normal_when_the_page_was_first_read_stays_quiet(self):
+        # A no-name phone that always sits under the floor with an inflated list price, and a phone
+        # whose ordinary price is just under a trap price: there at the first read, so not news.
+        day = 86400.0
+        junk = PriceInfo(baseline=2399, observations=9, last_price=2399, first_seen=False, last_age=60.0, quiet_price=2399)
+        self.assertIsNone(evaluate_offer("I Kall K800 (Blue, 32 GB)", 2099, 7999, junk, self.s, target=2500, listing=True))
+        away = PriceInfo(baseline=2399, observations=9, last_price=2399, first_seen=False, last_age=3 * day, quiet_price=2399)
+        self.assertIsNone(evaluate_offer("I Kall K800 (Blue, 32 GB)", 2399, 7999, away, self.s, target=2500, listing=True))
+        s = make_settings("iphone | 12000\n")
+        iphone = PriceInfo(baseline=11999, observations=9, last_price=11999, first_seen=False, last_age=3 * day, quiet_price=11999)
+        self.assertIsNone(evaluate_offer("Apple iPhone 13 (Midnight, 128 GB)", 11999, 49900, iphone, s, listing=True))
+        self.assertIsNone(evaluate_offer("Apple iPhone 13 (Midnight, 128 GB)", 10499, 49900, iphone, s, listing=True))
+        # ...but a real fall from that normal price is.
+        verdict = evaluate_offer("Apple iPhone 13 (Midnight, 128 GB)", 400, 49900, iphone, s, listing=True)
+        self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Trap hit"))
+
+    def test_cheap_but_never_reported_is_still_open(self):
+        # First sighting showed no list price, so nothing was sent; a minute later the card shows it.
+        unreported = PriceInfo(baseline=400, observations=1, last_price=400, first_seen=False, last_age=60.0, quiet_price=None)
+        verdict = self.floor("Samsung Galaxy S25 Ultra 5G (Titanium, 256 GB)", 400, unreported, mrp=129999)
+        self.assertEqual(verdict.label, "Under the floor")
+
+    def test_new_product_far_below_its_list_price_above_the_floor(self):
+        # A dropped digit lands above the floor and has no history: the card's own discount decides.
+        verdict = self.floor("HP Pavilion 15 Intel Core i5 13th Gen - (16 GB/512 GB SSD)", 7499, self.NEW, mrp=74990)
+        self.assertEqual((verdict.tier, verdict.label), (TIER_HIGH, "Far below list price"))
+        self.assertIn("90% off its list price ₹74,990", verdict.reason)
+        self.assertEqual(self.floor("Sony Bravia 55 inch 4K TV", 4500, self.NEW, mrp=99900).tier, TIER_URGENT)  # 95%+
+        # Ordinary no-name listings show 50-70% off inflated list prices: quiet.
+        self.assertIsNone(self.floor("Uniboom 60 cm (24 inch) HD Ready LED TV", 5753, self.NEW, mrp=19990))
+        self.assertIsNone(self.floor("DOMO Slate SL39 Tablet", 8490, self.NEW, mrp=24990))
+        # Not for accessories, small list prices, products already known, or pages without a floor.
+        self.assertIsNone(self.floor("Laptop Skin Sticker for 15.6 inch", 4500, self.NEW, mrp=39999 // 4))
+        self.assertIsNone(self.floor("Mini Notebook", 4500, self.NEW, mrp=11999))
+        known = PriceInfo(baseline=7499, observations=3, last_price=7499, first_seen=False, last_age=60.0, quiet_price=None)
+        self.assertIsNone(self.floor("HP Pavilion 15 Intel Core i5", 7499, known, mrp=74990))
+        self.assertIsNone(evaluate_offer("HP Pavilion 15 Intel Core i5", 7499, 74990, self.NEW, self.s, listing=True))
         hovering = PriceInfo(baseline=4200, observations=5, last_price=4200, first_seen=False)
         self.assertIsNone(self.floor("Budget Tablet", 3900, hovering, mrp=6000))  # a small dip under the floor is not news
 
@@ -211,7 +413,7 @@ class OfferVerdicts(unittest.TestCase):
                       "Portronics Laptop Sleeve 15.6 inch", "Zebronics Wireless Mouse"):
             with self.subTest(title=title):
                 self.assertTrue(is_side_product(title))
-                self.assertIsNone(self.floor(title, 300, self.NEW))
+                self.assertIsNone(self.floor(title, 300, self.NEW, mrp=12999))
         for title in ("HP Laptop 15s, Backlit Keyboard, Fast Charge", "Samsung Galaxy M35 5G (Without Charger)",
                       "Apple MacBook Air M3 with 30W Adapter", "Sony Bravia 55 inch 4K TV with Voice Remote",
                       "ASUS Vivobook 15, Intel Core i3, Fingerprint, Backlit Keyboard, Thin & Light Laptop",
@@ -220,13 +422,40 @@ class OfferVerdicts(unittest.TestCase):
             with self.subTest(title=title):
                 self.assertFalse(is_side_product(title))
 
+    def test_a_large_list_price_overrules_the_accessory_word_test(self):
+        # "Stylus" is an accessory word, but this is a phone: accessories do not carry such list prices.
+        title = "Motorola Edge 60 Stylus (Pantone Surf the Web, 256 GB)"
+        self.assertTrue(is_side_product(title))
+        verdict = evaluate_offer(title, 400, 28999, self.NEW, self.s, target=2500, listing=True)
+        self.assertEqual(verdict.label, "Under the floor")
+        self.assertFalse(is_side_product("BenQ Mobiuz 27 inch QHD G-Sync Compatible with HDR10 Gaming Monitor"))
+        # Used and made-for wording is never overruled.
+        for title in ("Refurbished Lenovo ThinkPad T480", "Charger Adapter 65W Compatible with HP Laptops"):
+            self.assertIsNone(evaluate_offer(title, 400, 59990, self.NEW, self.s, target=2500, listing=True))
+        # A low floor does not turn every inflated accessory price into a "large" one.
+        self.assertIsNone(evaluate_offer("Monitor Stand Riser with Drawer", 499, 4999, self.NEW, self.s, target=900, listing=True))
+
     def test_target_and_trap_fire_on_crossing_not_on_every_check(self):
-        crossed = PriceInfo(baseline=500, observations=3, last_price=99, first_seen=False)
+        crossed = PriceInfo(baseline=500, observations=3, last_price=99, first_seen=False, quiet_price=99, quiet_alerted=True)
         self.assertIsNone(evaluate_offer("Gulab Jamun 1kg", 99, 300, crossed, self.s, target=100))
-        cheap_before = PriceInfo(baseline=400, observations=3, last_price=400, first_seen=False)
+        cheap_before = PriceInfo(baseline=400, observations=3, last_price=400, first_seen=False, quiet_price=400)
         self.assertIsNone(evaluate_offer("Nothing Phone (1) display unit", 400, None, cheap_before, self.s, listing=True))
         fell = PriceInfo(baseline=24999, observations=3, last_price=24999, first_seen=False)
         self.assertEqual(evaluate_offer("Nothing Phone (3a) 5G", 400, None, fell, self.s, listing=True).label, "Trap hit")
+
+    def test_trap_on_a_listing_needs_proof_that_it_is_the_device(self):
+        new = PriceInfo(baseline=None, observations=0, last_price=None, first_seen=True)
+        # Spare parts are named after the phone too. Without a list price that fits the device: quiet, not urgent.
+        for title, price, mrp in (("Nothing Phone (2a) Mobile Display Combo Folder", 1899, 3999),
+                                  ("Nothing Phone (3a) Back Glass Panel", 399, 999),
+                                  ("Nothing Phone (3a) Battery", 899, None)):
+            with self.subTest(title=title):
+                verdict = evaluate_offer(title, price, mrp, new, self.s, listing=True)
+                self.assertEqual((verdict.tier, verdict.max_tier, verdict.label), (TIER_NORMAL, TIER_NORMAL, "Trap match?"))
+        verdict = evaluate_offer("Nothing Phone (3a) Pro 5G (Black, 256 GB)", 400, 59999, new, self.s, listing=True)
+        self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Trap hit"))
+        # On a product page you chose yourself the title is proof enough.
+        self.assertEqual(evaluate_offer("Nothing Phone (3a) Pro 5G", 400, None, new, self.s).tier, TIER_URGENT)
 
     def test_first_check_of_a_product_page_at_a_huge_discount(self):
         new = PriceInfo(baseline=None, observations=0, last_price=None, first_seen=True)

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS sightings (
 );
 CREATE TABLE IF NOT EXISTS products (
     key TEXT PRIMARY KEY, store TEXT, title TEXT, url TEXT,
-    first_seen INTEGER, last_seen INTEGER, last_price REAL, mrp REAL
+    first_seen INTEGER, last_seen INTEGER, last_price REAL, mrp REAL,
+    quiet_price REAL, quiet_alerted INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS price_obs (
     key TEXT NOT NULL, ts INTEGER NOT NULL, price REAL NOT NULL
@@ -49,6 +50,11 @@ class PriceInfo:
     observations: int  # how many earlier observations the baseline rests on
     last_price: Optional[float]
     first_seen: bool
+    last_age: Optional[float] = None  # seconds since it was last read; None on the first sighting
+    # The price at which it has already been dealt with: reported in an alert (quiet_alerted), or
+    # simply there when its page was first read and so part of what is normal. None: neither yet.
+    quiet_price: Optional[float] = None
+    quiet_alerted: bool = False
 
 
 @dataclass
@@ -68,6 +74,13 @@ class DB:
         self._conn = sqlite3.connect(path, check_same_thread=False, timeout=30)
         with self._lock, self._conn:
             self._conn.executescript(_SCHEMA)
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(products)")}
+            if "quiet_price" not in columns:
+                # A state file from before these columns existed: everything in it was either part
+                # of a baseline or already reported, so nothing in it is news.
+                self._conn.execute("ALTER TABLE products ADD COLUMN quiet_price REAL")
+                self._conn.execute("ALTER TABLE products ADD COLUMN quiet_alerted INTEGER NOT NULL DEFAULT 0")
+                self._conn.execute("UPDATE products SET quiet_price = last_price")
 
     def close(self) -> None:
         with self._lock:
@@ -125,9 +138,12 @@ class DB:
         with self._lock, self._conn:
             self._conn.execute("UPDATE alerts SET attempts = attempts + 1 WHERE id = ?", (alert_id,))
 
-    def drop_alert(self, alert_id: int) -> None:
+    def drop_alert(self, alert_id: int) -> str:
+        """Give up on an alert; returns its fingerprint so the caller can reopen that deal."""
         with self._lock, self._conn:
             self._conn.execute("UPDATE alerts SET dropped = 1 WHERE id = ?", (alert_id,))
+            row = self._conn.execute("SELECT fingerprint FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+        return str(row[0]) if row else ""
 
     def pending_alerts(self) -> List[PendingAlert]:
         with self._lock:
@@ -171,7 +187,9 @@ class DB:
         """
         now = int(now or time.time())
         with self._lock, self._conn:
-            product = self._conn.execute("SELECT last_price FROM products WHERE key = ?", (key,)).fetchone()
+            product = self._conn.execute(
+                "SELECT last_price, last_seen, quiet_price, quiet_alerted FROM products WHERE key = ?", (key,)
+            ).fetchone()
             history = [r[0] for r in self._conn.execute(
                 "SELECT price FROM price_obs WHERE key = ? ORDER BY ts DESC LIMIT 48", (key,)
             ).fetchall()]
@@ -183,6 +201,9 @@ class DB:
                 observations=len(history),
                 last_price=float(product[0]) if product and product[0] is not None else None,
                 first_seen=product is None,
+                last_age=float(now - product[1]) if product and product[1] is not None else None,
+                quiet_price=float(product[2]) if product and product[2] is not None else None,
+                quiet_alerted=bool(product[3]) if product else False,
             )
             if newest is None or abs(newest[1] - price) > 0.005 or now - newest[0] >= 3600:
                 self._conn.execute("INSERT INTO price_obs (key, ts, price) VALUES (?, ?, ?)", (key, now, price))
@@ -195,6 +216,18 @@ class DB:
                 (key, store, title[:300], url, now, now, price, mrp),
             )
         return info
+
+    def mark_quiet(self, key: str, price: float, alerted: bool) -> None:
+        """Remember that this product at this price has been reported (``alerted``), or was there
+        when its page was first read and so is normal for it."""
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE products SET quiet_price = ?, quiet_alerted = ? WHERE key = ?",
+                               (price, 1 if alerted else 0, key))
+
+    def clear_quiet(self, key: str) -> None:
+        """Forget that: the alert about it never reached anyone."""
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE products SET quiet_price = NULL, quiet_alerted = 0 WHERE key = ?", (key,))
 
     def product_count(self) -> int:
         with self._lock:
@@ -224,6 +257,12 @@ class DB:
             row = self._conn.execute("SELECT streak FROM health WHERE source = ?", (source,)).fetchone()
         return int(row[0])
 
+    def last_ok(self, source: str) -> Optional[float]:
+        """When this source was last read successfully, or None if it never was."""
+        with self._lock:
+            row = self._conn.execute("SELECT last_ok FROM health WHERE source = ?", (source,)).fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+
     def health_rows(self) -> List[Tuple[str, int, int, int, Optional[int], Optional[int], Optional[str], Optional[int]]]:
         with self._lock:
             return list(self._conn.execute(
@@ -238,6 +277,7 @@ class DB:
             for (source,) in self._conn.execute("SELECT source FROM health").fetchall():
                 if source not in keep:
                     self._conn.execute("DELETE FROM health WHERE source = ?", (source,))
+                    self._conn.execute("DELETE FROM kv WHERE key = ?", ("reported:" + source,))
 
     # ---- small key/value store -------------------------------------------
     def get(self, key: str, default: str = "") -> str:
