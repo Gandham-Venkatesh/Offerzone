@@ -176,7 +176,9 @@ class Settings:
 
     min_discount: float = 80.0  # % off needed for an alert
     urgent_min_saving: float = 2000.0  # rupees saved needed to make it an URGENT alert
+    urgent_discount: float = 95.0  # ...or at least this % off, whatever the rupee amount
     watch_drop_pct: float = 50.0  # % drop against a watched product's own usual price
+    floor_mrp_ratio: float = 4.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
 
     interval: int = 60
     workers: int = 8
@@ -193,6 +195,7 @@ class Settings:
 
     resolve_links: bool = True
     use_curl_cffi: str = "auto"  # auto | on | off
+    curl_impersonate: str = "chrome124"  # browser profile for curl_cffi; newer ones are not always better
     telegram_base_url: str = "https://t.me/s"
     deny_words: str = DEFAULT_DENY_WORDS
     extra_store_domains: str = ""
@@ -219,7 +222,9 @@ class Settings:
             ntfy_health_topic=_get("NTFY_HEALTH_TOPIC", ""),
             min_discount=_num("MIN_DISCOUNT", 80.0),
             urgent_min_saving=_num("URGENT_MIN_SAVING", 2000.0),
+            urgent_discount=_num("URGENT_DISCOUNT", 95.0),
             watch_drop_pct=_num("WATCH_DROP_PCT", 50.0),
+            floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 4.0),
             interval=int(_num("CHECK_INTERVAL", 60)),
             workers=int(_num("MAX_WORKERS", 8)),
             max_post_age_min=_num("MAX_POST_AGE_MIN", 20.0),
@@ -233,6 +238,7 @@ class Settings:
             healthcheck_url=_get("HEALTHCHECK_URL", ""),
             resolve_links=_flag("RESOLVE_LINKS", True),
             use_curl_cffi=_get("USE_CURL_CFFI", "auto").lower(),
+            curl_impersonate=_get("CURL_IMPERSONATE", "chrome124"),
             telegram_base_url=_get("TELEGRAM_BASE_URL", "https://t.me/s").rstrip("/"),
             deny_words=_get("DENY_WORDS", DEFAULT_DENY_WORDS),
             extra_store_domains=_get("EXTRA_STORE_DOMAINS", ""),

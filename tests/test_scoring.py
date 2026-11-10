@@ -34,6 +34,12 @@ class TextVerdicts(unittest.TestCase):
     def test_small_ticket_is_high_not_urgent(self):
         self.assertEqual(self.tier("USB cable @ ₹99 (MRP ₹999)"), TIER_HIGH)  # 90% off but saves ₹900
 
+    def test_priority_follows_the_discount(self):
+        self.assertIsNone(self.tier("Sunflower oil 1L @ ₹120 (MRP ₹199)"))          # 40% off: nothing
+        self.assertEqual(self.tier("Amul Butter 500g @ ₹55 (MRP ₹285)"), TIER_HIGH)   # 81% off: high
+        self.assertEqual(self.tier("Amul Butter 500g @ ₹9 (MRP ₹285)"), TIER_URGENT)  # 97% off: urgent, small as it is
+        self.assertEqual(self.tier("Gulab Jamun 1kg @ ₹1 (MRP ₹250)"), TIER_URGENT)
+
     def test_below_threshold_is_ignored(self):
         self.assertIsNone(self.tier("boAt Rockerz 450 @ ₹1,499 (MRP ₹3,990)"))  # 62%
         self.assertIsNone(self.tier("Good morning deal hunters!"))
@@ -133,14 +139,21 @@ class OfferVerdicts(unittest.TestCase):
     # -- price floors on search / category pages ("nothing here should cost this little") --
     NEW = PriceInfo(baseline=None, observations=0, last_price=None, first_seen=True)
 
-    def floor(self, title, price, info, **kwargs):
-        return evaluate_offer(title, price, None, info, self.s, target=4000, listing=True, **kwargs)
+    def floor(self, title, price, info, mrp=59990, **kwargs):
+        return evaluate_offer(title, price, mrp, info, self.s, target=4000, listing=True, **kwargs)
 
     def test_floor_alerts_on_a_new_entry_under_it(self):
         verdict = self.floor("HP Laptop 15s, 12th Gen Intel Core i5, 16GB RAM, Backlit Keyboard, 1.69 kg", 600, self.NEW)
         self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Under the floor"))
-        self.assertIn("₹4,000 floor", verdict.reason)
+        self.assertIn("₹4,000 floor, list price ₹59,990", verdict.reason)
         self.assertIsNone(self.floor("HP Laptop 15s", 42990, self.NEW))  # an ordinary price
+
+    def test_new_cheap_item_needs_a_list_price_far_above_the_floor(self):
+        # Listings are noisy: a toy with a Rs 1,999 or Rs 9,999 "MRP" turning up under a Rs 4,000 floor is not an error.
+        self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=1999))
+        self.assertIsNone(self.floor("Kids Toy Laptop Learning Machine", 999, self.NEW, mrp=9999))
+        self.assertIsNone(self.floor("Mini Notebook", 999, self.NEW, mrp=None))
+        self.assertIsNotNone(self.floor("Lenovo IdeaPad Slim 3", 999, self.NEW, mrp=16000))  # 4 x the floor
 
     def test_first_read_of_a_listing_is_only_a_baseline(self):
         self.assertIsNone(self.floor("HP Laptop 15s", 600, self.NEW, baseline=True))
@@ -151,8 +164,12 @@ class OfferVerdicts(unittest.TestCase):
         was_normal = PriceInfo(baseline=45000, observations=4, last_price=45000, first_seen=False)
         verdict = self.floor("Dell Inspiron 15", 600, was_normal)
         self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Under the floor"))
+        self.assertIn("fell from ₹45,000", verdict.reason)
+        self.assertIsNotNone(self.floor("Dell Inspiron 15", 600, was_normal, mrp=None))  # our own history is enough
         still_there = PriceInfo(baseline=45000, observations=5, last_price=600, first_seen=False)
         self.assertIsNone(self.floor("Dell Inspiron 15", 600, still_there))  # reported once, not on every scan
+        hovering = PriceInfo(baseline=4200, observations=5, last_price=4200, first_seen=False)
+        self.assertIsNone(self.floor("Budget Tablet", 3900, hovering, mrp=6000))  # a small dip under the floor is not news
 
     def test_floor_skips_accessories_spares_and_used_units(self):
         for title in ("Laptop Skin Sticker for 15.6 inch", "Charger Adapter 65W Compatible with HP Laptops",

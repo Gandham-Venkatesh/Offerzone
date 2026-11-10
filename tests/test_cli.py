@@ -84,6 +84,7 @@ class CommandLine(CleanEnv):
         self.assertEqual((settings.min_discount, settings.urgent_min_saving, settings.interval), (80.0, 2000.0, 60))
         self.assertEqual((settings.ntfy_topic, settings.ntfy_token, settings.ntfy_server), ("", "", "https://ntfy.sh"))
         self.assertEqual((settings.heartbeat_hour, settings.daily_alert_limit), (9, 200))
+        self.assertEqual((settings.urgent_discount, settings.floor_mrp_ratio, settings.curl_impersonate), (95.0, 4.0, "chrome124"))
 
     def test_shipped_list_files_parse_cleanly(self):
         root = Path(__file__).resolve().parent.parent
@@ -94,8 +95,19 @@ class CommandLine(CleanEnv):
         self.assertGreaterEqual(len(settings.channels), 10)
         self.assertIn("desidime", settings.channels)
         self.assertEqual(len(settings.channels), len({c.lower() for c in settings.channels}))
-        self.assertEqual([w.url for w in settings.watchlist],
-                         ["https://www.amazon.in/s?k=nothing+phone", "https://www.flipkart.com/search?q=nothing+phone"])
+        urls = [w.url for w in settings.watchlist]
+        self.assertEqual(len(urls), 16)
+        self.assertIn("https://www.amazon.in/s?k=nothing+phone", urls)
+        laptops = next(w for w in settings.watchlist if "1375424031%2Cp_36" in w.url)
+        self.assertEqual((laptops.target, laptops.label), (5000.0, "Amazon laptops under 5,000"))
+        best = next(w for w in settings.watchlist if "bestsellers/computers" in w.url)
+        self.assertEqual((best.target, best.label), (None, "Amazon best-selling laptops"))
+        # every Amazon cap in the URL (paise) matches the floor after the "|" (rupees)
+        import re
+        for item in settings.watchlist:
+            cap = re.search(r"p_36%3A-(\d+)", item.url)
+            if cap:
+                self.assertEqual(int(cap.group(1)) / 100, item.target, item.url)
         self.assertGreaterEqual(len(settings.traps), 4)
         self.assertEqual(settings.feeds, [])
 
@@ -222,6 +234,14 @@ class Transport(unittest.TestCase):
         self.assertTrue(fetch.policy_for("www.amazon.in").sniff_challenge)
         self.assertTrue(fetch.policy_for("www.amazon.in").impersonate)
         self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 6.0)
+
+    def test_amazon_waf_answer_counts_as_a_refusal(self):
+        self.web.status_for["/waf"] = 202
+        self.web.headers_for["/waf"] = {"x-amzn-waf-action": "challenge"}
+        fetcher = Fetcher("off")
+        result = fetcher.get(self.web.base + "/waf")
+        self.assertEqual((result.ok, result.blocked), (False, "AWS WAF challenge"))
+        self.assertGreater(fetcher.cooling_down(self.web.base + "/page"), 0)
 
     def test_time_budget_skips_instead_of_waiting(self):
         fetcher = Fetcher("off")

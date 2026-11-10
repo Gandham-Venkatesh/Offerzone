@@ -124,7 +124,7 @@ def evaluate_text(text: str, settings: Settings) -> Optional[Verdict]:
         return Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp, discount, label="Price error?")
 
     if parsed.pair_conf and discount >= settings.min_discount:
-        if confident and parsed.saving >= settings.urgent_min_saving:
+        if confident and (parsed.saving >= settings.urgent_min_saving or discount >= settings.urgent_discount):
             return Verdict(TIER_URGENT, f"{discount:.0f}% off, saves {fmt_inr(parsed.saving)}", price, mrp, discount)
         reason = f"{discount:.0f}% off MRP" if confident else f"{discount:.0f}% off (prices not labelled)"
         return Verdict(TIER_HIGH, reason, price, mrp, discount, needs_trusted_link=not confident)
@@ -167,12 +167,23 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
     if listing and baseline:
         return None
 
-    if target is not None and _entered(price, target, info) and not (listing and is_side_product(title)):
-        if listing:
-            return Verdict(TIER_URGENT, f"new on this page at or under its {fmt_inr(target)} floor", price, mrp,
-                           _pct(mrp, price), label="Under the floor")
-        return Verdict(TIER_URGENT, f"at or under your target {fmt_inr(target)}", price, mrp,
-                       _pct(mrp, price), label="Target hit")
+    if target is not None and _entered(price, target, info):
+        if not listing:
+            return Verdict(TIER_URGENT, f"at or under your target {fmt_inr(target)}", price, mrp,
+                           _pct(mrp, price), label="Target hit")
+        # Store listings are noisy: cheap odds and ends sit in every category and the same search
+        # returns a different mix each time. So being under the floor is not enough. There must
+        # also be a reason to believe the thing should cost far more: we watched it cost at least
+        # twice the floor ourselves, or its list price is several times the floor.
+        watched_higher = max(info.baseline or 0.0, info.last_price or 0.0)
+        if not is_side_product(title):
+            if watched_higher >= target * 2:
+                return Verdict(TIER_URGENT, f"fell from {fmt_inr(watched_higher)} to under this page's "
+                               f"{fmt_inr(target)} floor", price, mrp or watched_higher, _pct(mrp or watched_higher, price),
+                               label="Under the floor")
+            if mrp and mrp >= target * settings.floor_mrp_ratio:
+                return Verdict(TIER_URGENT, f"new under this page's {fmt_inr(target)} floor, list price {fmt_inr(mrp)}",
+                               price, mrp, _pct(mrp, price), label="Under the floor")
 
     hit = match_trap(parse_text(title), settings.traps, price=price)
     if hit and _entered(price, hit[0].max_price, info):

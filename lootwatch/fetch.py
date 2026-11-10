@@ -47,7 +47,7 @@ _BROWSER_HEADERS = {
 # "weak" ones (a captcha script tag, a WAF token) also appear on normal pages, so they only count
 # when the whole response is tiny.
 _CHALLENGE_STRONG = re.compile(
-    r"/errors/validateCaptcha|Enter the characters you see below|Pardon Our Interruption"
+    r"/errors/validateCaptcha|Enter the characters you see below|Pardon Our Interruption|bm-verify"
     r"|<title>\s*(?:Robot Check|Just a moment|Access Denied|Attention Required|Are you a human)",
     re.I,
 )
@@ -158,8 +158,9 @@ def _decode(content: bytes, content_type: str) -> str:
 
 
 class Fetcher:
-    def __init__(self, use_curl_cffi: str = "auto", timeout: float = 15.0) -> None:
+    def __init__(self, use_curl_cffi: str = "auto", timeout: float = 15.0, profile: str = "chrome124") -> None:
         self.timeout = timeout
+        self.profile = profile or "chrome124"
         self.impersonation = HAS_CURL_CFFI and use_curl_cffi != "off"
         if use_curl_cffi == "on" and not HAS_CURL_CFFI:
             log.warning("USE_CURL_CFFI=on but curl_cffi is not installed; using plain requests")
@@ -176,8 +177,13 @@ class Fetcher:
     def _session(self, site: _Site):
         if site.session is None:
             if self.impersonation and site.policy.impersonate:
-                # curl_cffi sends Chrome's own header set and TLS handshake; do not override them.
-                site.session = cffi_requests.Session(impersonate="chrome")
+                # curl_cffi sends that browser's own header set and TLS handshake; do not override them.
+                try:
+                    site.session = cffi_requests.Session(impersonate=self.profile)
+                except Exception:  # a profile name this curl_cffi version does not know
+                    log.warning("curl_cffi has no browser profile %r; using its default Chrome profile", self.profile)
+                    self.profile = "chrome"
+                    site.session = cffi_requests.Session(impersonate="chrome")
                 site.session.headers.update({"Accept-Language": "en-IN,en;q=0.9"})
             else:
                 session = requests.Session()
@@ -241,7 +247,9 @@ class Fetcher:
             result.final_url = str(resp.url)
             result.text = _decode(content, resp.headers.get("Content-Type", ""))
             result.retry_after = _retry_after(resp.headers.get("Retry-After"))
-            if result.status == 200 and site.policy.sniff_challenge and looks_like_challenge(result.text):
+            if resp.headers.get("x-amzn-waf-action"):
+                result.blocked = "AWS WAF challenge"  # Amazon answers 202/403 with this header instead of a page
+            elif result.status == 200 and site.policy.sniff_challenge and looks_like_challenge(result.text):
                 result.blocked = "challenge page"
         except Exception as exc:  # requests / curl errors, decoding problems
             result.error = _describe(exc)

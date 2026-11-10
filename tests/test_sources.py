@@ -183,6 +183,21 @@ class StorePages(unittest.TestCase):
         self.assertEqual((first.price, first.mrp), (24999.0, 27999.0))
         self.assertEqual(first.url, "https://www.amazon.in/dp/B0AAAAAAA1")
 
+    def test_amazon_best_seller_grid(self):
+        # Best-seller grids carry the ASIN in the element id and style prices with generated class names.
+        html = """<html><body><div id="zg-right-col"><div id="gridItemRoot" class="a-column">
+          <div id="B0AAAAAAA1" class="p13n-sc-uncoverable-faceout"><a href="/x/dp/B0AAAAAAA1"><img alt="Apple iPhone 16 (128 GB) - Black" src="i.jpg"/></a>
+            <span class="_cDEzb_p13n-sc-price_3mJ9Z">₹76,999.00</span></div></div>
+          <div id="gridItemRoot" class="a-column"><div id="B0AAAAAAA2" class="p13n-sc-uncoverable-faceout">
+            <img alt="Samsung Galaxy M35 5G" src="j.jpg"/><span class="_cDEzb_p13n-sc-price_3mJ9Z">₹14,999.00</span></div></div>
+          <div id="B0NOPRICE1"><img alt="Currently unavailable item" src="k.jpg"/></div>
+        </div></body></html>"""
+        result = extract_page("https://www.amazon.in/gp/bestsellers/electronics/1805560031", html)
+        self.assertEqual(result.kind, "listing")
+        self.assertEqual([(o.key, o.title, o.price) for o in result.offers],
+                         [("amazon:B0AAAAAAA1", "Apple iPhone 16 (128 GB) - Black", 76999.0),
+                          ("amazon:B0AAAAAAA2", "Samsung Galaxy M35 5G", 14999.0)])
+
     def test_flipkart_search_page_without_relying_on_class_names(self):
         result = extract_page("https://www.flipkart.com/search?q=nothing+phone", FLIPKART_SEARCH)
         self.assertEqual(result.kind, "listing")

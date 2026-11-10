@@ -60,6 +60,7 @@ class FakeWeb:
         self.redirects: Dict[str, str] = {}  # "/r/abc" -> target URL
         self.pages: Dict[str, str] = {}  # path -> body
         self.status_for: Dict[str, int] = {}  # path -> forced HTTP status
+        self.headers_for: Dict[str, dict] = {}  # path -> extra response headers
         self.pushes: List[dict] = []
         self.push_headers: List[dict] = []
         self.ntfy_status = 200
@@ -94,7 +95,7 @@ class FakeWeb:
                 path = self.path.split("?")[0]
                 web.hits[path] += 1
                 if path in web.status_for:
-                    return self._send(web.status_for[path], "refused")
+                    return self._send(web.status_for[path], "refused", headers=web.headers_for.get(path))
                 if path in web.redirects:
                     return self._send(302, headers={"Location": web.redirects[path]})
                 if path.startswith("/s/"):

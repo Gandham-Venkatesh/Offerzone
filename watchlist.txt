@@ -9,6 +9,8 @@
 #                price error is caught at the store itself, with no deal channel involved.
 #                  - The first read of a page only records what is normal on it. After that, anything NEW
 #                    at or under the floor alerts, and so does anything that FALLS to it.
+#                  - A NEW item under the floor counts only if its list price (MRP) is at least 4x the
+#                    floor (FLOOR_MRP_RATIO): toy laptops and phone cases stay quiet.
 #                  - Accessories, spares and refurbished units are skipped.
 #                  - Every product on the page is also checked against traps.txt and its own price history.
 #                  - "% off MRP" alone is ignored here: listings are full of permanently "90% off" items.
@@ -24,13 +26,35 @@
 #   - Blinkit, Zepto and Swiggy Instamart build their pages in the app for your delivery location, so a
 #     plain page fetch usually finds no prices.
 
-# --- from your old script's targets
+# --- Amazon.in category pages with a price cap, cheapest first.
+# URL = category (rh=n:<id>) + price cap in paise (p_36:-<cap>) + cheapest-first sort. These parts were
+# confirmed from Amazon's own URLs. The floor after the "|" matches the cap.
+https://www.amazon.in/s?rh=n%3A1805560031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon smartphones under 2,000
+https://www.amazon.in/s?rh=n%3A1375424031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon laptops under 5,000
+https://www.amazon.in/s?rh=n%3A1389396031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon TVs under 3,000
+https://www.amazon.in/s?rh=n%3A1375458031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon tablets under 2,000
+https://www.amazon.in/s?rh=n%3A1380365031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon refrigerators under 3,000
+https://www.amazon.in/s?rh=n%3A1380369031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon washing machines under 3,000
+https://www.amazon.in/s?rh=n%3A3474656031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon air conditioners under 5,000
+https://www.amazon.in/s?rh=n%3A1375425031%2Cp_36%3A-150000&s=price-asc-rank | 1500 | Amazon monitors under 1,500
+
+# --- Amazon best sellers: real, popular products. No floor: each alerts when it falls 50% below
+#     the price this monitor has been seeing for it, or trips a trap.
+https://www.amazon.in/gp/bestsellers/electronics/1805560031 | | Amazon best-selling smartphones
+https://www.amazon.in/gp/bestsellers/computers/1375424031 | | Amazon best-selling laptops
+
+# --- Flipkart category pages, cheapest first. These formats are from memory and NOT yet confirmed:
+#     --doctor will show whether they load and what the cheapest item is.
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&sort=price_asc | 2000 | Flipkart mobiles
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc | 5000 | Flipkart laptops
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=price_asc | 3000 | Flipkart TVs
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=price_asc | 2000 | Flipkart tablets
+
+# --- searches (products on them alert through traps.txt and their own price history)
 https://www.amazon.in/s?k=nothing+phone
 https://www.flipkart.com/search?q=nothing+phone
 
 # --- examples (remove the leading "# " and put in real links)
 # https://www.amazon.in/dp/B0XXXXXXXX | 5000 | Nothing Phone 3a
 # https://www.flipkart.com/some-product/p/itmxxxxxxxx?pid=MOBXXXXXXXXXXXXX | 5000
-# https://www.amazon.in/s?k=smartphone+5g
-# https://www.flipkart.com/search?q=tws+earbuds
-# https://www.myntra.com/puma-shoes
+# https://www.myntra.com/puma-shoes?sort=discount

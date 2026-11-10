@@ -374,7 +374,7 @@ class EndToEnd(unittest.TestCase):
         push = self.web.pushes[0]
         self.assertEqual(push["priority"], 5)
         self.assertEqual(push["title"], "Under the floor: 99% off · ₹600 (MRP ₹62,000) — Dell Inspiron 15, Ryzen 5, 16GB")
-        self.assertIn("new on this page at or under its ₹4,000 floor", push["message"])
+        self.assertIn("fell from ₹45,000 to under this page's ₹4,000 floor", push["message"])
         self.assertIn("Laptops, cheapest first", push["message"])
         self.assertIn("read from the store", push["message"])
 
@@ -386,6 +386,7 @@ class EndToEnd(unittest.TestCase):
         monitor.cycle()
         self.assertEqual([p["title"].split(" — ")[1] for p in self.web.pushes],
                          ["Dell Inspiron 15, Ryzen 5, 16GB", "Acer Aspire Lite, Core i3, 8GB"])
+        self.assertIn("new under this page's ₹4,000 floor, list price ₹38,990", self.web.pushes[1]["message"])
         # Restart: the state file remembers the page, so nothing repeats and no new baseline is needed.
         self.monitor().cycle()
         self.assertEqual(len(self.web.pushes), 2)

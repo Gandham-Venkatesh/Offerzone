@@ -101,7 +101,7 @@ def main(argv=None) -> int:
         return 1
 
     db = DB(settings.db_path)
-    monitor = Monitor(settings, db, Fetcher(settings.use_curl_cffi), notifier, LinkResolver())
+    monitor = Monitor(settings, db, Fetcher(settings.use_curl_cffi, profile=settings.curl_impersonate), notifier, LinkResolver())
 
     def _stop(signum, _frame):
         log.info("stopping (signal %s)", signum)

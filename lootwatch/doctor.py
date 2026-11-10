@@ -29,10 +29,11 @@ def _row(status: str, name: str, detail: str) -> str:
 
 
 def run_doctor(settings: Settings, out=sys.stdout) -> int:
-    fetcher = Fetcher(settings.use_curl_cffi)
+    fetcher = Fetcher(settings.use_curl_cffi, profile=settings.curl_impersonate)
     now = time.time()
     print(f"lootwatch {__version__} doctor | python {platform.python_version()} | "
-          f"browser-grade TLS (curl_cffi): {'yes' if fetcher.impersonation else 'no' if not HAS_CURL_CFFI else 'off'}", file=out)
+          f"browser-grade TLS (curl_cffi): "
+          f"{'yes, profile ' + fetcher.profile if fetcher.impersonation else 'no' if not HAS_CURL_CFFI else 'off'}", file=out)
     print(f"ntfy: server {settings.ntfy_server} | topic {'set' if settings.ntfy_topic else 'NOT SET'} | "
           f"token {'set' if settings.ntfy_token else 'not set'}", file=out)
     print(f"alert rule: >= {settings.min_discount:.0f}% off; urgent when saving >= {fmt_inr(settings.urgent_min_saving)}, "

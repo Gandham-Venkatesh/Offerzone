@@ -71,6 +71,15 @@ def _clean_mrp(price: float, mrp: Optional[float]) -> Optional[float]:
     return mrp if mrp and mrp > price else None
 
 
+def _rupee_values(node: Any) -> List[float]:
+    values = []
+    for text in node.find_all(string=_RUPEE_ONLY):
+        value = parse_amount(text)
+        if value:
+            values.append(value)
+    return values
+
+
 # ---------------------------------------------------------------- Amazon ----
 _AMAZON_PRICE = (
     "#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen",
@@ -120,21 +129,39 @@ def _amazon_product(soup: BeautifulSoup, url: str) -> PageResult:
     return PageResult("product", [Offer(f"amazon:{asin}", "amazon.in", title, price, mrp, f"https://www.amazon.in/dp/{asin}")])
 
 
+_ASIN_ONLY = re.compile(r"[A-Z0-9]{10}")
+
+
 def _amazon_listing(soup: BeautifulSoup) -> PageResult:
+    """Search / category results, and other Amazon grids (best sellers, deals) as a fallback.
+
+    Result cards carry the ASIN in data-asin. Best-seller grids instead put it in the element id
+    and style prices with generated class names, so there the title comes from the image's alt
+    text and the price from the first bare ₹ amount in the card.
+    """
     offers: List[Offer] = []
     seen = set()
-    cards = soup.select('div[data-component-type="s-search-result"][data-asin]') or soup.select("div[data-asin]")
+    cards = soup.select('div[data-component-type="s-search-result"][data-asin]')
+    if not cards:
+        cards = [el for el in soup.select("div[data-asin], div[id]")
+                 if _ASIN_ONLY.fullmatch(str(el.get("data-asin") or el.get("id") or ""))]
     for card in cards:
-        asin = str(card.get("data-asin", "")).strip()
-        if not re.fullmatch(r"[A-Z0-9]{10}", asin) or asin in seen:
+        asin = str(card.get("data-asin") or card.get("id") or "").strip()
+        if not _ASIN_ONLY.fullmatch(asin) or asin in seen:
             continue
-        price_el = card.select_one("span.a-price:not(.a-text-price) span.a-offscreen")
         heading = card.select_one("h2")
-        if not price_el or not heading:
-            continue
-        title = str(heading.get("aria-label") or "") or heading.get_text(" ", strip=True)
+        image = card.select_one("img[alt]")
+        title = ""
+        if heading:
+            title = str(heading.get("aria-label") or "") or heading.get_text(" ", strip=True)
+        if not title and image:
+            title = str(image.get("alt", ""))
         title = re.sub(r"^Sponsored Ad\s*[-–—]\s*", "", title).strip()
-        price = parse_amount(price_el.get_text())
+        price_el = card.select_one("span.a-price:not(.a-text-price) span.a-offscreen")
+        price = parse_amount(price_el.get_text()) if price_el else None
+        if not price:
+            bare = _rupee_values(card)
+            price = bare[0] if bare else None
         if not price or not title:
             continue
         mrp_el = card.select_one("span.a-price.a-text-price span.a-offscreen")
@@ -149,15 +176,6 @@ def _amazon_listing(soup: BeautifulSoup) -> PageResult:
 
 
 # -------------------------------------------------------------- Flipkart ----
-def _rupee_values(node: Any) -> List[float]:
-    values = []
-    for text in node.find_all(string=_RUPEE_ONLY):
-        value = parse_amount(text)
-        if value:
-            values.append(value)
-    return values
-
-
 def _flipkart_listing(soup: BeautifulSoup) -> PageResult:
     offers: List[Offer] = []
     seen = set()
