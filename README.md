@@ -113,8 +113,8 @@ On Android, an old phone left on its charger does this without touching your mai
    senders per IP address, and GitHub's addresses are shared with everyone else's jobs).
 4. **Actions → Loot monitor → Run workflow → `test-ntfy`.** Your phone should ring.
 5. **Run workflow → `doctor`.** The log lists what GitHub's servers can and cannot read.
-6. Switch the schedule on: in `.github/workflows/monitor.yml`, remove the `# ` in front of the
-   `schedule:` and `- cron:` lines.
+6. The schedule is on: a run starts every 5 minutes and scans once a minute until the next is due.
+   To pause it: Actions → Loot monitor → "..." → Disable workflow.
 
 Cautions for this route:
 
