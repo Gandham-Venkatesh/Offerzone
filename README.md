@@ -257,9 +257,10 @@ python -m lootwatch               # scan forever
   list prices counts as failing: the floor rules cannot work without them.
 - A daily summary: scans done, posts read, alerts sent, sources working, failing or not read yet.
 - Undelivered alerts are kept and retried for 30 minutes, then given up (a late loot alert is
-  noise). A run that had to give one up ends with an error, so GitHub Actions or systemd shows
-  it as failed: with a wrong or expired `NTFY_TOKEN` that is how you find out. If the product
-  is still at that price on a store page, a fresh alert is raised.
+  noise). On GitHub Actions the run that had to give one up ends with an error and shows as
+  failed: with a wrong or expired `NTFY_TOKEN` that is how you find out. On a server the service
+  log says so (`journalctl -u lootwatch`). If the product is still at that price on a store
+  page, a fresh alert is raised.
 - A site that answers 403/429/503 or shows a CAPTCHA is left alone for a growing cool-down. The
   monitor does not solve CAPTCHAs or rotate proxies.
 

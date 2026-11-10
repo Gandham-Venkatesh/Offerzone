@@ -211,7 +211,7 @@ _FILLER = re.compile(
     r"|billion|day|days|great|india|indian|festival|festive|republic|diwali|dussehra|season|end|year|sales|savings"
     r"|summer|winter|monsoon|freedom|independence|prime|minutes|exclusive|launched|latest|model|brand|sealed|genuine"
     r"|official|unlocked|edition|version|vijay|reliance|digital|unbelievable|crazy|insane|massive|huge|lowest|loots"
-    r"|quick|grab|hurry|missed|case|part|game|changer|remote|chance|try|both|also|then|than|just|about|today)$",
+    r"|quick|grab|hurry|missed|changer|chance|both|also|then|than|just|about|today)$",
     re.I,
 )
 

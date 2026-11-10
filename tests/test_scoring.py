@@ -242,7 +242,8 @@ class TextVerdicts(unittest.TestCase):
                      "20W charger compatible with iPhone 16", "Spigen case iPhone 16 @ 99", "Used iPhone 16 @ 9,999",
                      "iPhone 16 (Used) at ₹9,999", "Apple AirTag (works with iPhone 16) at ₹2703",
                      "iPhone 16 MagSafe Power Bank 10000mAh @ 999", "iPhone 16 Pro Max Case with MagSafe @ 299",
-                     "Lanyard for iPhone 16 @ 99"):
+                     "Lanyard for iPhone 16 @ 99", "Case for iPhone 16 @ 99", "Back case for iPhone 16 ₹149",
+                     "Best cover for iPhone 16 @ 99", "Game for iPhone 16 @ 99"):
             with self.subTest(text=text):
                 self.assertTrue(check(text))
         for text in ("iPhone 16 with free case @ ₹9,999", "iPhone 16 (charger not included) ₹9,999",
@@ -252,7 +253,8 @@ class TextVerdicts(unittest.TestCase):
                      "In case you missed: iPhone 16 @ 9,999", "Big Billion Days Part 2: iPhone 16 at ₹4,999",
                      "Game changer loot 🔥 iPhone 16 @ 9,999", "Remote chance but try: iPhone 16 at ₹4,999",
                      "iPhone 16 at ₹9,999, No Cost EMI available", "iPhone 16 @ 9,999 (used HDFC card)",
-                     "Lowest price ever for iPhone 16: ₹9,999"):
+                     "Lowest price ever for iPhone 16: ₹9,999", "In case you missed iPhone 16 @ 9,999",
+                     "Best offer for iPhone 16 @ 9,999"):
             with self.subTest(text=text):
                 self.assertFalse(check(text))
 

@@ -132,7 +132,8 @@ def is_accessory(text: str, keyword_start: int, keyword_end: Optional[int] = Non
     linked = _LINKED.search(before)
     if linked:
         # "Lowest price ever for iPhone 16" is still the phone; "Lanyard for CMF Phone" is not.
-        if linked.group("link").lower() != "for" or naming_words(before[:linked.start()]) >= 1:
+        lead = before[:linked.start()]
+        if linked.group("link").lower() != "for" or naming_words(lead) >= 1 or _ACCESSORY.search(lead):
             return True
     # "Mobile Tripod Stand | iPhone & Android | ...": named in a later part of a line whose opening
     # part names another product, with no price of its own, it only says what that product fits.
