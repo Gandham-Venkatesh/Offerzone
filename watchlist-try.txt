@@ -1,0 +1,22 @@
+# Pages from other stores that are only being TESTED. Nothing here is watched by the live monitor.
+# Run the workflow in "doctor-detail" mode with this file to see which of them a plain request can read.
+
+# --- Myntra
+https://www.myntra.com/men-casual-shoes?sort=discount | | Myntra casual shoes by discount
+https://www.myntra.com/headphones?sort=price_asc | | Myntra headphones cheapest first
+# --- Ajio
+https://www.ajio.com/search/?text=sneakers | | Ajio sneakers search
+# --- quick commerce
+https://blinkit.com/s/?q=gulab%20jamun | | Blinkit search
+https://www.zepto.com/search?query=gulab+jamun | | Zepto search
+https://www.swiggy.com/instamart/search?custom_back=true&query=gulab+jamun | | Instamart search
+# --- other electronics stores
+https://www.croma.com/phones-wearables/mobile-phones/c/10 | | Croma mobile phones
+https://www.reliancedigital.in/collection/laptops | | Reliance Digital laptops
+https://www.vijaysales.com/c/laptops | | Vijay Sales laptops
+https://www.jiomart.com/c/electronics/mobiles-tablets/mobiles/4703 | | JioMart mobiles
+https://www.tatacliq.com/search/?searchCategory=all&text=laptop | | Tata Cliq laptops
+# --- Flipkart's sister store
+https://www.shopsy.in/search?q=smartphone&sort=price_asc | | Shopsy smartphones
+# --- Amazon, one more time, for the record
+https://www.amazon.in/s?k=nothing+phone | | Amazon search

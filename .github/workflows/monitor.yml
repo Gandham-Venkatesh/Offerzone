@@ -17,6 +17,11 @@ on:
         type: choice
         default: run
         options: [run, doctor, doctor-detail, test-ntfy]
+      watchlist_file:
+        description: "Which page list to use (watchlist-try.txt holds pages from other stores that are only being tested)"
+        type: choice
+        default: watchlist.txt
+        options: [watchlist.txt, watchlist-try.txt]
 
 permissions:
   contents: read
@@ -55,6 +60,7 @@ jobs:
       USE_CHANNELS: ${{ vars.USE_CHANNELS }}
       USE_STORE_PAGES: ${{ vars.USE_STORE_PAGES }}
       LOOP_SECONDS: ${{ vars.LOOP_SECONDS || '280' }}
+      WATCHLIST_FILE: ${{ inputs.watchlist_file || 'watchlist.txt' }}
       DB_PATH: state/lootwatch.db
     steps:
       - uses: actions/checkout@v7
