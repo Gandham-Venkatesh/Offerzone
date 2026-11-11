@@ -388,6 +388,10 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
                 middle = (settings.watch_drop_pct + settings.urgent_drop_pct) / 2
                 tier = min(tier, TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle
                            else TIER_NORMAL)
+                if mrp and info.baseline >= mrp * 0.98 and drop < settings.urgent_drop_pct:
+                    # It was seen at its full list price and is back at the discount its card
+                    # always shows: the odd reading was the earlier one. Not news.
+                    return None
             return Verdict(tier, f"dropped {drop:.0f}% from the {fmt_inr(info.baseline)} it was seen at", price,
                            None, drop, label="Price drop", was=info.baseline)
 

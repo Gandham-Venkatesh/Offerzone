@@ -405,6 +405,11 @@ class OfferVerdicts(unittest.TestCase):
         self.assertEqual(evaluate_offer(title, 5990, None, seen_high, self.s, target=5000, listing=True).tier, TIER_URGENT)  # 84%
         # On a product page you added yourself, a 50% fall stays urgent.
         self.assertEqual(evaluate_offer(title, 14990, None, seen_high, self.s).tier, TIER_URGENT)
+        # What really happened: ₹36,502 is that Chromebook's list price. It was read once at full price and
+        # then again at the ₹14,990 its card always shows. That is no fall at all...
+        self.assertIsNone(evaluate_offer(title, 14990, 36502, seen_high, self.s, target=5000, listing=True))
+        # ...unless it lands far below its usual discount as well.
+        self.assertEqual(evaluate_offer(title, 5990, 36502, seen_high, self.s, target=5000, listing=True).tier, TIER_URGENT)
 
     def test_drop_against_own_history(self):
         steady = PriceInfo(baseline=24999, observations=5, last_price=24999, first_seen=False)
