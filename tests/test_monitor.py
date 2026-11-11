@@ -513,7 +513,8 @@ class EndToEnd(unittest.TestCase):
         push = self.web.pushes[0]
         self.assertEqual(push["priority"], 5)
         self.assertIn("My Nothing Phone", push["title"])
-        self.assertIn("dropped 84% from its usual ₹24,499", push["message"])  # median of 24,999 and 23,999
+        self.assertIn("dropped 84% from the ₹24,499 it was seen at", push["message"])  # median of 24,999 and 23,999
+        self.assertIn("84% off · ₹4,000 (was ₹24,499)", push["title"])
         self.assertEqual(push["click"], url)
         monitor.cycle()
         monitor.cycle()

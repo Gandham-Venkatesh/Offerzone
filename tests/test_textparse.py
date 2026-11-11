@@ -201,10 +201,84 @@ class Claims(unittest.TestCase):
                 self.assertEqual(parse_text(text).expired, "")
 
     def test_stock_wording_inside_a_sentence_is_only_a_hint(self):
-        for text in ("Blue colour is out of stock now, black available", "Deal over. New deal: Sony XM5 @ ₹400",
-                     "Offer closed for new users since morning"):
+        for text in ("Offer closed for new users since morning", "Sony XM5 is out of stock on Amazon now", "Amazon OOS"):
             with self.subTest(text=text):
                 self.assertEqual(parse_text(text).expired, "maybe")
+
+    def test_one_colour_or_some_pincodes_gone_is_not_the_deal_gone(self):
+        for text in ("Blue colour is out of stock now, black available", "Blue OOS", "Some pincodes OOS",
+                     "Black OOS, others live", "128GB variant sold out", "Loot Price Back", "Loot is back"):
+            with self.subTest(text=text):
+                self.assertEqual(parse_text(text).expired, "")
+
+    def test_a_status_closing_a_sentence_is_an_announcement(self):
+        # Found by a reviewer: each of these rang as urgent although the post says the deal is gone.
+        for text in ("That was a price error, sold out in seconds", "iPhone 16 at ₹9,999 was live for 5 min, now sold out",
+                     "Nothing Phone (3a) @ ₹400 was a price error, deal over now",
+                     "iPhone 16 at ₹9,999 not available now, deal over", "Update: it was fixed, price increased",
+                     "Update: orders will be cancelled, deal over", "Coupon code expired, deal over",
+                     "Price error deal over, hope you all grabbed it 🎉", "Deal over. New deal: Sony XM5 @ ₹400"):
+            with self.subTest(text=text):
+                self.assertEqual(parse_text(text).expired, "over")
+
+    def test_prices_written_without_a_rupee_sign(self):
+        def kinds(text):
+            return [(a.value, a.kind) for a in parse_text(text).amounts]
+
+        # Real posts: one channel writes "at 599", another "Loot 239 :".
+        self.assertEqual(kinds("Snitch Shirt at 599\nhttps://mytr.cc/hyjbl1f"), [(599, "sell")])
+        self.assertEqual(kinds("PS5 Slim Disc at 69990\nhttps://amznn.cc/hynn1kx"), [(69990, "sell")])
+        self.assertEqual(kinds("Coffee Loot 239 : https://amzn.to/4Ca9kYD\nApply 20% Off Coupon."), [(239, "sell")])
+        self.assertEqual(kinds("Wipro Irons Starting at 599"), [(599, "range")])
+        self.assertEqual(kinds("Gulab Jamun 1kg at 1\nhttps://amznn.cc/hynn1kx"), [(1, "sell")])
+        for text in ("Sale starts at 12", "Deal goes live at 12", "Sale today at 9", "Rated at 45 by users", "Loot 5 products today",
+                     "Open at 10 AM tomorrow", "at 50% off", "Loot 5 :"):
+            with self.subTest(text=text):
+                self.assertEqual(kinds(text), [])
+        # A pincode is not a price.
+        self.assertEqual(kinds("Loot - ₹15\nAvailable @ 560001"), [(15, "plain"), (560001, "excluded")])
+        self.assertEqual(kinds("Available at ₹560001"), [(560001, "sell")])
+
+    def test_words_of_a_link_s_address_are_kept_and_its_codes_are_not(self):
+        parsed = parse_text("Zepto Loot\n@ 9\nhttps://www.zepto.com/pn/haldirams-gulab-jamun-1-kg-tin/pvid/bfec78f0-068e-471b?x=SUPER_SAVER")
+        self.assertIn("haldirams gulab jamun", parsed.text)
+        self.assertNotIn("SUPER", parsed.text)
+        self.assertEqual([a.value for a in parsed.amounts], [9])
+        parsed = parse_text("Loot @ ₹400\nhttps://www.flipkart.com/nothing-phone-3a-black-128-gb/p/itm0123456789abc?pid=MOBH8G3PZHHGZWXF")
+        self.assertIn("nothing phone 3a black 128", parsed.text)
+        self.assertEqual([a.value for a in parsed.amounts], [400])
+
+    def test_more_offer_wording_around_a_price(self):
+        def kinds(text):
+            return [(a.value, a.kind) for a in parse_text(text).amounts]
+
+        self.assertEqual(kinds("iPhone 16 (128GB)\n₹4000 Bank Offer\nDeal Price ₹62,999"), [(4000, "excluded"), (62999, "sell")])
+        self.assertEqual(kinds("iPhone 16 gets ₹10,000 price cut on Flipkart"), [(10000, "excluded")])
+        self.assertEqual(kinds("₹10,000 Price Drop On iPhone 16"), [(10000, "excluded")])
+        # ...and wording that only looks like an offer keeps the price.
+        self.assertEqual(kinds("Nothing Phone (3a) ₹400 Back Again"), [(400, "plain")])
+        self.assertEqual(kinds("Nothing Phone (3a) 5G at ₹400 No Cost EMI available"), [(400, "sell")])
+        self.assertEqual(kinds("Sony WH-1000XM5 @ ₹400 Save ₹34,590 (MRP ₹34,990)")[0], (400, "sell"))
+
+    def test_an_mrp_written_first_takes_the_amount_right_after_it(self):
+        parsed = parse_text("HP 15 Laptop  (MRP ₹74,990)  ₹52,990 + bag at ₹1")
+        self.assertEqual((parsed.price, parsed.mrp, parsed.ambiguous), (52990, 74990, True))
+        parsed = parse_text("Samsung 253 L Fridge (MRP ₹39,990)\nDeal: ₹23,990\nExtended warranty @ ₹1")
+        self.assertEqual((parsed.price, parsed.mrp), (23990, 39990))
+        # A line that names a product and gives its MRP is followed by its price, not preceded by it.
+        parsed = parse_text("boAt Airdopes 141 @ ₹899\nSony Bravia 55 inch 4K TV MRP ₹99,900\nDeal Price ₹54,990")
+        self.assertEqual((parsed.price, parsed.mrp), (54990, 99900))
+
+    def test_percentage_stated_twice_or_on_its_own_line(self):
+        card = ("🧊 Samsung 189 L Refrigerator — 99% off on Flipkart\nA compact single-door fridge with base drawer\n"
+                "💰 ₹149 / 99% off\n📦 2026 model")
+        self.assertEqual(parse_text(card).claim_price, 149)
+        self.assertEqual(parse_text("Sony WH-1000XM5 Wireless Headphones @ ₹400\n99% Off 😱\nhttps://amzn.to/x").claim_price, 400)
+        self.assertIsNone(parse_text("100% Off On 2nd Unit (Buy 1 Get 1) @ ₹499").pct_claim)
+        # A free-delivery threshold is not a condition on the price; a cart value on the next line is.
+        self.assertFalse(parse_text("Sony XM5 @ ₹400 (MRP ₹34,990) | Free delivery on orders above ₹499").conditional)
+        self.assertTrue(parse_text("Kent Airfryer Worth ₹8000 at ₹1\nMake A Cart Value Above ₹2999+").conditional)
+        self.assertTrue(parse_text("boAt Airdopes worth ₹2,999 @ ₹1 for new customers").conditional)
 
 
 class Formatting(unittest.TestCase):

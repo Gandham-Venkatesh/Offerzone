@@ -59,6 +59,7 @@ jobs:
       FLOOR_MRP_RATIO: ${{ vars.FLOOR_MRP_RATIO }}
       NEW_LISTING_DISCOUNT: ${{ vars.NEW_LISTING_DISCOUNT }}
       WATCH_DROP_PCT: ${{ vars.WATCH_DROP_PCT }}
+      URGENT_DROP_PCT: ${{ vars.URGENT_DROP_PCT }}
       MAX_POST_AGE_MIN: ${{ vars.MAX_POST_AGE_MIN }}
       LATE_POST_MIN: ${{ vars.LATE_POST_MIN }}
       DAILY_ALERT_LIMIT: ${{ vars.DAILY_ALERT_LIMIT }}

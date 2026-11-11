@@ -42,9 +42,13 @@ Each scan (default: every 60 seconds) it looks in three places, in this order of
 
 | Alert | ntfy priority | When |
 |---|---|---|
-| **Urgent** | 5 (max) | something under a category page's floor · a trap (with a list price that fits the device) · your target price · a fall of `WATCH_DROP_PCT` from the price the monitor has been seeing · a product new to a floor page at 95% or more off its list price |
-| **High** | 4 | a product new to a floor page at `NEW_LISTING_DISCOUNT` (85%) or more off its list price · a product page at 80% or more off on its first check |
-| **Quiet** | 3 | a listing named like a trap product whose card shows no list price that fits it (spare parts are named after the phone too) |
+| **Urgent** | 5 (max) | something under a category page's floor · a trap (with a list price that fits the device) · your target price · a fall of 80% or more (`URGENT_DROP_PCT`) from the price the monitor saw it at · on a product page you added yourself, a fall of 50% · a product new to a floor page at 95% or more off its list price |
+| **High** | 4 | on a category page, a fall of 65% to 80% · a product new to a floor page at `NEW_LISTING_DISCOUNT` (85%) or more off its list price · a product page at 80% or more off on its first check |
+| **Quiet** | 3 | on a category page, a fall of 50% to 65% (`WATCH_DROP_PCT`) · a listing named like a trap product whose card shows no list price that fits it (spare parts are named after the phone too) |
+
+A fall on a category page is graded because nobody chose those products, and "the price it was
+seen at" can be a seller's passing high price: the first day of running sent an urgent alert for
+a ₹14,990 Chromebook that had briefly been listed at ₹36,502.
 
 Whatever is on a page the first time it is read counts as normal and stays quiet. A product is
 reported once per event: again only when it falls clearly further, or when the same mistake is
@@ -81,8 +85,14 @@ named after the product: cases, chargers and the like, anything "for" or "compat
 and names in which another product's name runs straight into it ("OtterBox React Apple iPhone
 14 Pro").
 
-A stated percentage only counts together with a price written beside it. Daily digest posts
-("Top 5 Hot Threads Today") are on the default ignore list.
+A stated percentage only counts together with a price written beside it, or on the line next
+to it. Without any price it alerts (High) from 95%, or from 90% when it is claimed for a product
+you set a trap on. Daily digest posts ("Top 5 Hot Threads Today") are on the default ignore list.
+
+Prices are read in the ways the watched channels really write them: "₹599", "@599", "at 599",
+"Loot 239 :", "Deal Price: ₹349 (MRP ₹2,599)", "₹6,294 / 80% off". When a post names its product
+only in the link ("Zepto Loot / @ 9 / zepto.com/pn/haldirams-gulab-jamun..."), the words of the
+link's address are read as the name.
 
 ## Where to run it
 
@@ -229,7 +239,8 @@ python -m lootwatch               # scan forever
 | `MIN_SAVING` / `URGENT_MIN_SAVING` / `BIG_SAVING` | `1000` / `2000` / `20000` | Rupees saved needed on each rung |
 | `LOOT_PRICE` | `10` | A price this low counts even when the rupee saving is small |
 | `USE_CHANNELS` / `USE_STORE_PAGES` | `1` / `1` | Switch either half off on a machine that cannot reach it |
-| `WATCH_DROP_PCT` | `50` | Fall against a watched product's own usual price |
+| `WATCH_DROP_PCT` | `50` | A watched product alerts when it falls this far below the price it was seen at |
+| `URGENT_DROP_PCT` | `80` | On a category page, a fall this deep is max priority; smaller ones are quieter |
 | `FLOOR_MRP_RATIO` | `3` | A new item under a floor needs a list price this many times the floor |
 | `NEW_LISTING_DISCOUNT` | `85` | A product new to a floor page, above the floor, alerts from this % off its list price |
 | `ABSENCE_HOURS` | `24` | A reported product that was gone this long is judged afresh when it returns |
@@ -270,7 +281,10 @@ python -m lootwatch               # scan forever
   priorities, floors, traps, de-duplication across sources and restarts, link trust, delivery
   retries, the daily budget, the health alarms, and the whole path from a change on a simulated
   page to the JSON that reaches ntfy. A review by independent readers found 24 ways an alert
-  could be missed or ring falsely; each has a test built from the reviewer's own example.
+  could be missed or ring falsely; each has a test built from the reviewer's own example. A
+  second reviewer then went through the rewritten post rules with 51,840 generated posts in the
+  real channels' layouts and found eight more problems, which are fixed and tested too; the
+  monitor code and the store-page rules were not re-reviewed after their rewrite.
 - **Live, 10 November 2026:** the Telegram reader on ten channels, the Flipkart category and
   search pages, and the priority ladder replayed against about 200 real posts.
 - **Not verified:** Amazon (refused), Myntra and other stores (never tried live), quick commerce

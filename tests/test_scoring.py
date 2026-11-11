@@ -118,15 +118,25 @@ class TextVerdicts(unittest.TestCase):
                      "Again Live 🔥 (last time expired in 5 min)", "Coupon expired? Try without coupon, still ₹400"):
             with self.subTest(last=last):
                 self.assertEqual(self.tier(base + last), TIER_URGENT)
-        # Stock wording inside a longer sentence: sent one step quieter, with a note, instead of dropped.
-        verdict = evaluate_text(base + "Blue colour is out of stock now, black available", self.s)
+        # One colour gone, or "loot price back", is a live deal.
+        for last in ("Blue colour is out of stock now, black available", "Blue OOS", "Some pincodes OOS", "Loot Price Back"):
+            with self.subTest(last=last):
+                self.assertEqual(self.tier(base + last), TIER_URGENT)
+        # Stock wording about one store, inside a longer post: sent one step quieter, with a note, instead of dropped.
+        verdict = evaluate_text(base + "Amazon OOS\nFlipkart link: https://fkrt.cc/x", self.s)
         self.assertEqual((verdict.tier, verdict.max_tier), (TIER_HIGH, TIER_HIGH))
         self.assertIn("may already be over", verdict.notes[0])
-        self.assertIsNone(self.tier("Symbol Jogger\nDeal Price: ₹349 (MRP ₹2599)\nBlue is out of stock now, black available"))
-        # A post that announces the end stays silent.
-        for last in ("Expired", "Sold out in 2 min", "OOS", "Deal over ❌"):
+        self.assertIsNone(self.tier("Symbol Jogger\nDeal Price: ₹349 (MRP ₹2599)\nAmazon OOS\nFlipkart link: https://fkrt.cc/x"))
+        # A post that announces the end stays silent, however the announcement is worded.
+        for last in ("Expired", "Sold out in 2 min", "OOS", "Deal over ❌", "Update: it was fixed, price increased",
+                     "Update: orders will be cancelled, deal over", "Coupon code expired, deal over"):
             with self.subTest(last=last):
                 self.assertIsNone(self.tier(base + last))
+        for text in ("That was a price error, sold out in seconds", "iPhone 16 at ₹9,999 was live for 5 min, now sold out",
+                     "Nothing Phone (3a) @ ₹400 was a price error, deal over now",
+                     "Price error deal over, hope you all grabbed it 🎉"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.tier(text))
 
     def test_layouts_without_a_labelled_mrp(self):
         # A real channel layout: the usual price sits after a pipe, behind a coupon amount.
@@ -170,16 +180,84 @@ class TextVerdicts(unittest.TestCase):
 
         # Real post, 10 Nov 2026: an OtterBox case.
         for text in ("🔥 HOT DEAL 🔥\nOtterBox React Apple iPhone 14 PRO Stardust Clear @ 2922\nhttps://amznn.cc/tf7f1gf",
-                     "Spigen Ultra Hybrid iPhone 16 Pro @ 999", "Zeskit CineFlex Apple iPhone 16 Pro Max @ 1499",
-                     "Mivi DuoPods Nothing Phone 3a edition @ 899"):
+                     "Spigen Ultra Hybrid iPhone 16 Pro @ 999", "Zeskit CineFlex Apple iPhone 16 Pro Max @ 1499"):
             with self.subTest(text=text):
                 self.assertIsNone(tier(text))
+        # A device named among the things an accessory fits (found by a reviewer: each rang as urgent).
+        s2 = make_settings("iphone | 12000\nipad | 6000\nmacbook | 20000\n")
+        for text in ("🌟Apple 20W USB-C Power Adapter (for iPhone, iPad & AirPods) at ₹1,499.",
+                     "GRAB : boAt Type C A750 Fast Charging Cable for iPhone 15, iPad Pro, MacBook @249.",
+                     "🔥 HOT DEAL 🔥\nUSB C Hub 7 in 1 for MacBook Pro/Air, iPad Pro @ 1499",
+                     "Mi 20W USB-C Charger compatible with iPhone, iPad\nDeal Price: ₹549 (MRP ₹1299)",
+                     "STRIFF Adjustable Cell Phone Stand, Foldable Mobile Holder, Compatible with iPhone, iPad\n₹149",
+                     "92% off on - Sounce 5 in 1 Electronic Cleaning Kit for Keyboard, AirPods, iPhone, Laptop - Rs. 79"):
+            with self.subTest(text=text):
+                verdict = evaluate_text(text, s2)
+                self.assertFalse(verdict is not None and verdict.label == "Trap hit")
         # Sale and shop words in front of the name do not make it an accessory.
         for text in ("Flipkart Big Billion Days Apple iPhone 16 at ₹9,999", "Brand new sealed Apple iPhone 16 @ 9,999",
                      "Vijay Sales Apple iPhone 16 @ 9,999", "🔥 HOT DEAL 🔥\nApple iPhone 14 PRO (Deep Purple, 128 GB) @ 2922",
-                     "Sony XM5 and Nothing Phone (3a) both at ₹400", "Latest model Nothing Phone (3a) at ₹400"):
+                     "Sony XM5 and Nothing Phone (3a) both at ₹400", "Latest model Nothing Phone (3a) at ₹400",
+                     "Someone ordered Nothing Phone (3a) @ ₹400?? Flipkart is still showing it",
+                     "Someone ordered Apple iPhone 16 @ ₹400??"):
             with self.subTest(text=text):
                 self.assertEqual(tier(text), TIER_URGENT)
+
+    def test_trap_on_any_product_of_a_real_post_layout(self):
+        # Brand and model words before the name, pipes inside a store title, a price with no rupee
+        # sign, a product named only in the link: every one of these stopped a trap at some point.
+        cases = [
+            ("gulab jamun, rasgulla | 20", "₹15\nCheck out Haldiram's Nagpur Gulab Jamun on Instamart: https://instamart.in/item/NG3BW9LPQT?share=true", 15),
+            ("gulab jamun, rasgulla | 20", "Loot : Bikaji Bengali Rasgulla 1 kg @15.\nhttps://amzn.to/4a2bvOn", 15),
+            ("gulab jamun, rasgulla | 20", "Buy Mother Dairy Rasgulla 1 kg Tin\nhttps://fkrt.co/rjckyk\n₹9", 9),
+            ("gulab jamun, rasgulla | 20", "Zepto Loot\n@ 9\nhttps://www.zepto.com/pn/haldirams-gulab-jamun-1-kg-tin/pvid/bfec78f0-068e", 9),
+            ("gulab jamun, rasgulla | 20", "Bigbasket Loot at ₹9\nhttps://www.bigbasket.com/pd/40330601/bikano-rasgulla-1-kg-tin/\nCheck In Your Location", 9),
+            ("gulab jamun, rasgulla | 20", "Loot - ₹15\nCheck out Haldiram's Gulab Jamun on Instamart: https://instamart.in/item/ZYL23RY6ZV\nAvailable @ 560001", 15),
+            ("gulab jamun, rasgulla | 20", "🔥Blinkit LOOT @₹7\nSearch : Gulab Jamun\nApply Low To High Filter\n₹21 https://blinkit.com/prn/x/prid/635814\n₹39 https://blinkit.com/prn/x/prid/523153", 7),
+            ("oneplus 13 | 5000", "🌟Flagship Killer OnePlus 13 at ₹619.\n🔗https://amzn.to/4a2bvOn", 619),
+            ("oneplus 13 | 5000", "🔥 HOT DEAL 🔥\nOnePlus 13 | Smarter with OnePlus AI (12GB RAM, 256GB Storage Midnight Ocean) @ 699", 699),
+            ("iphone | 12000", "🌟iPhone 16 | A18 chip, 48MP Fusion camera at ₹9,999.", 9999),
+            ("nothing phone | 6000", "72% off on - Nothing Phone (3a) Pro | Snapdragon 7s Gen 3, 50MP Periscope - Rs. 400", 400),
+            ("nothing phone | 6000", "Nothing Phone (3a) at 400\nhttps://amznn.cc/hynn1kx", 400),
+            ("nothing phone | 6000", "Nothing Phone Loot 400 : https://fkrt.cc/zCrHGpN", 400),
+            ("nothing phone | 6000", "Loot @ ₹400\nhttps://www.flipkart.com/nothing-phone-3a-black-128-gb/p/itm0123456789abc?pid=MOBH8G3PZHHGZWXF", 400),
+            ("dry iron | 1079", "GRAB : Wipro Elato 1200W Heavyweight Dry Iron @1079.\nhttps://amzn.to/4Ac5cFH", 1079),
+            ("jogger | 349", "Amazon Brand - Symbol Men's Stretchable Regular fit Jogger P...\nDeal Price: ₹349 (MRP ₹2599)", 349),
+            ("cleaning kit | 79", "Sounce 5 in 1 Electronic Cleaning Kit for Keyboard, AirPods,...\nDeal Price: ₹79 (MRP ₹999)", 79),
+            ("descaler | 77", "Amazon Basics Hardstain & Descaler Eco-Friendly Cleaning Sp...\nDeal Price: ₹77 (MRP ₹999)", 77),
+            ("power bank | 799", "Blinkit :\nAmbrane Wireless Magsafe Power Bank for ₹799\nhttps://blinkit.com/prn/x/prid/756297", 799),
+            ("galaxy z fold, galaxy z flip | 10000", "Samsung Galaxy Z Fold7 5G (Blue Shadow, 256 GB) @ ₹4,999", 4999),
+        ]
+        for trap, text, price in cases:
+            with self.subTest(text=text):
+                verdict = evaluate_text(text, make_settings(trap + "\n"))
+                self.assertIsNotNone(verdict)
+                self.assertEqual((verdict.tier, verdict.label, verdict.price), (TIER_URGENT, "Trap hit", price))
+        # "oneplus 13" is not the OnePlus 13R, and a link's code is not a product name.
+        self.assertIsNone(evaluate_text("OnePlus 13R 5G (Astral Trail, 256 GB) @ ₹4,999", make_settings("oneplus 13 | 5000\n")))
+        self.assertIsNone(evaluate_text("iPhone 16 https://amzn.to/4ab7Rs9", make_settings("iphone | 12000\n")))
+
+    def test_trap_product_claimed_at_a_huge_discount_without_a_price(self):
+        # One channel posts only "N% Off - product". For a product with a trap on it that is worth a look from 90%.
+        s = make_settings("macbook | 20000\niphone | 12000\n")
+        verdict = evaluate_text("91% Off - Apple 2025 MacBook Air (13-inch, Apple M4 chip, 16GB, 256GB) - Midnight\nhttps://fkm.asia/4zn5", s)
+        self.assertEqual((verdict.tier, verdict.label, verdict.price), (TIER_HIGH, "Trap product", None))
+        self.assertIsNone(evaluate_text("91% Off - Spigen Case for iPhone 16\nhttps://fkm.asia/4zn5", s))
+        self.assertIsNone(evaluate_text("86% Off - Apple 2025 MacBook Air\nhttps://fkm.asia/4zn5", s))
+        self.assertIsNone(evaluate_text("91% Off - LED Motorcycle Driving Spot Lights\nhttps://fkm.asia/4zn5", s))
+
+    def test_trap_leaves_alone_what_is_not_the_product_s_price(self):
+        s = make_settings("iphone | 12000\nsamsung galaxy s25 | 10000\nipad | 6000\n")
+        for text in ("iPhone 16 (128GB)\n₹4000 Bank Offer\nDeal Price ₹62,999\nhttps://amzn.to/4a2bvOn",
+                     "Flipkart Big Billion Days\niPhone 16 : https://amzn.to/4a2bvOn\nSamsung S24 : https://amzn.to/4a2bvOn\n"
+                     "₹5000 Bank Offer on SBI Cards",
+                     "iPhone 16 : https://amzn.to/4a2bvOn\nAirPods @ ₹9,999 : https://amzn.to/4a2bvOn",
+                     "Apple Days Sale\niPhone 16 from ₹64,900\niPad from ₹29,900\nAirPods @ ₹9,999",
+                     "iPhone 16 gets ₹10,000 price cut on Flipkart", "₹10,000 Price Drop On iPhone 16",
+                     "Pre-reserve Samsung Galaxy S25 at ₹1,999 & get benefits worth ₹5,000",
+                     "Win iPhone 16 @ ₹1 | Lucky draw"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, s))
 
     def test_error_wording_variants_and_denials(self):
         for text in ("PRICE-ERROR Sony XM5 @ 4999", "Mistake Price: Sony XM5 @ 4999", "Amazon Bug: Sony XM5 @ 4999"):
@@ -314,6 +392,19 @@ class TextVerdicts(unittest.TestCase):
 class OfferVerdicts(unittest.TestCase):
     def setUp(self):
         self.s = make_settings("nothing phone | 8000\n")
+
+    def test_drop_on_a_category_page_is_graded_by_its_size(self):
+        # Real alert, 11 Nov 2026: a Chromebook seen at ₹36,502 came back at ₹14,990, an ordinary price for it,
+        # and rang as urgent. Nobody chose that product; only a fall to a fraction of the price is an error.
+        seen_high = PriceInfo(baseline=36502, observations=3, last_price=36502, first_seen=False, last_age=60.0, quiet_price=36502)
+        title = "Lenovo Chromebook 11IJL9 Intel Celeron Dual Core N4500 - (4 GB/64 GB EMMC Storage/Chrome OS)"
+        verdict = evaluate_offer(title, 14990, None, seen_high, self.s, target=5000, listing=True)
+        self.assertEqual((verdict.tier, verdict.label), (TIER_NORMAL, "Price drop"))
+        self.assertEqual(verdict.headline, "Price drop: 59% off · ₹14,990 (was ₹36,502)")
+        self.assertEqual(evaluate_offer(title, 11990, None, seen_high, self.s, target=5000, listing=True).tier, TIER_HIGH)   # 67%
+        self.assertEqual(evaluate_offer(title, 5990, None, seen_high, self.s, target=5000, listing=True).tier, TIER_URGENT)  # 84%
+        # On a product page you added yourself, a 50% fall stays urgent.
+        self.assertEqual(evaluate_offer(title, 14990, None, seen_high, self.s).tier, TIER_URGENT)
 
     def test_drop_against_own_history(self):
         steady = PriceInfo(baseline=24999, observations=5, last_price=24999, first_seen=False)

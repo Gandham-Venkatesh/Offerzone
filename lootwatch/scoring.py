@@ -25,11 +25,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from itertools import islice
 from typing import List, Optional, Sequence
 
 from .config import Settings, Trap
 from .db import PriceInfo
-from .textparse import SOFT, ParsedText, fmt_inr, naming_words, parse_text, price_near
+from .textparse import SOFT, ParsedText, _line_bounds, fmt_inr, naming_list, naming_words, parse_text, price_near
 
 TIER_URGENT, TIER_HIGH, TIER_NORMAL = 5, 4, 3
 TIER_NAMES = {TIER_URGENT: "urgent", TIER_HIGH: "high", TIER_NORMAL: "normal"}
@@ -49,10 +50,18 @@ _ACCESSORY = re.compile(r"\b" + _ACCESSORY_WORDS + r"\b", re.I)
 _ACCESSORY_FOR = re.compile(r"\b" + _ACCESSORY_WORDS + r"\b[^,|()]{0,30}\bfor\b", re.I)  # "Back Cover Case for iPhone"
 # "Spigen case iPhone 16": the accessory noun stands right before the name, nothing in between.
 _ACCESSORY_ADJACENT = re.compile(r"\b" + _ACCESSORY_WORDS + r"\s+(?:(?:apple|samsung|oneplus|nothing|cmf)\s+)?$", re.I)
-# "... for iPhone 16", "compatible with the iPhone", "(works with iPhone)": the keyword is what it fits.
+# "... for iPhone 16", "compatible with iPhone, iPad & AirPods", "(works with iPhone)": the keyword
+# is what the thing fits. The names may be a list; a price mark or a sentence end closes it.
 _LINKED = re.compile(
-    r"\b(?P<link>for|compatible(?:\s+(?:with|for))?|works?\s+with|made\s+for|designed\s+for|fits?|suitable\s+for"
-    r"|supports?)\s+(?:the\s+)?(?:[\w()+.\-]+\s+){0,3}$",
+    r"\b(?P<link>for|compatible(?:\s+(?:with|for))?|works?\s+with|made\s+for|designed\s+for|fits|suitable\s+for"
+    r"|supports?)\b[^@₹:;!?\n]{0,70}$",
+    re.I,
+)
+_FOR_WHAT = re.compile(r"\b(?:for|compatible|works?\s+with|fits|suitable)\b", re.I)
+# A line about getting hold of the product some other way than buying it at that price.
+_NOT_ITS_PRICE = re.compile(
+    r"\bpre[\s\-]?(?:reserve|book(?:ing)?)\b|\bwin\b|\blucky\s+draw\b|\bgiveaway\b|\bcontest\b"
+    r"|\bspin\s+(?:and|&|to)\s+win\b|\bchance\s+to\s+win\b",
     re.I,
 )
 # Makers of cases, chargers and cables name their products after the device: "OtterBox React Apple
@@ -60,7 +69,7 @@ _LINKED = re.compile(
 _ACCESSORY_MAKERS = re.compile(
     r"\b(?:otterbox|spigen|esr|ringke|caseology|uag|urban\s+armor|nillkin|supcase|zagg|belkin|anker|baseus|ugreen"
     r"|portronics|ambrane|stuffcool|dbrand|pitaka|torras|benks|raegr|kapaver|tarkan|incipio|speck|casetify|urbn"
-    r"|amazon\s*basics|solimo|duracell|wecool|dailyobjects|macmerise)\b",
+    r"|wecool|dailyobjects|macmerise)\b",
     re.I,
 )
 _DEVICE_BRAND = re.compile(
@@ -97,6 +106,7 @@ class Verdict:
     flags: List[str] = field(default_factory=list)  # warnings about where the link goes
     notes: List[str] = field(default_factory=list)  # other things worth knowing before acting
     max_tier: int = TIER_URGENT  # no later upgrade (a deal trending across channels) may pass this
+    was: Optional[float] = None  # the price this monitor saw before, when that is what it is compared with
 
     @property
     def headline(self) -> str:
@@ -105,7 +115,8 @@ class Verdict:
             shown = self.discount if self.discount >= 100 else min(self.discount, 99.0)  # 99.7% is not "100% off"
             bits.append(f"{shown:.0f}% off")
         if self.price is not None:
-            bits.append(fmt_inr(self.price) + (f" (MRP {fmt_inr(self.mrp)})" if self.mrp else ""))
+            compared = f" (MRP {fmt_inr(self.mrp)})" if self.mrp else f" (was {fmt_inr(self.was)})" if self.was else ""
+            bits.append(fmt_inr(self.price) + compared)
         numbers = " · ".join(bits)
         if self.label:
             return f"{self.label}: {numbers}" if numbers else self.label
@@ -124,17 +135,20 @@ def is_accessory(text: str, keyword_start: int, keyword_end: Optional[int] = Non
         return True
     if _ACCESSORY_ADJACENT.search(before) or _ACCESSORY_MAKERS.search(before):
         return True
-    # "<Maker> <model> Apple iPhone 14 PRO <colour>": the keyword closes another product's name.
-    # Two or more naming words run straight into it, with nothing but its own brand in between.
-    phrase = _DEVICE_BRAND.sub("", _PHRASE_END.split(before)[-1])
-    if naming_words(phrase) >= 2:
-        return True
+    # "Charger for iPhone, iPad & AirPods", "Stand compatible with iPhone, iPad": everything the
+    # link word introduces, up to the next price or sentence end, is what the thing fits.
+    # "Lowest price ever for iPhone 16" is still the phone: nothing is named before its "for".
     linked = _LINKED.search(before)
     if linked:
-        # "Lowest price ever for iPhone 16" is still the phone; "Lanyard for CMF Phone" is not.
         lead = before[:linked.start()]
         if linked.group("link").lower() != "for" or naming_words(lead) >= 1 or _ACCESSORY.search(lead):
             return True
+    # "<Maker> <Model> Apple iPhone 14 PRO <colour>": two capitalised names run straight into the
+    # device's own brand. (Only then: "Haldiram's Nagpur Gulab Jamun" is the sweet itself.)
+    phrase = _PHRASE_END.split(before)[-1]
+    brand = _DEVICE_BRAND.search(phrase)
+    if brand and sum(1 for word in naming_list(phrase[:brand.start()]) if word[0].isupper()) >= 2:
+        return True
     # "Mobile Tripod Stand | iPhone & Android | ...": named in a later part of a line whose opening
     # part names another product, with no price of its own, it only says what that product fits.
     if text[seg_start:seg_start + 1] == SOFT and not _PRICE_MARK.search(text[seg_start:seg_end]):
@@ -142,27 +156,42 @@ def is_accessory(text: str, keyword_start: int, keyword_end: Optional[int] = Non
         while line_start > 0 and text[line_start:line_start + 1] == SOFT:
             line_start = text.rfind("\n", 0, line_start - 1) + 1
         opening = text[line_start:text.find("\n", line_start)]
-        if naming_words(opening) >= 2:
+        if naming_words(opening) >= 2 and (_ACCESSORY.search(opening) or len(text[seg_start:seg_end].split()) <= 4):
             return True
-    # "iPhone 15 case @ ₹99": an accessory word right after the name, before any price.
+    # "iPhone 15 case @ ₹99": an accessory word right after the name, before any price. What comes
+    # after a "for" is what the product itself is for ("Cleaning Kit for Keyboard, AirPods").
     after = _PRICE_MARK.split(text[keyword_end:seg_end][:60], 1)[0]
+    after = _FOR_WHAT.split(after, 1)[0]
     hit = _ACCESSORY.search(after)
     return bool(hit and not _SIDE_NOTE.search(after[:hit.start()]) and not _NOT_PART.match(after[hit.end():]))
+
+
+def _mentions(parsed: ParsedText, traps: Sequence[Trap], in_post: bool):
+    """Every place a trap's product is named as the thing on sale: (trap, position)."""
+    for trap in traps:
+        for match in islice(trap.pattern.finditer(parsed.text), 200):  # a wall of repeats is not worth more time
+            # A trap set on a power bank or a charger is about that thing itself: the accessory
+            # tests are for traps on the devices such things are named after.
+            if not _ACCESSORY.fullmatch(match.group(0).strip()) and is_accessory(parsed.text, match.start(), match.end()):
+                continue
+            if in_post:
+                start, end = _line_bounds(parsed.text, match.start())
+                if _NOT_ITS_PRICE.search(parsed.text[start:end]):
+                    continue
+            yield trap, match.start()
 
 
 def match_trap(parsed: ParsedText, traps: Sequence[Trap], price: Optional[float] = None):
     """First trap whose keyword appears (not as an accessory) at or under its price limit.
 
     For a post, the price must be the one written for that product: see ``price_near``. A price
-    somewhere else in the post is never borrowed.
+    somewhere else in the post is never borrowed, and a line that is about reserving, winning or
+    being gifted the product does not state its price.
     """
-    for trap in traps:
-        for match in trap.pattern.finditer(parsed.text):
-            if is_accessory(parsed.text, match.start(), match.end()):
-                continue
-            found = price if price is not None else price_near(parsed, match.start())
-            if found is not None and found <= trap.max_price:
-                return trap, found
+    for trap, position in _mentions(parsed, traps, in_post=price is None):
+        found = price if price is not None else price_near(parsed, position)
+        if found is not None and found <= trap.max_price:
+            return trap, found
     return None
 
 
@@ -200,8 +229,12 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
         return Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp,
                        parsed.calc_discount if parsed.pair_conf else 0.0, label="Price error?")
 
-    # 1. A stated price and MRP.
-    if parsed.pair_conf:
+    claim, lone = parsed.pct_claim, parsed.claim_price
+    stated = claim is not None and lone is not None
+
+    # 1. A stated price and MRP. A pair that was only inferred from two bare numbers gives way to
+    #    a percentage written beside a price: that is the post's own word on the discount.
+    if parsed.pair_conf and (parsed.pair_conf != "inferred" or not stated):
         confident = parsed.pair_conf in ("labelled", "arrow")
         discount = parsed.calc_discount
         tier = _ladder(discount, parsed.saving, parsed.price, settings)
@@ -219,8 +252,7 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
                        needs_trusted_link=not confident, max_tier=cap)
 
     # 2. A stated price and a stated percentage ("₹6,294 / 80% off"): the saving follows from the two.
-    claim, lone = parsed.pct_claim, parsed.claim_price
-    if claim is not None and lone is not None:
+    if stated:
         rate = min(claim, 99.5)  # "100% off" beside a price is a rounded 99.5% or more
         saving = lone * rate / (100.0 - rate)
         tier = _ladder(rate, saving, lone, settings)
@@ -230,9 +262,15 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
         return Verdict(min(tier, cap), f"stated as {claim:.0f}% off, about {fmt_inr(saving)} saved", lone, None, claim,
                        max_tier=cap)
 
-    # 3. Only a percentage, with no price it can be tied to: worth a look only when it is extreme.
+    # 3. Only a percentage, with no price it can be tied to: worth a look only when it is extreme,
+    #    or when what it is claimed for is a product you set a trap on ("91% Off - Apple MacBook Air").
     if claim is not None and claim >= settings.urgent_discount:
         return Verdict(TIER_HIGH, f"claims {claim:.0f}% off", None, None, claim)
+    if claim is not None and claim >= settings.high_discount and not parsed.amounts:
+        trap = next((trap for trap, _ in _mentions(parsed, settings.traps, in_post=True)), None)
+        if trap:
+            return Verdict(TIER_HIGH, f"claims {claim:.0f}% off '{trap.name}', no price given", None, None, claim,
+                           label="Trap product")
     return None
 
 
@@ -317,8 +355,8 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
         if not is_side_product(title, strong_mrp=_strong_mrp(mrp, target)):
             if watched_higher >= target * 2:
                 return Verdict(TIER_URGENT, f"fell from {fmt_inr(watched_higher)} to under this page's "
-                               f"{fmt_inr(target)} floor", price, mrp or watched_higher, _pct(mrp or watched_higher, price),
-                               label="Under the floor")
+                               f"{fmt_inr(target)} floor", price, mrp, _pct(mrp or watched_higher, price),
+                               label="Under the floor", was=watched_higher)
             if mrp and mrp >= target * settings.floor_mrp_ratio:
                 return Verdict(TIER_URGENT, f"new under this page's {fmt_inr(target)} floor, list price {fmt_inr(mrp)}",
                                price, mrp, _pct(mrp, price), label="Under the floor")
@@ -342,8 +380,16 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
         if drop >= settings.watch_drop_pct and _entered(price, line, info, settings):
             saving = info.baseline - price
             tier = TIER_URGENT if saving >= settings.urgent_min_saving else TIER_HIGH
-            return Verdict(tier, f"dropped {drop:.0f}% from its usual {fmt_inr(info.baseline)}", price,
-                           info.baseline, drop, label="Price drop")
+            if listing:
+                # On a category page nobody chose this product, and "its usual price" may rest on
+                # a few readings of a seller's passing high price. So the size of the fall sets
+                # the volume: only a fall to a fraction of the price is treated as an error.
+                # (A fall to under the page's floor has already rung above.)
+                middle = (settings.watch_drop_pct + settings.urgent_drop_pct) / 2
+                tier = min(tier, TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle
+                           else TIER_NORMAL)
+            return Verdict(tier, f"dropped {drop:.0f}% from the {fmt_inr(info.baseline)} it was seen at", price,
+                           None, drop, label="Price drop", was=info.baseline)
 
     # A product this monitor has never met, standing on a cheapest-first page at a huge discount
     # to its list price: a dropped digit (₹74,990 laptop at ₹7,499) lands here, above the floor

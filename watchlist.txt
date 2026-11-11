@@ -12,7 +12,9 @@
 #                  - A NEW item under the floor counts only if its list price (MRP) is at least 3x the
 #                    floor (FLOOR_MRP_RATIO): toy laptops and phone cases stay quiet.
 #                  - Accessories, spares and refurbished units are skipped.
-#                  - Every product on the page is also checked against traps.txt and its own price history.
+#                  - Every product on the page is also checked against traps.txt and its own price history:
+#                    a fall of 50% or more from the price it was seen at alerts quietly, loudly from 65%,
+#                    at max priority from 80% (WATCH_DROP_PCT, URGENT_DROP_PCT).
 #                  - A product the monitor has never seen, NEW on the page above the floor, alerts when its
 #                    own card shows 85% or more off a list price of at least 3x the floor
 #                    (NEW_LISTING_DISCOUNT): high priority, max priority from 95%. This is what catches a

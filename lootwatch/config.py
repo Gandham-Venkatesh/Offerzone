@@ -130,8 +130,13 @@ class Trap:
 
 
 def _phrase_regex(phrase: str) -> str:
+    """A phrase as a pattern: its words in order, however they are spaced or bracketed. After a
+    phrase that ends in a letter a model number may follow at once ("galaxy z fold" matches
+    "Galaxy Z Fold7"), but not more letters; after one that ends in a digit, nothing may
+    ("oneplus 13" must not match "OnePlus 13R" or "OnePlus 135")."""
     words = [re.escape(w) for w in re.split(r"[\s\-]+", phrase.strip().lower()) if w]
-    return r"[\s\-()]*".join(words)
+    tail = r"(?![a-z0-9])" if phrase.strip()[-1:].isdigit() else r"(?![a-z])"
+    return r"[\s\-()]*".join(words) + tail
 
 
 def load_traps(path: Path) -> List[Trap]:
@@ -145,7 +150,7 @@ def load_traps(path: Path) -> List[Trap]:
             log.warning("traps: skipping %r (expected 'keywords | max price')", line)
             continue
         body = "|".join(_phrase_regex(p) for p in phrases)
-        pattern = re.compile(r"(?<![a-z0-9])(?:" + body + r")(?![a-z0-9])", re.I)
+        pattern = re.compile(r"(?<![a-z0-9])(?:" + body + r")", re.I)
         traps.append(Trap(phrases, float(number.group(1).replace(",", "")), pattern))
     return traps
 
@@ -183,6 +188,7 @@ class Settings:
     big_saving: float = 20000.0  # at high_discount or more, a saving this large is urgent on its own
     loot_price: float = 10.0  # a price this low ("Rs 1 deal") counts even when the rupee saving is small
     watch_drop_pct: float = 50.0  # % drop against a watched product's own usual price
+    urgent_drop_pct: float = 80.0  # on a category page, a drop this deep is max priority; smaller ones are quieter
     floor_mrp_ratio: float = 3.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
     new_listing_discount: float = 85.0  # a NEW item above a floor alerts from this % off its list price
     absence_hours: float = 24.0  # a product unseen for this long is judged afresh when it returns
@@ -238,6 +244,7 @@ class Settings:
             big_saving=_num("BIG_SAVING", 20000.0),
             loot_price=_num("LOOT_PRICE", 10.0),
             watch_drop_pct=_num("WATCH_DROP_PCT", 50.0),
+            urgent_drop_pct=_num("URGENT_DROP_PCT", 80.0),
             floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 3.0),
             new_listing_discount=_num("NEW_LISTING_DISCOUNT", 85.0),
             absence_hours=_num("ABSENCE_HOURS", 24.0),

@@ -55,9 +55,10 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
     print(f"deal posts: {settings.urgent_discount:.0f}%+ off saving {fmt_inr(settings.urgent_min_saving)}+ is urgent | "
           f"{settings.high_discount:.0f}%+ saving {fmt_inr(settings.min_saving)}+ (or priced {fmt_inr(settings.loot_price)} or less) is high | "
           f"{settings.min_discount:.0f}%+ saving {fmt_inr(settings.urgent_min_saving)}+ is quiet", file=out)
-    print(f"store pages: under a page's floor, a trap ({len(settings.traps)} loaded), your target, or a "
-          f"{settings.watch_drop_pct:.0f}% fall from its usual price is urgent | new on a floor page at "
-          f"{settings.new_listing_discount:.0f}%+ off its list price is high ({settings.urgent_discount:.0f}%+ urgent)", file=out)
+    print(f"store pages: under a page's floor, a trap ({len(settings.traps)} loaded) or your target is urgent | a fall of "
+          f"{settings.watch_drop_pct:.0f}%+ from the price a product was seen at alerts (urgent from "
+          f"{settings.urgent_drop_pct:.0f}%) | new on a floor page at {settings.new_listing_discount:.0f}%+ off its list "
+          f"price is high ({settings.urgent_discount:.0f}%+ urgent)", file=out)
     if not settings.use_channels:
         print("deal channels and feeds: switched off on this machine (USE_CHANNELS=0)", file=out)
     if not settings.use_store_pages:
