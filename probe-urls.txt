@@ -1,8 +1,4 @@
-https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40
-https://api.croma.com/searchservices/v1/search?currentPage=0&query=air%20conditioner%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40
-https://api.croma.com/searchservices/v1/search?currentPage=0&query=imac%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049
-https://www.dealsmagnet.com/deal/liora-face-cleansing-wet-wipes-pack-of-500-1dieE1RE
-https://www.dealsmagnet.com/deal/tg-1dieE1RE
-https://www.dealsmagnet.com/buy?d=1dieE1RE
-https://ddime.in/h7bN
-https://ddime.in/h7bM
+https://www.desidime.com/new
+https://www.desidime.com/new?page=2
+https://www.dealsmagnet.com/new
+https://pricehistory.app/price-drop
