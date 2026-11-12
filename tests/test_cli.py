@@ -133,10 +133,14 @@ class CommandLine(CleanEnv):
 
     def test_test_ntfy_and_missing_topic(self):
         self.assertEqual(main(["--test-ntfy", "--ntfy-server", self.web.base]), 1)  # no topic anywhere
+        os.environ["TEST_PUSH_GAP"] = "0"
+        self.addCleanup(os.environ.pop, "TEST_PUSH_GAP", None)
         self.assertEqual(main(["--test-ntfy", "--ntfy-server", self.web.base, "--ntfy-topic", "t1"]), 0)
-        push = self.web.pushes[0]
-        self.assertEqual((push["topic"], push["priority"]), ("t1", 5))
-        self.assertIn("₹400", push["title"])
+        # One push per loudness, so that each can be heard on its own.
+        self.assertEqual([(p["priority"], p["tags"]) for p in self.web.pushes],
+                         [(3, ["label"]), (4, ["fire"]), (5, ["rotating_light"])])
+        self.assertTrue(all("test" in p["title"].lower() and p["topic"] == "t1" for p in self.web.pushes))
+        self.assertIn("₹400", self.web.pushes[-1]["title"])
 
     def test_each_half_can_be_switched_off_per_machine(self):
         self.write("channels.txt", "alpha\n")

@@ -7,6 +7,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
@@ -28,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_argument_group("what to do (default: scan forever)")
     mode.add_argument("--once", action="store_true", help="run one scan and exit")
     mode.add_argument("--doctor", action="store_true", help="check every source once and print what works; pushes nothing")
-    mode.add_argument("--test-ntfy", action="store_true", help="send one test push and exit")
+    mode.add_argument("--test-ntfy", action="store_true", help="send three test pushes (quiet, high, urgent) and exit")
     mode.add_argument("--max-runtime", type=float, metavar="SECONDS", help="keep scanning for about this long, then exit")
     mode.add_argument("--handover-file", metavar="PATH",
                       help="with --max-runtime: keep scanning past the end until this file appears "
@@ -90,14 +91,29 @@ def main(argv=None) -> int:
         if not notifier.configured:
             log.error("NTFY_TOPIC is not set (use --ntfy-topic, the NTFY_TOPIC variable, or .env)")
             return 1
-        result = notifier.send(build_payload(
-            title="99% off · ₹400 (MRP ₹60,000) — test alert",
-            message="This is a test from your loot monitor. Real price-error alerts will look and sound like this one.",
-            priority=5, tags=["rotating_light"], click="https://www.flipkart.com/",
-            actions=[{"label": "Open deal", "url": "https://www.flipkart.com/"}],
-        ))
-        log.info("test push %s", "sent - check your phone" if result.ok else f"FAILED: {result.error}")
-        return 0 if result.ok else 1
+        # One push per loudness, quietest first, so each can be heard and seen on its own.
+        samples = (
+            (3, ["label"], "TEST 1 of 3, quiet (priority 3): 82% off · ₹899 (MRP ₹4,999) — test alert",
+             "This is how an ordinary good deal arrives: 80% off or more, saving ₹2,000 or more."),
+            (4, ["fire"], "TEST 2 of 3, high (priority 4): 92% off · ₹1,299 (MRP ₹16,999) — test alert",
+             "This is how a strong deal arrives: 90% off or more, or a fall to a fraction of the usual price."),
+            (5, ["rotating_light"], "TEST 3 of 3, URGENT (priority 5): 99% off · ₹400 (MRP ₹60,000) — test alert",
+             "This is how a price error arrives. Give this priority a loud sound of its own in the ntfy app and let it "
+             "through Do Not Disturb."),
+        )
+        failed = 0
+        for index, (priority, tags, title, message) in enumerate(samples):
+            if index:
+                time.sleep(float(os.environ.get("TEST_PUSH_GAP", "4")))
+            result = notifier.send(build_payload(
+                title=title, message=message + " Sent by your loot monitor's test; nothing is on sale.",
+                priority=priority, tags=tags, click="https://www.flipkart.com/",
+                actions=[{"label": "Open deal", "url": "https://www.flipkart.com/"}],
+            ))
+            failed += 0 if result.ok else 1
+            log.info("test push, priority %d: %s", priority, "sent" if result.ok else f"FAILED: {result.error}")
+        log.info("%s", "three test pushes sent - check your phone" if not failed else f"{failed} of 3 test pushes failed")
+        return 0 if not failed else 1
 
     if args.doctor:
         return run_doctor(settings, verbose=args.verbose)

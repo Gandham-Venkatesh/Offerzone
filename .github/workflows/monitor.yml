@@ -23,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "run = scan | doctor = report which sources work (doctor-detail lists every post) | test-ntfy = send one test push"
+        description: "run = scan | doctor = report which sources work (doctor-detail lists every post) | test-ntfy = send three test pushes (quiet, high, urgent)"
         type: choice
         default: run
         options: [run, doctor, doctor-detail, test-ntfy]
