@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+HISTORY_SPACING = 12 * 3600  # seconds between two stored readings of an unchanged price
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen (
     source TEXT NOT NULL, item_id TEXT NOT NULL, seen_at INTEGER NOT NULL,
@@ -183,7 +185,8 @@ class DB:
 
         The baseline is the median of the stored history, so one odd reading
         neither creates nor hides a drop. History is thinned to one point per
-        hour unless the price changes.
+        twelve hours unless the price changes: thousands of products are followed,
+        and the whole state file travels from run to run.
         """
         now = int(now or time.time())
         with self._lock, self._conn:
@@ -205,7 +208,7 @@ class DB:
                 quiet_price=float(product[2]) if product and product[2] is not None else None,
                 quiet_alerted=bool(product[3]) if product else False,
             )
-            if newest is None or abs(newest[1] - price) > 0.005 or now - newest[0] >= 3600:
+            if newest is None or abs(newest[1] - price) > 0.005 or now - newest[0] >= HISTORY_SPACING:
                 self._conn.execute("INSERT INTO price_obs (key, ts, price) VALUES (?, ?, ?)", (key, now, price))
             self._conn.execute(
                 "INSERT INTO products (key, store, title, url, first_seen, last_seen, last_price, mrp) "
@@ -310,7 +313,7 @@ class DB:
             self._conn.execute("DELETE FROM seen WHERE seen_at < ? AND item_id LIKE 'ph%'", (now - 2 * 86400,))
             self._conn.execute("DELETE FROM sightings WHERE seen_at < ?", (now - 2 * 86400,))
             self._conn.execute("DELETE FROM alerts WHERE created_at < ?", (now - 30 * 86400,))
-            self._conn.execute("DELETE FROM price_obs WHERE ts < ?", (now - 45 * 86400,))
+            self._conn.execute("DELETE FROM price_obs WHERE ts < ?", (now - 21 * 86400,))
             self._conn.execute("DELETE FROM products WHERE last_seen < ?", (now - 45 * 86400,))
             self._conn.execute("DELETE FROM kv WHERE key LIKE 'day:%' AND key < ?",
                                ("day:" + time.strftime("%Y-%m-%d", time.gmtime(now - 10 * 86400)),))

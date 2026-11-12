@@ -1,28 +1,49 @@
 # Public Telegram channels to read, one per line: @name, name, or a https://t.me/name link.
 # Every channel is read through its public web preview (https://t.me/s/<name>) - no account needed.
-# Private invite links (t.me/+xxxx) cannot be read this way.
+# Invite-only channels (links like t.me/+xxxx) cannot be read this way. That includes the largest
+# "Offerzone" channels (2.0, 3.0, Tricks): their public namesakes below the big ones are dormant.
 #
-# This is the safety net, not the main detector: the store pages in watchlist.txt are.
-# Put channels you trust here; delete the lot to switch channels off.
+# All of these were readable from GitHub's servers and posting on 12 Nov 2026. They were picked
+# from about a hundred candidates by audience and activity; the counts are subscribers that day.
+# A channel that goes quiet or private is reported by the monitor itself ("stopped working").
 #
-# All of the channels below were readable from GitHub's servers and posting on 10 Nov 2026.
 # Telegram's website is blocked on some Indian home/mobile networks: if --doctor shows every
 # channel failing to connect there, run the channel half somewhere else (USE_CHANNELS=0 at home).
 
-# --- all-category deal channels
-Magixdeals_Magix              # Magixdeals 2.0
-Loot_Dealsx                   # Trending Loot Deals
-desidime                      # DesiDime - Deals and Offers (official)
-DesidimeHot                   # DesiDime - Handpicked Deals
-lootersindia                  # Price History Deals 2.0
-bigtricksin                   # Bigtricks Official
-freekaamaalindia              # FreeKaaMaal Official
-flipshope                     # Flipshope - Deals and Offers
+# --- all-category deal channels, largest first
+Loot_Dealsx                   # Trending Loot Deals (1.79M)
+rapiddeals_unlimited          # Rapid Deals Unlimited (1.06M)
+Magixdeals_Magix              # Magixdeals 2.0 (654K)
+dealsvelocity                 # Deals Velocity (507K)
+OMGDeals                      # OMG Loot Deals (482K)
+icoolzTricks                  # CoolzTricks Official (336K)
+GrowDealz                     # GrowDealz (238K)
+idoffers                      # India Desire offers (220K)
+ttsdeals                      # TTSDeals (200K)
+pakkaoffers                   # Pakka Offers (133K)
+bestlootdeals07               # Lallantop deals (123K)
+lootdealsapp                  # Loot Deals App (108K)
+desidime                      # DesiDime, official (108K) - its website is read directly too, see feeds.txt
+lootping                      # LootPing (101K)
+Lootunboxing                  # Loot Unboxing (90K) - also food and grocery codes
+lootersindia                  # Price History Deals 2.0 (82K)
+PowerLoot                     # PowerLoot (69K) - a price-drop robot, about 13 posts an hour
+techglaredeals                # Techglare Deals (67K)
+flipshope                     # Flipshope (58K)
+epicdeals_in                  # Epic Deals (41K) - about 19 posts an hour
+freekaamaalindia              # FreeKaaMaal Official (28K)
+GrabOnIndiaOfficial           # GrabOn India (27K) - says it posts price errors
+bigtricksin                   # Bigtricks Official (24K)
+lootalerts                    # LootAlerts (21K) - about 11 posts an hour
+IHDBroadcast                  # IHD Deals Broadcast (20K)
+DesidimeHot                   # DesiDime handpicked (18K)
 
 # --- quick commerce and food (Blinkit, Zepto, Swiggy Instamart, BigBasket)
-FoodJunction                  # FRJ food coupons
-swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots
+FoodJunction                  # FRJ food coupons (11K)
+swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots (6K)
 
-# --- removed after the first live check (dead or no public preview):
-#     magiXdeals (no post for a month), TRICKSpoint, dcloots_loots_offers_deals,
-#     Dcloots_offers_tricks, Indiafreestuffin
+# --- checked and left out
+#     dormant or private: magiXdeals, offerzone_deals_loots, deals_offerzone_loots, Offerzone_deals, dealdost,
+#       PremiumLootDeals, TRICKSpoint, Indiafreestuffin, bestlootdeals, tech24deals, FRCP_Official
+#     mostly referral and loan adverts: TrickXpert, realearnkaro
+#     the website behind it is read directly instead: dealsmagnet

@@ -104,7 +104,7 @@ start_next() {
 # Runs beside the scanner. Shortly before the shift ends it gets a relief going, and it creates
 # the file the scanner is waiting for once that relief stands ready.
 find_relief() {
-  local flag="$1" shift_seconds="${LOOP_SECONDS:-840}" lead="${RELAY_LEAD:-75}" slept=0
+  local flag="$1" shift_seconds="${LOOP_SECONDS:-840}" lead="${RELAY_LEAD:-45}" slept=0
   local started=0 last_start=0 failed=0 now list younger deadline ready
   while [ "$slept" -lt $((shift_seconds - lead)) ]; do sleep "$POLL"; slept=$((slept + POLL)); done
   deadline=$(( $(date +%s) + lead + ${RELAY_MAX_OVERTIME:-1500} ))
