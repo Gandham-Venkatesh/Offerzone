@@ -94,6 +94,7 @@ start_next() {
   local args=(-f mode=run)
   [ -n "${RELAY_HOPS:-}" ] && args+=(-f "hops=$((RELAY_HOPS - 1))")
   [ -n "${DRY_RUN:-}" ] && args+=(-f dry_run=1)
+  [ -n "${SHIFT_SECONDS_INPUT:-}" ] && args+=(-f "shift_seconds=$SHIFT_SECONDS_INPUT")
   [ -n "${WATCHLIST_FILE:-}" ] && args+=(-f "watchlist_file=$WATCHLIST_FILE")
   [ -n "${CHANNELS_FILE:-}" ] && args+=(-f "channels_file=$CHANNELS_FILE")
   [ -n "${FEEDS_FILE:-}" ] && args+=(-f "feeds_file=$FEEDS_FILE")

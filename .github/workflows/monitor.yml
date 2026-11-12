@@ -46,6 +46,10 @@ on:
         description: "Testing only: 1 = scan without pushing anything"
         type: string
         default: ""
+      shift_seconds:
+        description: "Testing only: length of a shift in seconds (empty = LOOP_SECONDS, 840)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -87,7 +91,8 @@ jobs:
       SITE_GAPS: ${{ vars.SITE_GAPS }}
       USE_CHANNELS: ${{ vars.USE_CHANNELS }}
       USE_STORE_PAGES: ${{ vars.USE_STORE_PAGES }}
-      LOOP_SECONDS: ${{ vars.LOOP_SECONDS || '840' }}
+      LOOP_SECONDS: ${{ inputs.shift_seconds || vars.LOOP_SECONDS || '840' }}
+      SHIFT_SECONDS_INPUT: ${{ inputs.shift_seconds }}
       WATCHLIST_FILE: ${{ inputs.watchlist_file || 'watchlist.txt' }}
       CHANNELS_FILE: ${{ inputs.channels_file || 'channels.txt' }}
       FEEDS_FILE: ${{ inputs.feeds_file || 'feeds.txt' }}
