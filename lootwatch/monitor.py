@@ -119,7 +119,8 @@ class Monitor:
         self._watch_hosts = {source_key("watch", w.url): host_of(w.url) for w in settings.watchlist}
         # Whose turn it is survives a restart: with a long list and short runs, the pages at the
         # top of the file would otherwise be read again and again and the rest hardly ever.
-        attempts = {row[0]: max(row[4] or 0, row[5] or 0) for row in db.health_rows()}
+        attempts = {row[0]: max(row[4] or 0, 0 if str(row[6] or "").startswith("cooldown") else (row[5] or 0))
+                    for row in db.health_rows()}
         for item in settings.watchlist:
             last = attempts.get(source_key("watch", item.url))
             if last:
@@ -265,7 +266,10 @@ class Monitor:
         if result.skipped and not result.error.startswith("cooldown"):
             self._count("unreached")
             return
-        self._watch_checked[item.url] = time.time()
+        if not result.skipped:
+            # Only a real request counts as the page's turn. While its store is being left alone
+            # after a refusal, the page keeps its place: first in line when the store answers again.
+            self._watch_checked[item.url] = time.time()
         if not result.ok:
             self.db.health_fail(source, result.problem)
             self._count("source_failures")
@@ -283,12 +287,15 @@ class Monitor:
         # A listing that used to show list prices and now shows none has changed its layout: the
         # products still parse, but the rules that lean on the list price have gone blind. Say so
         # through the health record, and keep judging what can still be judged.
-        if listing and len(page.offers) >= 5 and not any(o.mrp for o in page.offers) and self.db.get(f"mrps:{source}"):
+        with_list_price = sum(1 for o in page.offers if o.mrp)
+        if listing and len(page.offers) >= 5 and not with_list_price and self.db.get(f"mrps:{source}"):
             self.db.health_fail(source, "products are listed but none shows a list price any more (layout change?)")
             self._count("source_failures")
         else:
             self.db.health_ok(source, len(page.offers))
-            if listing and any(o.mrp for o in page.offers) and not self.db.get(f"mrps:{source}"):
+            # "This page shows list prices" is only said of a page where that is the rule (a third of
+            # its cards or more): one iPhone with a crossed-out price does not make it so.
+            if listing and with_list_price * 3 >= len(page.offers) and not self.db.get(f"mrps:{source}"):
                 self.db.set(f"mrps:{source}", 1)
         # The first read of a search/category page only records what is normal on it. Everything
         # after that is judged against that picture, so the page's permanently cheap items stay quiet.
@@ -691,15 +698,19 @@ class Monitor:
                 log.debug("healthcheck ping failed")
 
     def _heartbeat(self) -> None:
-        if self.s.heartbeat_hour < 0:
-            return
         local = time.gmtime(time.time() + self.s.tz_offset_minutes * 60)
         today = time.strftime("%Y-%m-%d", local)
+        # The daily clean-up does not depend on the daily note: with thousands of products
+        # followed, a state file that is never cleaned grows by a megabyte a day.
+        if self.db.get("pruned_day") != today:
+            self.db.set("pruned_day", today)
+            self.db.prune()
+        if self.s.heartbeat_hour < 0:
+            return
         if local.tm_hour < self.s.heartbeat_hour or self.db.get("heartbeat_day") == today:
             return
         first_ever = self.db.get("heartbeat_day") == ""
         self.db.set("heartbeat_day", today)
-        self.db.prune()
         if first_ever:
             return  # started today: the first summary comes tomorrow
         since = float(self.db.get("heartbeat_at", "0") or 0)

@@ -142,6 +142,8 @@ https://www.flipkart.com/search?q=ipad&sort=popularity | | Flipkart search: ipad
 https://www.flipkart.com/search?q=galaxy+s&sort=popularity | | Flipkart search: galaxy s
 
 # ===================== CROMA =====================
+# (No floor on the "macbook" search: Croma lists new Apple products at a Rs 9,999 pre-booking price,
+#  which a floor would take for a price error every time.)
 # Croma's own website fetches these product lists. "category/<number>" is the number at the end of a
 # category's address on croma.com; "search?query=<words>" searches. After the %3A comes the order:
 # price-asc, discount-desc or relevance.
@@ -155,8 +157,8 @@ https://www.flipkart.com/search?q=galaxy+s&sort=popularity | | Flipkart search: 
 ! https://api.croma.com/searchservices/v1/search?currentPage=0&query=washing%20machine%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 3000 | Croma washing machines, cheapest | every 3m
 ! https://api.croma.com/searchservices/v1/search?currentPage=0&query=air%20conditioner%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 9000 | Croma air conditioners, cheapest | every 3m
 ! https://api.croma.com/searchservices/v1/search?currentPage=0&query=camera%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 2500 | Croma cameras, cheapest | every 3m
-! https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 40000 | Croma macbooks, cheapest | every 3m
-https://api.croma.com/searchservices/v1/search?currentPage=0&query=%3Adiscount-desc&fields=FULL&channel=WEB&channelCode=400049 | 0 | Croma biggest discounts | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | | Croma macbooks, cheapest | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=%3Adiscount-desc&fields=FULL&channel=WEB&channelCode=400049 | | Croma biggest discounts | every 5m
 https://api.croma.com/searchservices/v1/search?currentPage=0&query=mobile%20phone%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: mobile phone | every 5m
 https://api.croma.com/searchservices/v1/search?currentPage=0&query=television%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: television | every 5m
 https://api.croma.com/searchservices/v1/search?currentPage=0&query=laptop%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: laptop | every 5m
@@ -180,7 +182,7 @@ https://api.croma.com/searchservices/v1/search?currentPage=0&query=gaming%20cons
 ! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/washing-machines/items?page_no=1&page_size=50&sort_on=price_asc | 3500 | Reliance Digital washing machines | every 3m
 ! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/air-conditioners/items?page_no=1&page_size=50&sort_on=price_asc | 9000 | Reliance Digital air conditioners | every 3m
 ! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/cameras/items?page_no=1&page_size=50&sort_on=price_asc | 2500 | Reliance Digital cameras | every 3m
-https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?page_no=1&page_size=50&sort_on=discount_dsc | 0 | Reliance Digital biggest discounts | every 5m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?page_no=1&page_size=50&sort_on=discount_dsc | | Reliance Digital biggest discounts | every 5m
 https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/laptops/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular laptops | every 5m
 https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/mobiles/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular phones | every 5m
 https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/televisions/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular TVs | every 5m
@@ -208,14 +210,20 @@ https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=levi
 https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=tommy%20hilfiger%3Adiscount-desc | 0 | Ajio tommy hilfiger, biggest discounts | every 5m
 
 # ===================== BRAND STORES =====================
-# Any shop built on Shopify publishes its catalogue at /products.json. Each product is followed for a
-# fall from its own price. A catalogue is a large file, so it is fetched only every 15 minutes.
+# Any shop built on Shopify publishes its catalogue at /products.json, 250 products to a page, newest
+# first. Each product is followed for a fall from its own price. These are large files, so each is
+# fetched only every 15 minutes. Two pages per shop here; add "&page=3" lines for more of a catalogue.
 
 https://www.boat-lifestyle.com/products.json?limit=250 | | boAt catalogue | every 15m
+https://www.boat-lifestyle.com/products.json?limit=250&page=2 | | boAt catalogue, page 2 | every 15m
 https://www.gonoise.com/products.json?limit=250 | | Noise catalogue | every 15m
+https://www.gonoise.com/products.json?limit=250&page=2 | | Noise catalogue, page 2 | every 15m
 https://www.portronics.com/products.json?limit=250 | | Portronics catalogue | every 15m
+https://www.portronics.com/products.json?limit=250&page=2 | | Portronics catalogue, page 2 | every 15m
 https://www.boultaudio.com/products.json?limit=250 | | Boult catalogue | every 15m
+https://www.boultaudio.com/products.json?limit=250&page=2 | | Boult catalogue, page 2 | every 15m
 https://www.zebronics.com/products.json?limit=250 | | Zebronics catalogue | every 15m
+https://www.zebronics.com/products.json?limit=250&page=2 | | Zebronics catalogue, page 2 | every 15m
 https://www.ambraneindia.com/products.json?limit=250 | | Ambrane catalogue | every 15m
 # more that answered on 12 Nov 2026 (remove the leading "# " to add one):
 # https://www.mcaffeine.com/products.json?limit=250 | | mCaffeine catalogue | every 15m

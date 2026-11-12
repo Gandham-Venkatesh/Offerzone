@@ -15,8 +15,9 @@ on:
   # repositories especially), so it cannot carry the monitor, but it restarts the runs if they
   # ever stop. Without KEEP_RUNNING the schedule is all there is, and scanning has gaps.
   #
-  # TO STOP: set KEEP_RUNNING to 0 (the run on duty finishes its shift, the next one is the last),
-  # or, to stop at once: Actions -> Loot monitor -> "..." -> Disable workflow, then cancel the run.
+  # TO STOP: Actions -> Loot monitor -> "..." -> Disable workflow, then cancel the run in progress.
+  # (Setting KEEP_RUNNING to 0 only stops the runs from starting each other: the schedule still
+  # starts a run whenever GitHub gets round to it.)
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
@@ -39,15 +40,11 @@ on:
         type: string
         default: feeds.txt
       hops:
-        description: "Testing only: how many more runs this run may start (empty = follow KEEP_RUNNING)"
-        type: string
-        default: ""
-      dry_run:
-        description: "Testing only: 1 = scan without pushing anything"
+        description: "Test branches only (ignored on main): how many more runs this run may start"
         type: string
         default: ""
       shift_seconds:
-        description: "Testing only: length of a shift in seconds (empty = LOOP_SECONDS, 840)"
+        description: "Test branches only (ignored on main): length of a shift in seconds"
         type: string
         default: ""
 
@@ -93,17 +90,20 @@ jobs:
       SITE_GAPS: ${{ vars.SITE_GAPS }}
       USE_CHANNELS: ${{ vars.USE_CHANNELS }}
       USE_STORE_PAGES: ${{ vars.USE_STORE_PAGES }}
-      LOOP_SECONDS: ${{ inputs.shift_seconds || vars.LOOP_SECONDS || '840' }}
-      SHIFT_SECONDS_INPUT: ${{ inputs.shift_seconds }}
-      WATCHLIST_FILE: ${{ inputs.watchlist_file || 'watchlist.txt' }}
-      CHANNELS_FILE: ${{ inputs.channels_file || 'channels.txt' }}
-      FEEDS_FILE: ${{ inputs.feeds_file || 'feeds.txt' }}
       DB_PATH: state/lootwatch.db
-      # Runs start each other only on main. Anywhere else that takes a "hops" number, so that a
-      # test can never run on for ever, and nothing is pushed to a phone from there.
-      KEEP_RUNNING: ${{ github.ref == 'refs/heads/main' && vars.KEEP_RUNNING || inputs.hops != '' && '1' || '' }}
-      RELAY_HOPS: ${{ inputs.hops }}
-      DRY_RUN: ${{ inputs.dry_run || github.ref != 'refs/heads/main' && '1' || '' }}
+      # On main the runs follow the repository's settings and the shipped lists, whatever a
+      # hand-started run was given: a run takes its place in the chain and hands its settings on,
+      # so a test value typed into "Run workflow" would stick for good. Checks (doctor) may name
+      # other lists anywhere. On any other branch a scan is a dry run: nothing reaches a phone,
+      # and runs start each other only when "hops" says how often.
+      LOOP_SECONDS: ${{ github.ref != 'refs/heads/main' && inputs.shift_seconds || vars.LOOP_SECONDS || '840' }}
+      SHIFT_SECONDS_INPUT: ${{ github.ref != 'refs/heads/main' && inputs.shift_seconds || '' }}
+      WATCHLIST_FILE: ${{ (github.ref != 'refs/heads/main' || (inputs.mode || 'run') != 'run') && inputs.watchlist_file || 'watchlist.txt' }}
+      CHANNELS_FILE: ${{ (github.ref != 'refs/heads/main' || (inputs.mode || 'run') != 'run') && inputs.channels_file || 'channels.txt' }}
+      FEEDS_FILE: ${{ (github.ref != 'refs/heads/main' || (inputs.mode || 'run') != 'run') && inputs.feeds_file || 'feeds.txt' }}
+      KEEP_RUNNING: ${{ github.ref == 'refs/heads/main' && vars.KEEP_RUNNING || github.ref != 'refs/heads/main' && inputs.hops != '' && '1' || '' }}
+      RELAY_HOPS: ${{ github.ref != 'refs/heads/main' && inputs.hops || '' }}
+      DRY_RUN: ${{ github.ref != 'refs/heads/main' && '1' || '' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -118,11 +118,20 @@ jobs:
           pip install --quiet -r requirements.txt -r requirements-optional.txt
           mkdir -p state
 
+      # A scheduled run is not needed while the runs keep each other going, and a third run is not
+      # needed while one scans and one waits. Decided here, in a step of its own: a run that is
+      # about to leave must never look like one that stands ready to take over.
+      - name: Am I needed?
+        id: need
+        if: env.MODE == 'run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash deploy/relay.sh check
+
       # Only one run scans at a time. This one is ready now and waits here until the run before
       # it has saved its state and gone.
       - name: Wait for my turn
-        id: turn
-        if: env.MODE == 'run'
+        if: env.MODE == 'run' && steps.need.outputs.surplus != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash deploy/relay.sh wait
@@ -130,7 +139,8 @@ jobs:
       # What has already been seen and alerted travels from run to run in the Actions cache.
       # It holds no secrets: the ntfy topic and token are never written to it.
       - name: Restore state
-        if: env.MODE == 'run' && steps.turn.outputs.surplus != '1'
+        id: restore
+        if: env.MODE == 'run' && steps.need.outputs.surplus != '1'
         uses: actions/cache/restore@v6
         with:
           path: state
@@ -140,7 +150,7 @@ jobs:
       # Done before the scan, so that nothing but saving the state stands between this run's
       # last scan and the next run's first.
       - name: Remove older state caches
-        if: env.MODE == 'run' && steps.turn.outputs.surplus != '1'
+        if: env.MODE == 'run' && steps.need.outputs.surplus != '1'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -150,10 +160,11 @@ jobs:
             | xargs -r -n 1 gh cache delete --repo "$GITHUB_REPOSITORY"
 
       # The scan ends with an error when an alert could not be delivered through ntfy for half an
-      # hour (a wrong token, ntfy unreachable). GitHub then marks the run as failed, which is the
-      # one way a run can get itself noticed. The next run is started all the same.
+      # hour (a wrong token, ntfy unreachable), and when the scanner crashed and had to be started
+      # again. GitHub then marks the run as failed, which is the one way a run can get itself
+      # noticed. The next run is started all the same.
       - name: Scan
-        if: steps.turn.outputs.surplus != '1'
+        if: steps.need.outputs.surplus != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -164,8 +175,10 @@ jobs:
             *) bash deploy/relay.sh shift ;;
           esac
 
+      # Only a run that restored the state and has a state file may save one: a run cancelled
+      # while it waited has nothing but an empty folder, and that must not become the newest state.
       - name: Save state
-        if: always() && env.MODE == 'run' && steps.turn.outputs.surplus != '1'
+        if: always() && env.MODE == 'run' && steps.restore.conclusion == 'success' && hashFiles('state/lootwatch.db') != ''
         uses: actions/cache/save@v6
         with:
           path: state

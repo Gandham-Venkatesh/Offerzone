@@ -687,6 +687,79 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("Samsung Galaxy M35", titles[0])
         self.assertTrue(titles[0].startswith("Price drop: 53% off · ₹6,999 (was ₹14,999)"), titles[0])
 
+    def test_a_product_back_after_a_month_is_compared_with_the_price_it_was_last_seen_at(self):
+        self.settings.channels = []
+        self.settings.traps = []
+        self.settings.watchlist = [WatchItem(url=self.web.base + "/phones?sort=popularity", label="Popular")]
+        phone = ("G2", "Samsung Galaxy M35 5G (Daybreak Blue, 128 GB)", 12999, 24499)
+        other = ("G3", "Motorola g45 5G (Brilliant Blue, 128 GB)", 9999, 14999)
+        self.web.pages["/phones"] = self.listing_page([phone, other])
+        monitor = self.monitor()
+        monitor.cycle()
+        monitor.cycle()
+        self.web.pages["/phones"] = self.listing_page([other])  # gone from the page
+        monitor.cycle()
+        month = 30 * 86400
+        self.sql(monitor, "UPDATE price_obs SET ts = ts - ?", month)
+        self.sql(monitor, "UPDATE products SET last_seen = last_seen - ?, first_seen = first_seen - ?", month, month)
+        monitor.db.prune()  # its readings are older than three weeks now; the product itself is kept for six
+        self.assertEqual(self.sql(monitor, "SELECT COUNT(*) FROM price_obs WHERE key LIKE '%G2'")[0][0], 0)
+        self.web.pages["/phones"] = self.listing_page([("G2", phone[1], 1299, 24499), other])
+        monitor.cycle()
+        titles = [p["title"] for p in self.deals()]
+        self.assertEqual(len(titles), 1, titles)
+        self.assertTrue(titles[0].startswith("Price drop: 90% off · ₹1,299 (was ₹12,999)"), titles[0])
+
+    def test_a_page_skipped_while_its_store_is_left_alone_keeps_its_turn(self):
+        self.settings.channels = []
+        urls = [self.web.base + f"/page{n}" for n in range(2)]
+        self.settings.watchlist = [WatchItem(url=urls[0], label="first", weight=12.0), WatchItem(url=urls[1], label="second")]
+        for n in range(2):
+            self.web.pages[f"/page{n}"] = self.listing_page([("A%d" % n, "Some Phone (Blue, 64 GB)", 9999, 12999)])
+        monitor = self.monitor()
+        monitor.cycle()
+        read_at = dict(monitor._watch_checked)
+        self.assertEqual(len(read_at), 2)
+        self.web.status_for["/page0"] = 429  # the store refuses: it is left alone for a while
+        self.web.status_for["/page1"] = 429
+        time.sleep(1.1)
+        monitor.cycle()
+        monitor.cycle()
+        refused = [url for url in urls if monitor._watch_checked[url] > read_at[url]]
+        self.assertEqual(len(refused), 1, "only the request that was really sent counts as a turn")
+        skipped = next(url for url in urls if url not in refused)
+        self.assertEqual(monitor._watch_checked[skipped], read_at[skipped])
+        # ...and a restart does not take the skipped attempts for reads either.
+        restarted = self.monitor()
+        self.assertLess(restarted._watch_checked[skipped], time.time() - 1.0)
+
+    def test_the_state_file_is_cleaned_daily_even_with_the_daily_note_switched_off(self):
+        self.settings.heartbeat_hour = -1
+        monitor = self.monitor()
+        monitor.cycle()
+        self.sql(monitor, "INSERT INTO price_obs (key, ts, price) VALUES ('old:1', ?, 10)", int(time.time()) - 60 * 86400)
+        self.sql(monitor, "UPDATE kv SET value = '2000-01-01' WHERE key = 'pruned_day'")
+        monitor.cycle()
+        self.assertEqual(self.sql(monitor, "SELECT COUNT(*) FROM price_obs WHERE key = 'old:1'")[0][0], 0)
+
+    def test_a_page_that_rarely_shows_list_prices_is_not_reported_when_it_shows_none(self):
+        self.settings.channels = []
+        self.settings.traps = []
+        url = self.web.base + "/iphones"
+        self.settings.watchlist = [WatchItem(url=url, target=18000, label="Apple phones")]
+        plain = [(f"I{n}", f"Apple iPhone 1{n} (Black, 128 GB)", 49900 + n * 1000, None) for n in range(6)]
+        self.web.pages["/iphones"] = self.ld_listing(plain)
+        monitor = self.monitor()
+        monitor.cycle()
+        one_struck = [("I0", plain[0][1], 49900, 54900)] + plain[1:]  # one card of six shows a crossed-out price for a day
+        self.web.pages["/iphones"] = self.ld_listing(one_struck)
+        monitor.cycle()
+        self.web.pages["/iphones"] = self.ld_listing(plain)
+        for _ in range(3):
+            monitor.cycle()
+        row = next(r for r in monitor.db.health_rows() if r[0] == source_key("watch", url))
+        self.assertEqual(row[3], 0, "no failures in a row: nothing is wrong with this page")
+
     def test_whose_turn_it_is_survives_a_restart_and_marked_pages_come_round_more_often(self):
         self.settings.channels = []
         urls = [self.web.base + f"/page{n}" for n in range(4)]

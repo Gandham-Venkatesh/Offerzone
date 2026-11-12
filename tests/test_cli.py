@@ -101,7 +101,7 @@ class CommandLine(CleanEnv):
         self.assertIn("desidime", settings.channels)
         self.assertEqual(len(settings.channels), len({c.lower() for c in settings.channels}))
         urls = [w.url for w in settings.watchlist]
-        self.assertEqual(len(urls), 144)
+        self.assertEqual(len(urls), 149)
         self.assertEqual(len(urls), len(set(urls)))
         self.assertFalse(any("amazon." in u for u in urls), "Amazon pages ship switched off")
         self.assertEqual(sum("flipkart.com" in u for u in urls), 90)
@@ -114,9 +114,14 @@ class CommandLine(CleanEnv):
         self.assertEqual((popular.target, popular.weight), (None, 1.0))
         croma = next(w for w in settings.watchlist if w.label == "Croma laptops")
         self.assertEqual((croma.target, croma.weight, croma.every), (15000.0, 4.0, 180.0))
-        discounts = next(w for w in settings.watchlist if w.label == "Croma biggest discounts")
-        self.assertEqual((discounts.target, discounts.every), (0.0, 300.0), "a discount-sorted page has no floor")
-        self.assertTrue(all(w.target == 0 for w in settings.watchlist if "discount-desc" in w.url or "discount_dsc" in w.url))
+        # A page sorted by discount never carries a floor: its top is clearance stock at 95% off.
+        by_discount = [w for w in settings.watchlist if "discount-desc" in w.url or "discount_dsc" in w.url]
+        self.assertEqual(len(by_discount), 7)
+        self.assertTrue(all(not w.target for w in by_discount))
+        ajio = next(w for w in settings.watchlist if w.label == "Ajio nike, biggest discounts")
+        self.assertEqual((ajio.target, ajio.every), (0.0, 300.0), "0: newcomers at 85%+ off still alert")
+        self.assertIsNone(next(w for w in settings.watchlist if w.label == "Croma biggest discounts").target)
+        self.assertIsNone(next(w for w in settings.watchlist if w.label == "Croma macbooks, cheapest").target)
         catalogue = next(w for w in settings.watchlist if w.label == "boAt catalogue")
         self.assertEqual((catalogue.target, catalogue.every), (None, 900.0))
         # every page a store's turn-taking has to serve still fits the picture the file's header gives

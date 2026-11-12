@@ -210,10 +210,13 @@ class DB:
             newest = self._conn.execute(
                 "SELECT ts, price FROM price_obs WHERE key = ? ORDER BY ts DESC LIMIT 1", (key,)
             ).fetchone()
+            last_price = float(product[0]) if product and product[0] is not None else None
             info = PriceInfo(
-                baseline=statistics.median(history) if history else None,
-                observations=len(history),
-                last_price=float(product[0]) if product and product[0] is not None else None,
+                # Readings are kept for three weeks, the product itself for six: one that comes
+                # back after a month is compared with the price it was last seen at.
+                baseline=statistics.median(history) if history else last_price,
+                observations=len(history) or (1 if last_price is not None else 0),
+                last_price=last_price,
                 first_seen=product is None,
                 last_age=float(now - product[1]) if product and product[1] is not None else None,
                 quiet_price=float(product[2]) if product and product[2] is not None else None,

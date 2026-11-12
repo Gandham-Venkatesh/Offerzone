@@ -54,7 +54,7 @@ Each scan (default: every 60 seconds) it looks in four places:
 
 | Alert | ntfy priority | When |
 |---|---|---|
-| **Urgent** | 5 (max) | something under a category page's floor · a trap (with a list price that fits the device) · your target price · a fall of 80% or more (`URGENT_DROP_PCT`) from the price the monitor saw it at · on a product page you added yourself, a fall of 50% · a product new to a floor page at 95% or more off its list price |
+| **Urgent** | 5 (max) | something under a category page's floor · a trap (with a list price that fits the device) · your target price · a fall of 80% or more (`URGENT_DROP_PCT`) from the price the monitor saw it at · on a product page you added yourself, a fall of 50% · a product new to a floor page at 95% or more off its list price, saving ₹2,000 or more |
 | **High** | 4 | on a category page, a fall of 65% to 80% · a product new to a floor page, or to a page sorted by discount, at `NEW_LISTING_DISCOUNT` (85%) or more off its list price, saving ₹2,000 or more · a product page at 80% or more off on its first check |
 | **Quiet** | 3 | on a category page, a fall of 50% to 65% (`WATCH_DROP_PCT`) · a listing named like a trap product whose card shows no list price that fits it (spare parts are named after the phone too) |
 
@@ -212,9 +212,15 @@ On Android, an old phone left on its charger does this without touching your mai
    `KEEP_RUNNING`, value `1` (a variable, not a secret), then start one run by hand
    (Run workflow → `run`). From then on the runs keep each other going: each one scans for a
    quarter of an hour, starts the next run shortly before its time is up, and leaves only once
-   that run stands ready. There is always exactly one run scanning, with no gap at the changeover.
-7. To stop: set `KEEP_RUNNING` to `0` (it stops within two shifts), or, to stop at once,
-   Actions → Loot monitor → "..." → Disable workflow, then cancel the run in progress.
+   that run stands ready. There is always one run scanning; a changeover takes under ten seconds.
+7. To stop: Actions → Loot monitor → "..." → Disable workflow, then cancel the run in progress.
+   Setting `KEEP_RUNNING` to `0` only stops the runs from starting each other; the schedule in
+   the workflow still starts a run whenever GitHub gets round to it.
+
+"Run workflow" on the main branch always joins the live chain with the repository's settings and
+the shipped lists (only the `doctor` and `test-ntfy` checks stand apart, and they may name other
+list files). The `hops` and `shift_seconds` boxes are for test branches and are ignored on main;
+on any other branch a scan is a dry run that pushes nothing.
 
 Why not simply the schedule? GitHub starts scheduled runs late or not at all (on 10 November
 2026 it started none in six hours), so the schedule in the workflow is only a safety net: it
