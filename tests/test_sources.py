@@ -357,18 +357,21 @@ class StoreLists(unittest.TestCase):
                          ("ajio:700295523_grey", "ASIAN Men Colourblock Lace-Up Shoes", 750.0, 1499.0))
         self.assertEqual(offer.url, "https://www.ajio.com/asian-men-shoes/p/700295523_grey")
 
-    def test_shopify_catalogue_takes_the_cheapest_variant_in_stock(self):
-        data = {"products": [
-            {"id": 4546811920482, "title": "boAt Rockerz 255 Pro+", "handle": "boat-rockerz-255-pro-plus", "variants": [
-                {"title": "Black", "price": "1199.00", "compare_at_price": "3990.00", "available": True},
-                {"title": "Teal", "price": "1.00", "compare_at_price": "3990.00", "available": False},
-                {"title": "Blue", "price": "1099.00", "compare_at_price": None, "available": True}]},
-            {"id": 5, "title": "All gone", "handle": "gone", "variants": [{"price": "10.00", "available": False}]},
-        ]}
-        result = extract_page("https://www.boat-lifestyle.com/products.json?limit=250", json.dumps(data))
-        (offer,) = result.offers
-        self.assertEqual((offer.key, offer.price, offer.mrp), ("boat-lifestyle.com:4546811920482", 1099.0, None))
+    def test_shopify_catalogue_gives_each_product_its_cheapest_variant(self):
+        product = {"id": 4546811920482, "title": "boAt Rockerz 255 Pro+", "handle": "boat-rockerz-255-pro-plus", "variants": [
+            {"title": "Black", "price": "1199.00", "compare_at_price": "3990.00", "available": True},
+            {"title": "Teal", "price": "999.00", "compare_at_price": "3990.00", "available": False},
+            {"title": "Blue", "price": "1099.00", "compare_at_price": None, "available": True}]}
+        gone = {"id": 5, "title": "All gone", "handle": "gone", "variants": [{"price": "10.00", "available": False}]}
+        url = "https://www.boat-lifestyle.com/products.json?limit=250"
+        (offer,) = extract_page(url, json.dumps({"products": [product, gone]})).offers
+        self.assertEqual((offer.key, offer.price, offer.mrp), ("boat-lifestyle.com:4546811920482", 999.0, 3990.0))
         self.assertEqual(offer.url, "https://boat-lifestyle.com/products/boat-rockerz-255-pro-plus")
+        # A variant selling out or coming back must not look like a price change.
+        product["variants"][1]["available"] = True
+        product["variants"][0]["available"] = False
+        (again,) = extract_page(url, json.dumps({"products": [product, gone]})).offers
+        self.assertEqual((again.key, again.price), (offer.key, offer.price))
 
     def test_unknown_json_is_mined_and_rubbish_is_reported(self):
         data = {"results": [{"productId": 7, "productName": "Some Mixer", "sellingPrice": 1499, "mrp": 2999}]}

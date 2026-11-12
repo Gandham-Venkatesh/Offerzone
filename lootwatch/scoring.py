@@ -495,10 +495,13 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
     if listing and target is not None and (info.first_seen or returning) and mrp and price > target:
         discount = _pct(mrp, price)
         if (discount >= settings.new_listing_discount and mrp >= target * settings.floor_mrp_ratio
-                and not is_side_product(title, strong_mrp=_strong_mrp(mrp, target))):
-            tier = TIER_URGENT if discount >= settings.urgent_discount else TIER_HIGH
+                and mrp - price >= settings.urgent_min_saving
+                and not is_side_product(title, strong_mrp=_strong_mrp(mrp, target) if target else False)):
+            # A floor of 0 marks a page sorted by discount. The top of such a page is always at
+            # 95% off and more (clearance stock), so a newcomer there is worth a look, not a siren.
+            tier = TIER_URGENT if discount >= settings.urgent_discount and target > 0 else TIER_HIGH
             return Verdict(tier, f"new on this page at {discount:.0f}% off its list price {fmt_inr(mrp)}", price, mrp,
-                           discount, label="Far below list price")
+                           discount, label="Far below list price", max_tier=tier)
 
     if not listing and info.first_seen:
         discount = _pct(mrp, price)

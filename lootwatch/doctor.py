@@ -183,7 +183,10 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
         if verbose and page.kind == "listing":
             for o in sorted(page.offers, key=lambda o: o.price)[:8]:
                 print(f"          {fmt_inr(o.price):>9} (MRP {fmt_inr(o.mrp) if o.mrp else '-':>9}) {o.title[:90]}", file=out)
-        if page.kind == "listing" and item.target is not None:
+        if page.kind == "listing" and item.target == 0:
+            print(f"        sorted by discount, no floor: a product new to this page at {settings.new_listing_discount:.0f}%+ off, "
+                  f"saving {fmt_inr(settings.urgent_min_saving)}+, alerts (high priority).", file=out)
+        elif page.kind == "listing" and item.target is not None:
             under = [o for o in page.offers if o.price <= item.target and not is_side_product(o.title)]
             if under:
                 print(f"        note: {len(under)} of {len(page.offers)} are already at or under your {fmt_inr(item.target)} "

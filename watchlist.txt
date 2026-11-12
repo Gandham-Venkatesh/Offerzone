@@ -20,6 +20,9 @@
 #                    (NEW_LISTING_DISCOUNT): high priority, max priority from 95%. This is what catches a
 #                    dropped digit, a Rs 74,990 laptop at Rs 7,499.
 #                A page without a price is followed for its products' own price history only.
+#                A price of 0 is for a page sorted by BIGGEST DISCOUNT: there is no floor, but a product
+#                NEW on the page at 85% or more off its list price, saving Rs 2,000 or more, alerts
+#                (high priority, never max: the top of such a page is clearance stock at 95% off).
 #
 # HOW OFTEN   A store is asked for a page only every few seconds (Flipkart: every 3-5), so about a dozen
 #             of its pages fit into one scan, and a longer list takes turns, longest wait first.
@@ -153,7 +156,7 @@ https://www.flipkart.com/search?q=galaxy+s&sort=popularity | | Flipkart search: 
 ! https://api.croma.com/searchservices/v1/search?currentPage=0&query=air%20conditioner%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 9000 | Croma air conditioners, cheapest | every 3m
 ! https://api.croma.com/searchservices/v1/search?currentPage=0&query=camera%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 2500 | Croma cameras, cheapest | every 3m
 ! https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 40000 | Croma macbooks, cheapest | every 3m
-https://api.croma.com/searchservices/v1/search?currentPage=0&query=%3Adiscount-desc&fields=FULL&channel=WEB&channelCode=400049 | 500 | Croma biggest discounts | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=%3Adiscount-desc&fields=FULL&channel=WEB&channelCode=400049 | 0 | Croma biggest discounts | every 5m
 https://api.croma.com/searchservices/v1/search?currentPage=0&query=mobile%20phone%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: mobile phone | every 5m
 https://api.croma.com/searchservices/v1/search?currentPage=0&query=television%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: television | every 5m
 https://api.croma.com/searchservices/v1/search?currentPage=0&query=laptop%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: laptop | every 5m
@@ -177,7 +180,7 @@ https://api.croma.com/searchservices/v1/search?currentPage=0&query=gaming%20cons
 ! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/washing-machines/items?page_no=1&page_size=50&sort_on=price_asc | 3500 | Reliance Digital washing machines | every 3m
 ! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/air-conditioners/items?page_no=1&page_size=50&sort_on=price_asc | 9000 | Reliance Digital air conditioners | every 3m
 ! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/cameras/items?page_no=1&page_size=50&sort_on=price_asc | 2500 | Reliance Digital cameras | every 3m
-https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?page_no=1&page_size=50&sort_on=discount_dsc | 500 | Reliance Digital biggest discounts | every 5m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?page_no=1&page_size=50&sort_on=discount_dsc | 0 | Reliance Digital biggest discounts | every 5m
 https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/laptops/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular laptops | every 5m
 https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/mobiles/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular phones | every 5m
 https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/televisions/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular TVs | every 5m
@@ -198,11 +201,11 @@ https://www.vijaysales.com/c/smart-watches | | Vijay Sales smart watches | every
 # ===================== AJIO =====================
 # Its search list, biggest discount first. After the %3A comes the order: discount-desc, prce-asc or newn.
 
-https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=nike%3Adiscount-desc | 300 | Ajio nike, biggest discounts | every 5m
-https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=adidas%3Adiscount-desc | 300 | Ajio adidas, biggest discounts | every 5m
-https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=puma%3Adiscount-desc | 300 | Ajio puma, biggest discounts | every 5m
-https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=levis%3Adiscount-desc | 300 | Ajio levis, biggest discounts | every 5m
-https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=tommy%20hilfiger%3Adiscount-desc | 300 | Ajio tommy hilfiger, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=nike%3Adiscount-desc | 0 | Ajio nike, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=adidas%3Adiscount-desc | 0 | Ajio adidas, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=puma%3Adiscount-desc | 0 | Ajio puma, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=levis%3Adiscount-desc | 0 | Ajio levis, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=tommy%20hilfiger%3Adiscount-desc | 0 | Ajio tommy hilfiger, biggest discounts | every 5m
 
 # ===================== BRAND STORES =====================
 # Any shop built on Shopify publishes its catalogue at /products.json. Each product is followed for a

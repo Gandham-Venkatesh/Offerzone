@@ -528,6 +528,25 @@ class OfferVerdicts(unittest.TestCase):
         # Ordinary no-name listings show 50-70% off inflated list prices: quiet.
         self.assertIsNone(self.floor("Uniboom 60 cm (24 inch) HD Ready LED TV", 5753, self.NEW, mrp=19990))
         self.assertIsNone(self.floor("DOMO Slate SL39 Tablet", 8490, self.NEW, mrp=24990))
+
+    def test_page_sorted_by_discount_has_no_floor_and_never_rings_at_max(self):
+        # A floor of 0 marks a page sorted by biggest discount: clearance stock at 95% off is its normal top.
+        def new_on_page(title, price, mrp):
+            return evaluate_offer(title, price, mrp, self.NEW, self.s, target=0, listing=True)
+
+        tv = new_on_page("Croma 109 cm (43 inch) 4K Ultra HD LED Smart Google TV", 2999, 59990)
+        self.assertEqual((tv.tier, tv.max_tier, tv.label), (TIER_HIGH, TIER_HIGH, "Far below list price"))
+        # No floor: nothing "falls under" it, however cheap, and small things stay quiet.
+        self.assertIsNone(new_on_page("GOQii Mask", 14, 299))
+        self.assertIsNone(new_on_page("Philips TAE2146 Wired Earphone with Mic", 164, 899), "saves under Rs 2,000")
+        self.assertIsNone(new_on_page("Inbase TPU Back Cover for SAMSUNG Galaxy S23+", 24, 2499), "an accessory")
+        self.assertIsNone(new_on_page("LG 80 cm (32 inch) HD Ready LED TV", 11999, 24990), "52% off is nothing special here")
+        # What was on the page when it was first read never alerts this way.
+        seen = PriceInfo(baseline=2999, observations=3, last_price=2999, first_seen=False, last_age=60.0, quiet_price=2999)
+        self.assertIsNone(evaluate_offer("Croma 109 cm (43 inch) 4K Ultra HD LED Smart Google TV", 2999, 59990, seen, self.s,
+                                         target=0, listing=True))
+        # On a real floor page the same newcomer may ring at max priority, and needs the same real saving.
+        self.assertEqual(self.floor("Sony Bravia 55 inch 4K TV", 4500, self.NEW, mrp=99900).tier, TIER_URGENT)
         # Not for accessories, small list prices, products already known, or pages without a floor.
         self.assertIsNone(self.floor("Laptop Skin Sticker for 15.6 inch", 4500, self.NEW, mrp=39999 // 4))
         self.assertIsNone(self.floor("Mini Notebook", 4500, self.NEW, mrp=11999))

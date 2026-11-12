@@ -55,8 +55,11 @@ Each scan (default: every 60 seconds) it looks in four places:
 | Alert | ntfy priority | When |
 |---|---|---|
 | **Urgent** | 5 (max) | something under a category page's floor · a trap (with a list price that fits the device) · your target price · a fall of 80% or more (`URGENT_DROP_PCT`) from the price the monitor saw it at · on a product page you added yourself, a fall of 50% · a product new to a floor page at 95% or more off its list price |
-| **High** | 4 | on a category page, a fall of 65% to 80% · a product new to a floor page at `NEW_LISTING_DISCOUNT` (85%) or more off its list price · a product page at 80% or more off on its first check |
+| **High** | 4 | on a category page, a fall of 65% to 80% · a product new to a floor page, or to a page sorted by discount, at `NEW_LISTING_DISCOUNT` (85%) or more off its list price, saving ₹2,000 or more · a product page at 80% or more off on its first check |
 | **Quiet** | 3 | on a category page, a fall of 50% to 65% (`WATCH_DROP_PCT`) · a listing named like a trap product whose card shows no list price that fits it (spare parts are named after the phone too) |
+
+A fall on a category page only counts when it saves ₹1,000 or more (`MIN_SAVING`): thousands of
+products are followed, and a ₹449 gadget going to ₹199 is nobody's loot.
 
 A fall on a category page is graded because nobody chose those products, and "the price it was
 seen at" can be a seller's passing high price: the first day of running sent an urgent alert for
@@ -123,22 +126,27 @@ link's address are read as the name.
 
 ## Where to run it
 
-What the first live checks showed (10 November 2026):
+What the live checks showed (10 and 12 November 2026):
 
-| Where | Flipkart pages | Amazon pages | Deal channels |
+| Where | Flipkart, Croma, Reliance Digital, Ajio, Vijay Sales, brand stores | Amazon | Deal sites and channels |
 |---|---|---|---|
-| **GitHub Actions** (public repo, free, no card) | Readable | Refused | Readable |
-| **A phone at home** (Termux, plain install) | Readable | Refused | Not reachable on that network |
+| **GitHub Actions** (public repo, free, no card) | Readable (all 144 shipped pages) | Refused | Readable (28 of 28 channels, all three deal sites) |
+| **A phone at home** (Termux, plain install) | Flipkart readable; the others not tried | Refused | Telegram not reachable on that network |
 
-- **Flipkart** answers both, and its pages are parsed correctly.
-- **Amazon** answers both with a JavaScript check that only a real browser passes. The monitor
-  does not try to get round it, so Amazon pages ship switched off. Amazon deals still arrive
-  through the channels.
+- **Flipkart** answers both, and its pages are parsed correctly. It served 170 pages in a row at
+  one page every 3 to 5 seconds without refusing.
+- **Croma, Reliance Digital, Ajio and Shopify brand stores** hand out the product lists their own
+  websites use; **Vijay Sales** pages are read as they are.
+- **Amazon** answers with a JavaScript check that only a real browser passes. The monitor does not
+  try to get round it, so Amazon pages ship switched off. Amazon is covered through the price
+  tracker in `feeds.txt` and through the channels.
+- **Myntra, Snapdeal, Tata CLiQ, JioMart, Nykaa Fashion and Meesho** refuse plain requests or build
+  their pages only inside a browser. They are not read.
 - **Telegram's website** is blocked or broken on some Indian networks. Where that is so, the
   channel half has to run somewhere else (`USE_CHANNELS=0` on that machine).
 
-So GitHub Actions can run everything that works today. A device at home or a small server gives a
-steadier 60-second loop, with the cautions below.
+So GitHub Actions can run everything that works today. A device at home or a small server works
+too, with the cautions below.
 
 Run `python -m lootwatch --doctor` on the machine you are considering. It prints, for every
 channel and store page, whether that machine can read it.
@@ -240,6 +248,9 @@ give the **max priority** category a loud, distinct sound and let it override Do
 - Set the **floor** well below the cheapest real product of that page.
 - A new item under the floor only alerts if its list price is at least `FLOOR_MRP_RATIO` (3) times
   the floor. That is what keeps toy laptops and phone cases quiet.
+- A page sorted by **biggest discount** gets the price `0`: no floor, but a product new to the
+  page at 85% or more off, saving ₹2,000 or more, alerts at high priority (never max: the top of
+  such a page is clearance stock at 95% off).
 - Categories where cheap things with huge "MRPs" are normal (smart watches, earbuds) do not suit
   floors. Watch their **most popular** products instead (`sort=popularity`, no floor): each one
   then alerts on a fall from its own price. Traps work there too.
@@ -339,10 +350,15 @@ python -m lootwatch               # scan forever
   second reviewer then went through the rewritten post rules with 51,840 generated posts in the
   real channels' layouts and found eight more problems, which are fixed and tested too; the
   monitor code and the store-page rules were not re-reviewed after their rewrite.
-- **Live, 10 November 2026:** the Telegram reader on ten channels, the Flipkart category and
-  search pages, and the priority ladder replayed against about 200 real posts.
-- **Not verified:** Amazon (refused), Myntra and other stores (never tried live), quick commerce
-  (not read at all), and how many minutes Flipkart's listing pages lag a price change.
+- **Live, 10 to 12 November 2026:** the Telegram reader, the Flipkart category and search pages,
+  and the priority ladder replayed against about 200 real posts. On the 12th, from GitHub's
+  servers: all 28 channels, the three deal sites and all 144 store pages of the shipped lists
+  were read and parsed, a scan of everything completed inside its minute seven times running with
+  no source failing, and three runs in a row handed over to each other with 7 to 8 seconds
+  between one's last scan and the next one's first.
+- **Not verified:** Amazon (refused), how many minutes a store's listing pages lag a price change,
+  how long the price tracker takes to notice a drop, and how the new sources behave over weeks
+  (how often the discount-sorted pages and the tracker ring for something not worth it).
 
 Price errors are often cancelled by the store, and channel posts can be wrong or bait. Check the
 price on the store's own page before paying, and never pay on a site you do not recognise.

@@ -159,6 +159,7 @@ class Monitor:
         source = f"tg:{channel}"
         result = self.fetcher.get(f"{self.s.telegram_base_url}/{channel}", deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
+            self._count("unreached")
             return  # ran out of time this cycle; not the channel's fault
         if not result.ok:
             self.db.health_fail(source, result.problem)
@@ -206,6 +207,7 @@ class Monitor:
         headers = None if reader else {"Accept": "application/atom+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.5"}
         result = self.fetcher.get(url, headers=headers, deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
+            self._count("unreached")
             return
         if not result.ok:
             self.db.health_fail(source, result.problem)
@@ -260,6 +262,7 @@ class Monitor:
         host = host_of(item.url)
         result = self.fetcher.get(item.url, headers=request_headers(item.url), deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
+            self._count("unreached")
             return
         self._watch_checked[item.url] = time.time()
         if not result.ok:
@@ -770,10 +773,11 @@ class Monitor:
             last_duration = time.time() - cycle_started
             log.info(
                 "scan #%d: %ds | %d new posts (%d too old) | %d prices | alerts sent: %d urgent, %d high, %d other"
-                " | %d duplicates | %d source failures",
+                " | %d duplicates | %d source failures%s",
                 number, stats.get("seconds", 0), stats.get("posts", 0), stats.get("stale", 0), stats.get("prices", 0),
                 stats.get("sent_urgent", 0), stats.get("sent_high", 0), stats.get("sent_normal", 0),
                 stats.get("duplicates", 0), stats.get("source_failures", 0),
+                f" | {stats['unreached']} not reached in time" if stats.get("unreached") else "",
             )
             self._startup_note(stats)
             if once:

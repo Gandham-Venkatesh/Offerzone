@@ -523,23 +523,27 @@ def _hybris_products(data: Dict[str, Any], site: str) -> List[Offer]:
 
 
 def _shopify_products(data: Dict[str, Any], host: str) -> List[Offer]:
-    """A Shopify shop's public catalogue (/products.json): the cheapest variant in stock of each product."""
+    """A Shopify shop's public catalogue (/products.json): one offer per product that can be bought.
+
+    The product's price is its cheapest variant's, whether or not that variant is in stock right
+    now. Taking only the variants in stock would make the "price" jump whenever a small size or
+    a cheaper colour sells out or comes back, and every such jump would look like a price change.
+    """
     offers: List[Offer] = []
     for item in data.get("products") or []:
         if not isinstance(item, dict) or not isinstance(item.get("variants"), list):
             continue
         title, handle = item.get("title"), item.get("handle")
-        best = None
-        for variant in item["variants"]:
-            if not isinstance(variant, dict) or variant.get("available") is False:
-                continue
-            price = _number(variant.get("price"))
-            if price and (best is None or price < best[0]):
-                best = (price, _number(variant.get("compare_at_price")))
-        if best is None or not isinstance(title, str) or not title.strip() or not isinstance(handle, str):
+        variants = [v for v in item["variants"] if isinstance(v, dict) and _number(v.get("price"))]
+        if not any(v.get("available") is not False for v in variants):
+            continue  # nothing of it can be bought
+        if not isinstance(title, str) or not title.strip() or not isinstance(handle, str):
             continue
-        offers.append(Offer(f"{host}:{item.get('id') or handle}", host, title.strip(), best[0],
-                            _clean_mrp(best[0], best[1]), f"https://{host}/products/{handle}"))
+        cheapest = min(variants, key=lambda v: _number(v.get("price")))
+        price = _number(cheapest.get("price"))
+        offers.append(Offer(f"{host}:{item.get('id') or handle}", host, title.strip(), price,
+                            _clean_mrp(price, _number(cheapest.get("compare_at_price"))),
+                            f"https://{host}/products/{handle}"))
     return offers
 
 
