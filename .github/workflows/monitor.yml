@@ -23,23 +23,32 @@ on:
         default: run
         options: [run, doctor, doctor-detail, test-ntfy]
       watchlist_file:
-        description: "Which page list to use (watchlist-try.txt holds pages from other stores that are only being tested)"
-        type: choice
+        description: "Page list to use (default watchlist.txt; the -try files hold candidates that are only being tested)"
+        type: string
         default: watchlist.txt
-        options: [watchlist.txt, watchlist-try.txt]
+      channels_file:
+        description: "Channel list to use (default channels.txt)"
+        type: string
+        default: channels.txt
+      feeds_file:
+        description: "Feed list to use (default feeds.txt)"
+        type: string
+        default: feeds.txt
 
 permissions:
   contents: read
   actions: write # only used to delete this workflow's own older state caches
 
+# Scanning runs take turns (one running, one waiting). Checks (doctor, test push) store nothing,
+# so each gets a lane of its own and never pushes a waiting scan out of the queue.
 concurrency:
-  group: loot-monitor
+  group: ${{ (inputs.mode || 'run') == 'run' && 'loot-monitor' || format('loot-check-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       MODE: ${{ inputs.mode || 'run' }}
       # Secrets (Settings -> Secrets and variables -> Actions -> Secrets)
@@ -69,6 +78,8 @@ jobs:
       USE_STORE_PAGES: ${{ vars.USE_STORE_PAGES }}
       LOOP_SECONDS: ${{ vars.LOOP_SECONDS || '280' }}
       WATCHLIST_FILE: ${{ inputs.watchlist_file || 'watchlist.txt' }}
+      CHANNELS_FILE: ${{ inputs.channels_file || 'channels.txt' }}
+      FEEDS_FILE: ${{ inputs.feeds_file || 'feeds.txt' }}
       DB_PATH: state/lootwatch.db
     steps:
       - name: Note the start time
