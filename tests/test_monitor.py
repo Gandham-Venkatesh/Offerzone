@@ -670,6 +670,23 @@ class EndToEnd(unittest.TestCase):
                          [(4, "Far below list price: 90% off · ₹7,999 (MRP ₹79,999) — Google Pixel 9 (Obsidian, 256 GB)")])
         self.assertIn("new on this page at 90% off its list price ₹79,999", self.web.pushes[0]["message"])
 
+    def test_a_fall_on_a_category_page_must_save_real_money(self):
+        self.settings.channels = []
+        self.settings.traps = []
+        self.settings.watchlist = [WatchItem(url=self.web.base + "/phones?sort=popularity", label="Popular")]
+        gadget = ("G1", "Uzox Hand Blender 50 W", 449, 999)
+        phone = ("G2", "Samsung Galaxy M35 5G (Daybreak Blue, 128 GB)", 14999, 24499)
+        self.web.pages["/phones"] = self.listing_page([gadget, phone])
+        monitor = self.monitor()
+        monitor.cycle()
+        monitor.cycle()
+        self.web.pages["/phones"] = self.listing_page([("G1", gadget[1], 199, 999), ("G2", phone[1], 6999, 24499)])
+        monitor.cycle()
+        titles = [p["title"] for p in self.deals()]
+        self.assertEqual(len(titles), 1, "a gadget going from 449 to 199 is not worth a push")
+        self.assertIn("Samsung Galaxy M35", titles[0])
+        self.assertTrue(titles[0].startswith("Price drop: 53% off · ₹6,999 (was ₹14,999)"), titles[0])
+
     def test_whose_turn_it_is_survives_a_restart_and_marked_pages_come_round_more_often(self):
         self.settings.channels = []
         urls = [self.web.base + f"/page{n}" for n in range(4)]
@@ -684,6 +701,11 @@ class EndToEnd(unittest.TestCase):
         order = [item.label for item in restarted._watch_batch()]
         # never read -> first; then the longest wait, with the marked page's 60 s counting as 240 s.
         self.assertEqual(order, ["new", "plain b", "marked", "plain a"])
+        # "every 15m": a page read 100 seconds ago sits this scan out; "every 4m" read 5 minutes ago does not.
+        self.settings.watchlist[0].every = 900.0
+        self.settings.watchlist[1].every = 240.0
+        order = [item.label for item in self.monitor()._watch_batch()]
+        self.assertEqual(order, ["new", "plain b", "marked"])
 
     def ld_listing(self, products):
         nodes = []

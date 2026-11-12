@@ -95,13 +95,15 @@ class WatchItem:
     target: Optional[float] = None  # alert when the price is at or below this
     label: str = ""
     weight: float = 1.0  # its share of the store's reading time, against an unmarked page's 1
+    every: float = 0.0  # seconds to leave between two reads of this page (0: as often as its turn comes)
 
 
 def load_watchlist(path: Path) -> List[WatchItem]:
     """Lines look like:  URL  |  5000  |  optional label   (only the URL is required).
 
     A line may start with "!" or "!!": when a store has more pages than fit into one scan, such
-    a page is read 4 or 12 times as often as an unmarked one.
+    a page is read 4 or 12 times as often as an unmarked one. A field "every 15m" keeps a page
+    from being read more often than that (a brand's whole catalogue does not need a look a minute).
     """
     items: List[WatchItem] = []
     seen = set()
@@ -120,6 +122,10 @@ def load_watchlist(path: Path) -> List[WatchItem]:
         item = WatchItem(url=url, weight=WATCH_WEIGHTS[len(marks.group(1)) if marks else 0])
         for part in parts[1:]:
             number = re.fullmatch(r"(?:₹|rs\.?)?\s*([\d,]+(?:\.\d+)?)", part, re.I)
+            pace = re.fullmatch(r"every\s+(\d+(?:\.\d+)?)\s*(s|sec|seconds?|m|min|minutes?|h|hours?)", part, re.I)
+            if pace:
+                item.every = float(pace.group(1)) * {"s": 1, "m": 60, "h": 3600}[pace.group(2)[0].lower()]
+                continue
             if number and item.target is None:
                 item.target = float(number.group(1).replace(",", ""))
             elif part:

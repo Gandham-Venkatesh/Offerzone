@@ -1,10 +1,10 @@
-# Pages read straight from the stores, every scan:   URL | price | label     (price and label are optional)
+# Pages read straight from the stores:   URL | price | label     (price and label are optional)
 #
 # PRODUCT PAGE   The price is your TARGET: you are alerted when the product reaches it. It also alerts
 #                when the product falls 50% or more below the price this monitor has been seeing for it.
 #
-# CATEGORY or SEARCH PAGE   The price is a FLOOR: "nothing on this page should cost this little".
-#                Use a category sorted cheapest-first. A Rs 60,000 laptop mispriced at Rs 600 becomes the
+# CATEGORY, BRAND or SEARCH PAGE   The price is a FLOOR: "nothing on this page should cost this little".
+#                Use a page sorted cheapest-first. A Rs 60,000 laptop mispriced at Rs 600 becomes the
 #                cheapest laptop on the store, so it shows up at the top of that one page. This is how a
 #                price error is caught at the store itself, with no deal channel involved.
 #                  - The first read of a page only records what is normal on it. After that, anything NEW
@@ -13,66 +13,231 @@
 #                    floor (FLOOR_MRP_RATIO): toy laptops and phone cases stay quiet.
 #                  - Accessories, spares and refurbished units are skipped.
 #                  - Every product on the page is also checked against traps.txt and its own price history:
-#                    a fall of 50% or more from the price it was seen at alerts quietly, loudly from 65%,
-#                    at max priority from 80% (WATCH_DROP_PCT, URGENT_DROP_PCT).
+#                    a fall of 50% or more from the price it was seen at, saving Rs 1,000 or more, alerts
+#                    quietly, loudly from 65%, at max priority from 80% (WATCH_DROP_PCT, URGENT_DROP_PCT).
 #                  - A product the monitor has never seen, NEW on the page above the floor, alerts when its
 #                    own card shows 85% or more off a list price of at least 3x the floor
 #                    (NEW_LISTING_DISCOUNT): high priority, max priority from 95%. This is what catches a
-#                    dropped digit, a Rs 74,990 laptop at Rs 7,499. Ordinary no-name listings on these pages
-#                    show 50-70% off, and whatever was on the page at the first read never alerts this way.
-#                Pick the floor well below the cheapest real product of that category. --doctor shows the
-#                cheapest item on each page and warns if ordinary products already sit under your floor.
+#                    dropped digit, a Rs 74,990 laptop at Rs 7,499.
+#                A page without a price is followed for its products' own price history only.
 #
-# Pace: one store is asked for a page only every 6-10 seconds, so about 6 pages per store per minute.
-# A longer list still works; each page just comes round less often.
+# HOW OFTEN   A store is asked for a page only every few seconds (Flipkart: every 3-5), so about a dozen
+#             of its pages fit into one scan, and a longer list takes turns, longest wait first.
+#               !! at the start of a line: the page comes round 12 times as often as an unmarked one
+#               !  at the start of a line: 4 times as often
+#               "| every 15m" at the end:  never more often than that (for whole catalogues)
+#             With this file: the "!!" pages come round about every 2-3 minutes, the "!" pages about
+#             every 7, the unmarked Flipkart pages about every half hour.
 #
-# To be confirmed by  python -m lootwatch --doctor  on the machine that will run this:
-#   - Amazon and Flipkart often refuse cloud-server addresses (CAPTCHA / HTTP 403). When they do, the
-#     monitor backs off and reports the page as failing instead of pretending it is fine.
-#   - Blinkit, Zepto and Swiggy Instamart build their pages in the app for your delivery location, so a
-#     plain page fetch usually finds no prices.
+# Everything below was read correctly from GitHub's servers on 12 Nov 2026; each floor sits at roughly
+# 40% of the cheapest real product the page showed that day. --doctor shows the cheapest item on each
+# page and warns if ordinary products already sit under a floor.
+#
+# Not here because they refuse plain requests or build their pages only inside a browser: Amazon,
+# Myntra, Snapdeal, Tata CLiQ, JioMart, Nykaa Fashion, Meesho, Blinkit, Zepto, Swiggy Instamart.
 
-# --- Flipkart category pages, cheapest first. Every one of these was read correctly from GitHub's servers
-#     and from a home connection on 10 Nov 2026. Each floor sits well below the cheapest real product the
-#     page showed that day (smartphones from Rs 8,299, laptops Rs 14,990, TVs Rs 5,749, fridges Rs 6,990,
-#     washing machines Rs 5,149, air conditioners Rs 22,490, monitors Rs 2,499).
-https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=price_asc | 2500 | Flipkart smartphones
-https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc | 5000 | Flipkart laptops
-https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=price_asc | 2000 | Flipkart TVs
-https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=price_asc | 1500 | Flipkart tablets
-https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=price_asc | 2500 | Flipkart refrigerators
-https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=price_asc | 2000 | Flipkart washing machines
-https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=price_asc | 7000 | Flipkart air conditioners
-https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=price_asc | 900 | Flipkart monitors
+# ===================== FLIPKART =====================
 
-# --- Flipkart's most popular products. No floor: each one alerts when it falls 50% below the price this
-#     monitor has been seeing for it, or trips a trap.
+# --- the big categories, cheapest first
+!! https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=price_asc | 3000 | Flipkart smartphones
+!! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc | 6000 | Flipkart laptops
+!! https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=price_asc | 2300 | Flipkart TVs
+!! https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=price_asc | 1800 | Flipkart tablets
+!! https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=price_asc | 3200 | Flipkart refrigerators
+!! https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=price_asc | 2000 | Flipkart washing machines
+!! https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=price_asc | 7000 | Flipkart air conditioners
+!! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=price_asc | 1000 | Flipkart monitors
+
+# --- more categories where a floor means something
+! https://www.flipkart.com/microwave-ovens/pr?sid=j9e%2Cm38%2Co49&sort=price_asc | 1800 | Flipkart microwave ovens
+! https://www.flipkart.com/dish-washers/pr?sid=j9e%2Cm38%2C58n&sort=price_asc | 6000 | Flipkart dishwashers
+! https://www.flipkart.com/chimney/pr?sid=j9e%2Cm38%2Ctgz&sort=price_asc | 2500 | Flipkart chimneys
+! https://www.flipkart.com/sports/cycling/electric-cycle/pr?sid=abc%2Culv%2Ctwp&sort=price_asc | 8000 | Flipkart electric cycles
+! https://www.flipkart.com/gaming-consoles/pr?sid=4rr%2Cx1m&p%5B%5D=facets.brand%255B%255D%3DSony&p%5B%5D=facets.brand%255B%255D%3DMicrosoft&p%5B%5D=facets.brand%255B%255D%3DNintendo&sort=price_asc | 5000 | Flipkart consoles
+
+# --- one brand at a time, cheapest first: the floor can sit far higher than for the whole category
+! https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | 18000 | Flipkart Apple phones
+! https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DGoogle&sort=price_asc | 22000 | Flipkart Google phones
+! https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DNothing&sort=price_asc | 14000 | Flipkart Nothing phones
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | 28000 | Flipkart Apple laptops
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DDell&sort=price_asc | 20000 | Flipkart Dell laptops
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DHP&sort=price_asc | 9000 | Flipkart HP laptops
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DASUS&sort=price_asc | 9000 | Flipkart ASUS laptops
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DAcer&sort=price_asc | 11000 | Flipkart Acer laptops
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DMSI&sort=price_asc | 20000 | Flipkart MSI laptops
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 23000 | Flipkart Samsung laptops
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DMicrosoft&sort=price_asc | 50000 | Flipkart Microsoft laptops
+! https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | 8000 | Flipkart Apple tablets
+! https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 3700 | Flipkart Samsung tablets
+! https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DOnePlus&sort=price_asc | 7000 | Flipkart OnePlus tablets
+! https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DSony&sort=price_asc | 11000 | Flipkart Sony TVs
+! https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 6000 | Flipkart Samsung TVs
+! https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | 4800 | Flipkart LG TVs
+! https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DXiaomi&sort=price_asc | 4800 | Flipkart Xiaomi TVs
+! https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DTCL&sort=price_asc | 6000 | Flipkart TCL TVs
+! https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | 6000 | Flipkart Apple smart watches
+! https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 1100 | Flipkart Samsung smart watches
+! https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DGarmin&sort=price_asc | 5000 | Flipkart Garmin smart watches
+! https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DGoogle&sort=price_asc | 16000 | Flipkart Google smart watches
+! https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | 600 | Flipkart Apple headphones
+! https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DBose&sort=price_asc | 6000 | Flipkart Bose headphones
+! https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DSennheiser&sort=price_asc | 800 | Flipkart Sennheiser headphones
+! https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DSony&sort=price_asc | 200 | Flipkart Sony headphones
+! https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DSony&sort=price_asc | 17000 | Flipkart Sony cameras
+! https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DCanon&sort=price_asc | 18000 | Flipkart Canon cameras
+! https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DNikon&sort=price_asc | 23000 | Flipkart Nikon cameras
+! https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DGoPro&sort=price_asc | 7500 | Flipkart GoPro cameras
+! https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DDJI&sort=price_asc | 6000 | Flipkart DJI cameras
+! https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DFujifilm&sort=price_asc | 2400 | Flipkart Fujifilm cameras
+! https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DInsta360&sort=price_asc | 11000 | Flipkart Insta360 cameras
+! https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 6000 | Flipkart Samsung refrigerators
+! https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | 4200 | Flipkart LG refrigerators
+! https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 4000 | Flipkart Samsung washing machines
+! https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | 4700 | Flipkart LG washing machines
+! https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DBosch&sort=price_asc | 4500 | Flipkart Bosch washing machines
+! https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DIFB&sort=price_asc | 6800 | Flipkart IFB washing machines
+! https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DDaikin&sort=price_asc | 11000 | Flipkart Daikin air conditioners
+! https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | 11000 | Flipkart LG air conditioners
+! https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DVoltas&sort=price_asc | 10000 | Flipkart Voltas air conditioners
+! https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 13000 | Flipkart Samsung air conditioners
+! https://www.flipkart.com/home-kitchen/home-appliances/vacuum-cleaners/pr?sid=j9e%2Cabm%2Cul2&p%5B%5D=facets.brand%255B%255D%3DDyson&sort=price_asc | 10000 | Flipkart Dyson vacuum cleaners
+! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | 2200 | Flipkart LG monitors
+! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | 2500 | Flipkart Samsung monitors
+! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DDell&sort=price_asc | 2300 | Flipkart Dell monitors
+! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DBenQ&sort=price_asc | 2800 | Flipkart BenQ monitors
+
+# --- the most popular products of each category. No floor: each product alerts on a fall from its own price.
 https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity | | Flipkart popular smartphones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity&page=2 | | Flipkart popular smartphones 2
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity&page=3 | | Flipkart popular smartphones 3
 https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=popularity | | Flipkart popular laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=popularity&page=2 | | Flipkart popular laptops 2
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=popularity&page=3 | | Flipkart popular laptops 3
 https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=popularity | | Flipkart popular TVs
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=popularity&page=2 | | Flipkart popular TVs 2
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=popularity&page=3 | | Flipkart popular TVs 3
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=popularity | | Flipkart popular tablets
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=popularity&page=2 | | Flipkart popular tablets 2
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=popularity | | Flipkart popular refrigerators
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=popularity&page=2 | | Flipkart popular refrigerators 2
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=popularity | | Flipkart popular washing machines
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=popularity&page=2 | | Flipkart popular washing machines 2
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=popularity | | Flipkart popular air conditioners
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=popularity&page=2 | | Flipkart popular air conditioners 2
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=popularity | | Flipkart popular monitors
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=popularity&page=2 | | Flipkart popular monitors 2
+https://www.flipkart.com/microwave-ovens/pr?sid=j9e%2Cm38%2Co49&sort=popularity | | Flipkart popular microwave ovens
+https://www.flipkart.com/water-purifiers/pr?sid=j9e%2Cabm%2Ci45&sort=popularity | | Flipkart popular water purifiers
+https://www.flipkart.com/desktop-pcs/pr?sid=6bo%2Cnl4&sort=popularity | | Flipkart popular desktop PCs
+https://www.flipkart.com/bags-wallets-belts/luggage-travel/suitcases/pr?sid=reh%2Cplk%2Ctvv&sort=popularity | | Flipkart popular suitcases
 
-# --- not confirmed yet (a brand filter in the same style as the smartphones one; --doctor will show)
-https://www.flipkart.com/gaming-consoles/pr?sid=4rr%2Cx1m&p%5B%5D=facets.brand%255B%255D%3DSony&p%5B%5D=facets.brand%255B%255D%3DMicrosoft&p%5B%5D=facets.brand%255B%255D%3DNintendo&sort=price_asc | 5000 | Flipkart consoles
-
-# --- searches (products on them alert through traps.txt and their own price history)
+# --- searches (their products alert through traps.txt and their own price history)
 https://www.flipkart.com/search?q=nothing+phone
+https://www.flipkart.com/search?q=iphone&sort=popularity | | Flipkart search: iphone
+https://www.flipkart.com/search?q=macbook&sort=popularity | | Flipkart search: macbook
+https://www.flipkart.com/search?q=ipad&sort=popularity | | Flipkart search: ipad
+https://www.flipkart.com/search?q=galaxy+s&sort=popularity | | Flipkart search: galaxy s
 
-# --- Amazon.in: switched off. On 10 Nov 2026 Amazon answered both GitHub's servers and a home phone with a
-#     JavaScript check that only a real browser passes, so these pages cannot be read by this monitor today.
-#     They are kept here (category + price cap in paise + cheapest first) for a machine where --doctor shows
-#     them as OK: remove the leading "# " to try.
+# ===================== CROMA =====================
+# Croma's own website fetches these product lists. "category/<number>" is the number at the end of a
+# category's address on croma.com; "search?query=<words>" searches. After the %3A comes the order:
+# price-asc, discount-desc or relevance.
+
+! https://api.croma.com/searchservices/v1/category/95?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 4000 | Croma mobile phones | every 3m
+! https://api.croma.com/searchservices/v1/category/97?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 25000 | Croma iPhones | every 3m
+! https://api.croma.com/searchservices/v1/category/20?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 15000 | Croma laptops | every 3m
+! https://api.croma.com/searchservices/v1/category/392?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 3500 | Croma TVs | every 3m
+! https://api.croma.com/searchservices/v1/category/32?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 2500 | Croma monitors | every 3m
+! https://api.croma.com/searchservices/v1/search?currentPage=0&query=refrigerator%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 3000 | Croma refrigerators, cheapest | every 3m
+! https://api.croma.com/searchservices/v1/search?currentPage=0&query=washing%20machine%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 3000 | Croma washing machines, cheapest | every 3m
+! https://api.croma.com/searchservices/v1/search?currentPage=0&query=air%20conditioner%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 9000 | Croma air conditioners, cheapest | every 3m
+! https://api.croma.com/searchservices/v1/search?currentPage=0&query=camera%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 2500 | Croma cameras, cheapest | every 3m
+! https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049 | 40000 | Croma macbooks, cheapest | every 3m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=%3Adiscount-desc&fields=FULL&channel=WEB&channelCode=400049 | 500 | Croma biggest discounts | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=mobile%20phone%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: mobile phone | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=television%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: television | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=laptop%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: laptop | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=tablet%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: tablet | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=headphones%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: headphones | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=smart%20watch%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: smart watch | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=soundbar%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: soundbar | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=iphone%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: iphone | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: macbook | every 5m
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=gaming%20console%3Arelevance&fields=FULL&channel=WEB&channelCode=400049 | | Croma popular: gaming console | every 5m
+
+# ===================== RELIANCE DIGITAL =====================
+# "collections/<name>/items" is a category, "products?q=<words>" a search; sort_on is price_asc,
+# discount_dsc or popular. Products it cannot sell right now are left out.
+
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/laptops/items?page_no=1&page_size=50&sort_on=price_asc | 6000 | Reliance Digital laptops | every 3m
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/mobiles/items?page_no=1&page_size=50&sort_on=price_asc | 1000 | Reliance Digital phones | every 3m
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/televisions/items?page_no=1&page_size=50&sort_on=price_asc | 2500 | Reliance Digital TVs | every 3m
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/tablets/items?page_no=1&page_size=50&sort_on=price_asc | 4500 | Reliance Digital tablets | every 3m
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/refrigerators/items?page_no=1&page_size=50&sort_on=price_asc | 7000 | Reliance Digital refrigerators | every 3m
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/washing-machines/items?page_no=1&page_size=50&sort_on=price_asc | 3500 | Reliance Digital washing machines | every 3m
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/air-conditioners/items?page_no=1&page_size=50&sort_on=price_asc | 9000 | Reliance Digital air conditioners | every 3m
+! https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/cameras/items?page_no=1&page_size=50&sort_on=price_asc | 2500 | Reliance Digital cameras | every 3m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?page_no=1&page_size=50&sort_on=discount_dsc | 500 | Reliance Digital biggest discounts | every 5m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/laptops/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular laptops | every 5m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/mobiles/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular phones | every 5m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/televisions/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular TVs | every 5m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/headphones/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular headphones | every 5m
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/smart-watches/items?page_no=1&page_size=50&sort_on=popular | | Reliance Digital popular smart watches | every 5m
+
+# ===================== VIJAY SALES =====================
+
+https://www.vijaysales.com/c/laptops | | Vijay Sales laptops | every 5m
+https://www.vijaysales.com/c/mobiles | | Vijay Sales phones | every 5m
+https://www.vijaysales.com/c/televisions | | Vijay Sales TVs | every 5m
+https://www.vijaysales.com/c/tablets | | Vijay Sales tablets | every 5m
+https://www.vijaysales.com/c/air-conditioners | | Vijay Sales air conditioners | every 5m
+https://www.vijaysales.com/c/refrigerators | | Vijay Sales refrigerators | every 5m
+https://www.vijaysales.com/c/washing-machines | | Vijay Sales washing machines | every 5m
+https://www.vijaysales.com/c/smart-watches | | Vijay Sales smart watches | every 5m
+
+# ===================== AJIO =====================
+# Its search list, biggest discount first. After the %3A comes the order: discount-desc, prce-asc or newn.
+
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=nike%3Adiscount-desc | 300 | Ajio nike, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=adidas%3Adiscount-desc | 300 | Ajio adidas, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=puma%3Adiscount-desc | 300 | Ajio puma, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=levis%3Adiscount-desc | 300 | Ajio levis, biggest discounts | every 5m
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=tommy%20hilfiger%3Adiscount-desc | 300 | Ajio tommy hilfiger, biggest discounts | every 5m
+
+# ===================== BRAND STORES =====================
+# Any shop built on Shopify publishes its catalogue at /products.json. Each product is followed for a
+# fall from its own price. A catalogue is a large file, so it is fetched only every 15 minutes.
+
+https://www.boat-lifestyle.com/products.json?limit=250 | | boAt catalogue | every 15m
+https://www.gonoise.com/products.json?limit=250 | | Noise catalogue | every 15m
+https://www.portronics.com/products.json?limit=250 | | Portronics catalogue | every 15m
+https://www.boultaudio.com/products.json?limit=250 | | Boult catalogue | every 15m
+https://www.zebronics.com/products.json?limit=250 | | Zebronics catalogue | every 15m
+https://www.ambraneindia.com/products.json?limit=250 | | Ambrane catalogue | every 15m
+# more that answered on 12 Nov 2026 (remove the leading "# " to add one):
+# https://www.mcaffeine.com/products.json?limit=250 | | mCaffeine catalogue | every 15m
+# https://beminimalist.co/products.json?limit=250 | | Minimalist catalogue | every 15m
+# https://plumgoodness.com/products.json?limit=250 | | Plum catalogue | every 15m
+# https://bombayshavingcompany.com/products.json?limit=250 | | Bombay Shaving Company catalogue | every 15m
+# https://www.themancompany.com/products.json?limit=250 | | The Man Company catalogue | every 15m
+# https://www.beardo.in/products.json?limit=250 | | Beardo catalogue | every 15m
+# https://www.mokobara.com/products.json?limit=250 | | Mokobara catalogue | every 15m
+# https://www.uppercase.co.in/products.json?limit=250 | | uppercase catalogue | every 15m
+# https://www.thesleepcompany.in/products.json?limit=250 | | The Sleep Company catalogue | every 15m
+# https://www.atomberg.com/products.json?limit=250 | | Atomberg catalogue | every 15m
+# https://www.pebblecart.com/products.json?limit=250 | | Pebble catalogue | every 15m
+# https://www.crossbeats.com/products.json?limit=250 | | Crossbeats catalogue | every 15m
+
+# ===================== AMAZON: switched off =====================
+# On 10 and 12 Nov 2026 Amazon answered both GitHub's servers and a home phone with a JavaScript check
+# that only a real browser passes, so its pages cannot be read by this monitor. Amazon is covered through
+# the price tracker in feeds.txt and through the deal channels. The lines are kept for a machine where
+# --doctor shows them as OK: remove the leading "# " to try.
 # https://www.amazon.in/s?rh=n%3A1805560031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon smartphones under 2,000
 # https://www.amazon.in/s?rh=n%3A1375424031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon laptops under 5,000
 # https://www.amazon.in/s?rh=n%3A1389396031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon TVs under 3,000
-# https://www.amazon.in/s?rh=n%3A1375458031%2Cp_36%3A-200000&s=price-asc-rank | 2000 | Amazon tablets under 2,000
-# https://www.amazon.in/s?rh=n%3A1380365031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon refrigerators under 3,000
-# https://www.amazon.in/s?rh=n%3A1380369031%2Cp_36%3A-300000&s=price-asc-rank | 3000 | Amazon washing machines under 3,000
-# https://www.amazon.in/s?rh=n%3A3474656031%2Cp_36%3A-500000&s=price-asc-rank | 5000 | Amazon air conditioners under 5,000
-# https://www.amazon.in/s?rh=n%3A1375425031%2Cp_36%3A-150000&s=price-asc-rank | 1500 | Amazon monitors under 1,500
 # https://www.amazon.in/gp/bestsellers/electronics/1805560031 | | Amazon best-selling smartphones
 # https://www.amazon.in/gp/bestsellers/computers/1375424031 | | Amazon best-selling laptops
-# https://www.amazon.in/s?k=nothing+phone
 
-# --- examples (remove the leading "# " and put in real links)
+# ===================== examples =====================
 # https://www.flipkart.com/some-product/p/itmxxxxxxxx?pid=MOBXXXXXXXXXXXXX | 5000 | a product with a target price
-# https://www.myntra.com/puma-shoes?sort=discount

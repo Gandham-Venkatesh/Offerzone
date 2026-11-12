@@ -6,7 +6,7 @@ a small server.
 
 ## What it does
 
-Each scan (default: every 60 seconds) it looks in three places, in this order of importance:
+Each scan (default: every 60 seconds) it looks in four places:
 
 1. **Store category pages with a price floor** (`watchlist.txt`). A page such as "Laptops on
    Flipkart, cheapest first" normally starts with the cheapest real laptops. A ₹60,000 laptop
@@ -15,26 +15,38 @@ Each scan (default: every 60 seconds) it looks in three places, in this order of
    watching falls to it, and when a product it has never seen turns up on the page at 85% or
    more off its own list price (a dropped digit: ₹74,990 shown as ₹7,499).
    This is read from the store itself; no deal channel is involved. It is the automated form of
-   the "masterlinks" that deal hunters check by hand.
-2. **Products and keywords you name.** Product pages in `watchlist.txt` alert on your target
-   price or on a 50% fall from what the monitor has been seeing. `traps.txt` holds lines like
-   `nothing phone | 6000`: any page or post showing that product at or under ₹6,000 alerts.
-3. **Public deal channels** (`channels.txt`), as a safety net. Posts are parsed for price, MRP
-   and discount, de-duplicated across channels, and filtered hard. Empty the file to turn this off.
+   the "masterlinks" that deal hunters check by hand. The same is done per brand ("Apple phones
+   on Flipkart, cheapest first"), where the floor can sit much higher.
+2. **Thousands of products, each against its own price history.** Every product on a watched
+   page is remembered: the most popular products of each category on Flipkart, and the product
+   lists of Croma, Reliance Digital, Ajio, Vijay Sales and several brand stores. A fall of half
+   or more from the price the monitor has been seeing alerts.
+3. **Products and keywords you name.** Product pages in `watchlist.txt` alert on your target
+   price. `traps.txt` holds lines like `nothing phone | 6000`: any page or post showing that
+   product at or under ₹6,000 alerts.
+4. **Deal sites and public deal channels** (`feeds.txt`, `channels.txt`). DesiDime's and
+   DealsMagnet's new-deal pages are read directly, minutes before those deals are repeated on
+   Telegram; a price tracker's live list of drops covers Amazon; and 28 public Telegram channels
+   are read as a safety net. Posts are parsed for price, MRP and discount, de-duplicated across
+   all of these, and filtered hard.
 
 ## What it cannot do
 
-- **It cannot watch every product.** Amazon and Flipkart list hundreds of millions. It watches
-  the pages you give it, about 6 pages per store per minute. Choose them deliberately. An error
-  on a product that is not among the first 20 to 40 results of a watched page is invisible to it.
+- **It cannot watch every product.** Amazon and Flipkart list hundreds of millions. It reads
+  the pages you give it, about a dozen per store per minute, and takes turns when a store has
+  more pages than that (see "The files you edit"). An error on a product that is on none of
+  those pages, and that no deal site or channel reports, is invisible to it.
 - **It cannot promise to beat the channels.** A store's search pages can lag a price change by
-  minutes, and an error on a page you are not watching is invisible to it.
-- **It cannot force a store to answer.** Stores often refuse requests from cloud servers
-  outright. See "Where to run it".
+  minutes, and the big channels are fed by people and robots that see more than any one list.
+- **It cannot force a store to answer.** Amazon, Myntra, Snapdeal, Tata CLiQ and JioMart refuse
+  plain requests or build their pages only inside a browser. See "Where to run it".
+- **It cannot read invite-only Telegram channels.** Only channels with a public preview page
+  can be read without a Telegram account. The largest "Offerzone" channels are invite-only.
 - **Blinkit, Zepto and Swiggy Instamart are not read directly.** Their prices come from app
   APIs tied to your delivery location and refuse plain requests. The tools that do work for them
   run inside your own logged-in browser (search GitHub for "PriceDrop Hunter" or "zepto-deals").
-  Here they are covered only through the quick-commerce channels in `channels.txt`.
+  Here they are covered through DesiDime, where their coupons and loots are posted within
+  minutes, and through the quick-commerce channels in `channels.txt`.
 
 ## How loud each alert is
 
@@ -65,6 +77,21 @@ kit with a ₹999 "MRP" is "92% off".
 | **Quiet** | 3 | 80% off or more, saving ₹2,000 or more · any post whose link leads to a site that is not a known store (with a warning) |
 
 A deal already alerted that turns up in three channels within 20 minutes goes up one level.
+
+**From a deal site's page** (DesiDime, DealsMagnet) the same ladder applies; the price and the
+list price are taken from the card's own fields instead of being read out of the wording.
+
+**From the price tracker** nothing is a claim: each item comes with the price the product
+usually has. So the bar is how far the price stands below that, and it sits lower:
+
+| Alert | ntfy priority | When |
+|---|---|---|
+| **Urgent** | 5 (max) | 80% or more below its usual price (`URGENT_DROP_PCT`) · a trap, when its usual price fits the device |
+| **High** | 4 | 70% to 80% below |
+| **Quiet** | 3 | 60% to 70% below (`TRACKER_DROP_PCT`) |
+
+Each needs ₹2,000 or more saved, and goes one step quieter when the product has been cheaper
+than this before.
 
 An alert is held at **High**, whatever the discount, when the reading itself is unsure: the two
 prices are not labelled, a second amount stands where the price should be, the price needs a
@@ -153,22 +180,30 @@ On Android, an old phone left on its charger does this without touching your mai
    senders per IP address, and GitHub's addresses are shared with everyone else's jobs).
 4. **Actions → Loot monitor → Run workflow → `test-ntfy`.** Your phone should ring.
 5. **Run workflow → `doctor`.** The log lists what GitHub's servers can and cannot read.
-6. The schedule is on: a run starts every 5 minutes and scans once a minute until the next is due.
-   To pause it: Actions → Loot monitor → "..." → Disable workflow.
-7. If no run starts by itself (GitHub's scheduler can leave a new repository waiting for hours, and
-   on 10 November 2026 it started none in six): **Settings → Secrets and variables → Actions →
-   Variables → New repository variable**, name `KEEP_RUNNING`, value `1`, then start one run by
-   hand (Run workflow → `run`). Each run then starts the next when it ends. Set the variable to
-   `0`, or cancel the run in progress, to stop.
+6. **Settings → Secrets and variables → Actions → Variables → New repository variable**, name
+   `KEEP_RUNNING`, value `1` (a variable, not a secret), then start one run by hand
+   (Run workflow → `run`). From then on the runs keep each other going: each one scans for a
+   quarter of an hour, starts the next run shortly before its time is up, and leaves only once
+   that run stands ready. There is always exactly one run scanning, with no gap at the changeover.
+7. To stop: set `KEEP_RUNNING` to `0` (it stops within two shifts), or, to stop at once,
+   Actions → Loot monitor → "..." → Disable workflow, then cancel the run in progress.
+
+Why not simply the schedule? GitHub starts scheduled runs late or not at all (on 10 November
+2026 it started none in six hours), so the schedule in the workflow is only a safety net: it
+restarts the runs if they ever stop. And why does a run wait for its successor? On 11 November a
+run started its successor and left, GitHub kept that successor queued for 14 minutes and then
+failed to start it, and the monitor was dark for four and a half hours. Now nobody leaves before
+the relief is really there, and a relief that does not come up within three minutes is replaced.
 
 Cautions for this route:
 
-- Scheduled runs start late when GitHub is busy, sometimes by many minutes.
 - GitHub's terms say hosted runners are for work related to the repository's software, not a
   general-purpose always-on job. A personal monitor like this is a grey area, and `KEEP_RUNNING`
   makes it run without a break; if you rely on it, a home device or a server is the proper home.
 - Schedules in a public repository are switched off after 60 days without repository activity.
 - Run logs are public. They show deal text, never your topic or token.
+- If the run on duty is itself lost (a runner that dies mid-shift), nothing scans until the
+  schedule starts a run again. Set `HEALTHCHECK_URL` to hear about that within minutes.
 
 ### A small server
 
@@ -191,23 +226,39 @@ give the **max priority** category a loud, distinct sound and let it override Do
 
 | File | What goes in it |
 |---|---|
-| `watchlist.txt` | Store pages: category pages with a floor, product pages with a target |
+| `watchlist.txt` | Store pages: category and brand pages with a floor, popular-product pages, product pages with a target |
 | `traps.txt` | `keywords \| max price` lines |
-| `channels.txt` | Public Telegram channels (optional safety net) |
-| `feeds.txt` | RSS/Atom feeds of deal sites (optional) |
+| `feeds.txt` | Deal sites read as pages (DesiDime, DealsMagnet, the price tracker) and RSS/Atom feeds |
+| `channels.txt` | Public Telegram channels |
 | `.env` | Settings (copy `.env.example`). On GitHub use Secrets/Variables instead |
 
 ### Choosing category pages and floors
 
-- Use a **leaf category** (Laptops, not Computers) with a **price cap** and **cheapest-first** sort.
-  On Flipkart: `https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc`. `watchlist.txt` ships
-  with phones, laptops, TVs, tablets, fridges, washing machines, air conditioners and monitors.
-- Set the **floor** well below the cheapest real product of that category.
+- Use a **leaf category** (Laptops, not Computers) sorted **cheapest first**. On Flipkart:
+  `https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc`. Add a brand to it and the
+  floor can sit much higher: `...&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc`.
+- Set the **floor** well below the cheapest real product of that page.
 - A new item under the floor only alerts if its list price is at least `FLOOR_MRP_RATIO` (3) times
   the floor. That is what keeps toy laptops and phone cases quiet.
 - Categories where cheap things with huge "MRPs" are normal (smart watches, earbuds) do not suit
-  floors. Use traps for those.
+  floors. Watch their **most popular** products instead (`sort=popularity`, no floor): each one
+  then alerts on a fall from its own price. Traps work there too.
 - `--doctor` shows the cheapest item on each page and warns if ordinary products sit under your floor.
+
+### When a store has more pages than fit into a scan
+
+A store is asked for a page only every few seconds (Flipkart: every 3 to 5), so about a dozen of
+its pages fit into one scan. With more, the pages take turns, the one that has waited longest
+first. Start a line with `!` or `!!` and the page comes round 4 or 12 times as often as an
+unmarked one: `watchlist.txt` marks the big category floors `!!`, the brand floors `!`, and
+leaves the popular-product pages unmarked. Whose turn it is survives a restart.
+
+### Stores that hand out their product list
+
+Croma, Reliance Digital, Ajio and any Shopify shop (boAt, Noise, Portronics, ...) give their
+own website a plain list of products with prices. Those addresses go into `watchlist.txt` like
+any page; `watchlist.txt` shows the forms that work. Sorting by price or by discount is part of
+the address.
 
 ## Commands
 
@@ -241,6 +292,7 @@ python -m lootwatch               # scan forever
 | `USE_CHANNELS` / `USE_STORE_PAGES` | `1` / `1` | Switch either half off on a machine that cannot reach it |
 | `WATCH_DROP_PCT` | `50` | A watched product alerts when it falls this far below the price it was seen at |
 | `URGENT_DROP_PCT` | `80` | On a category page, a fall this deep is max priority; smaller ones are quieter |
+| `TRACKER_DROP_PCT` | `60` | A price tracker's item alerts from this far below the product's usual price |
 | `FLOOR_MRP_RATIO` | `3` | A new item under a floor needs a list price this many times the floor |
 | `NEW_LISTING_DISCOUNT` | `85` | A product new to a floor page, above the floor, alerts from this % off its list price |
 | `ABSENCE_HOURS` | `24` | A reported product that was gone this long is judged afresh when it returns |
@@ -250,6 +302,8 @@ python -m lootwatch               # scan forever
 | `TRENDING_CHANNELS` / `TRENDING_WINDOW_MIN` | `3` / `20` | When a quiet deal turns urgent |
 | `DAILY_ALERT_LIMIT` | `200` | Stays inside ntfy.sh's free daily allowance; urgent alerts get the last of it |
 | `CHECK_INTERVAL` | `60` | Seconds between scans |
+| `SITE_GAPS` | – | Seconds between two requests to a site, e.g. `flipkart.com=3-5,t.me=0.5-1`. Slower is always safe |
+| `LOOP_SECONDS` | `840` | GitHub Actions only: how long one run scans before it hands over |
 | `HEARTBEAT_HOUR` | `9` | Daily "still running" note (India time). `-1` turns it off |
 | `HEALTHCHECK_URL` | – | A [healthchecks.io](https://healthchecks.io) ping URL; it alerts you if scans stop |
 | `EXTRA_STORE_DOMAINS` | – | Extra shop domains to treat as trusted, comma separated |

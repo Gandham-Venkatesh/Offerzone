@@ -508,6 +508,9 @@ class Monitor:
             return float("inf") if not last else max(0.0, now - last) * item.weight
 
         for item in sorted(self.s.watchlist, key=overdue, reverse=True):
+            last = self._watch_checked.get(item.url)
+            if item.every and last and now - last < item.every - 5:
+                continue  # read recently enough for this page
             host = (urlsplit(item.url).hostname or "").lower()
             if host not in budget:
                 policy = policy_for(host)

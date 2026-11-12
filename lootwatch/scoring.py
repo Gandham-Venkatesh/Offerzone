@@ -472,6 +472,10 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
                 # a few readings of a seller's passing high price. So the size of the fall sets
                 # the volume: only a fall to a fraction of the price is treated as an error.
                 # (A fall to under the page's floor has already rung above.)
+                # And with thousands of products followed, a no-name gadget going from ₹449 to
+                # ₹199 is not worth anyone's attention: the fall has to save real money.
+                if saving < settings.min_saving:
+                    return None
                 middle = (settings.watch_drop_pct + settings.urgent_drop_pct) / 2
                 tier = min(tier, TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle
                            else TIER_NORMAL)

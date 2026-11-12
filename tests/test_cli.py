@@ -97,18 +97,31 @@ class CommandLine(CleanEnv):
                             traps_file=str(root / "traps.txt"), feeds_file=str(root / "feeds.txt"))
         with self.assertNoLogs("lootwatch", level="WARNING"):
             settings.load_lists()
-        self.assertEqual(len(settings.channels), 10)
+        self.assertEqual(len(settings.channels), 28)
         self.assertIn("desidime", settings.channels)
         self.assertEqual(len(settings.channels), len({c.lower() for c in settings.channels}))
         urls = [w.url for w in settings.watchlist]
-        self.assertEqual(len(urls), 13)
-        self.assertTrue(all("flipkart.com" in u for u in urls), "Amazon pages ship switched off")
+        self.assertEqual(len(urls), 144)
+        self.assertEqual(len(urls), len(set(urls)))
+        self.assertFalse(any("amazon." in u for u in urls), "Amazon pages ship switched off")
+        self.assertEqual(sum("flipkart.com" in u for u in urls), 90)
         laptops = next(w for w in settings.watchlist if w.label == "Flipkart laptops")
-        self.assertEqual(laptops.target, 5000.0)
+        self.assertEqual((laptops.target, laptops.weight, laptops.every), (6000.0, 12.0, 0.0))
+        apple = next(w for w in settings.watchlist if w.label == "Flipkart Apple phones")
+        self.assertEqual((apple.target, apple.weight), (18000.0, 4.0))
+        self.assertIn("facets.brand%255B%255D%3DApple", apple.url)
         popular = next(w for w in settings.watchlist if w.label == "Flipkart popular laptops")
-        self.assertIsNone(popular.target)
+        self.assertEqual((popular.target, popular.weight), (None, 1.0))
+        croma = next(w for w in settings.watchlist if w.label == "Croma laptops")
+        self.assertEqual((croma.target, croma.weight, croma.every), (15000.0, 4.0, 180.0))
+        catalogue = next(w for w in settings.watchlist if w.label == "boAt catalogue")
+        self.assertEqual((catalogue.target, catalogue.every), (None, 900.0))
+        # every page a store's turn-taking has to serve still fits the picture the file's header gives
+        flipkart_load = sum(w.weight for w in settings.watchlist if "flipkart.com" in w.url)
+        self.assertLess(flipkart_load / 12 / 12, 3.0, "the !! pages must come round within three minutes")
         self.assertGreaterEqual(len(settings.traps), 4)
-        self.assertEqual(settings.feeds, [])
+        self.assertEqual(settings.feeds, ["https://www.desidime.com/new", "https://www.dealsmagnet.com/new",
+                                          "https://pricehistory.app/price-drop"])
 
     def test_test_ntfy_and_missing_topic(self):
         self.assertEqual(main(["--test-ntfy", "--ntfy-server", self.web.base]), 1)  # no topic anywhere
@@ -194,11 +207,15 @@ class Lists(CleanEnv):
         self.write("watchlist.txt", "!! https://a.example/core | 2500 | Core page\n"
                                     "! https://a.example/brand | 15000\n"
                                     "https://a.example/popular | | Popular\n"
-                                    "!https://a.example/tight\n")
+                                    "!https://a.example/tight\n"
+                                    "https://a.example/products.json | | Whole catalogue | every 15m\n"
+                                    "https://a.example/slow | every 2 hours | 900\n")
         items = load_watchlist(Path(self.folder, "watchlist.txt"))
-        self.assertEqual([(i.url, i.target, i.label, i.weight) for i in items], [
-            ("https://a.example/core", 2500.0, "Core page", 12.0), ("https://a.example/brand", 15000.0, "", 4.0),
-            ("https://a.example/popular", None, "Popular", 1.0), ("https://a.example/tight", None, "", 4.0)])
+        self.assertEqual([(i.url, i.target, i.label, i.weight, i.every) for i in items], [
+            ("https://a.example/core", 2500.0, "Core page", 12.0, 0.0), ("https://a.example/brand", 15000.0, "", 4.0, 0.0),
+            ("https://a.example/popular", None, "Popular", 1.0, 0.0), ("https://a.example/tight", None, "", 4.0, 0.0),
+            ("https://a.example/products.json", None, "Whole catalogue", 1.0, 900.0),
+            ("https://a.example/slow", 900.0, "", 1.0, 7200.0)])
 
     def test_site_gaps_setting(self):
         try:
