@@ -40,7 +40,7 @@ on:
         default: probe-urls.txt
 
 permissions:
-  contents: read
+  contents: write # probe branch only: the fetched pages are pushed to a scratch branch
   actions: write # only used to delete this workflow's own older state caches
 
 # Scanning runs take turns (one running, one waiting). Checks (doctor, test push) store nothing,
@@ -127,11 +127,15 @@ jobs:
 
       - name: Keep what the probe fetched
         if: always() && env.MODE == 'probe'
-        uses: actions/upload-artifact@v4
-        with:
-          name: probe-out
-          path: probe-out
-          retention-days: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd probe-out
+          git init -q
+          git checkout -q -b probe-out
+          git add -A
+          git -c user.name=probe -c user.email=probe@users.noreply.github.com commit -q -m "probe output"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" probe-out
 
       - name: Save state
         if: always() && env.MODE == 'run'
