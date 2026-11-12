@@ -142,14 +142,51 @@ def product_key(url: str) -> Optional[str]:
     return f"{host}:{digest}"
 
 
+_FILLER_WORDS = {
+    "loot", "deal", "deals", "fast", "price", "error", "buy", "now", "grab", "at", "rs", "inr", "mrp", "off",
+    "the", "a", "an", "on", "for", "just", "only", "link", "http", "https", "www", "com", "in", "to", "and",
+    "with", "offer", "big", "hurry", "steal",
+}
+
+
+def name_words(name: str, limit: int = 6) -> List[str]:
+    """The first few words of a product name that say what it is (no hype, no single letters)."""
+    found: List[str] = []
+    for word in re.findall(r"[a-z0-9]+", name.lower()):
+        if word in _FILLER_WORDS or word in ("lowest", "new", "upto", "up", "flat") or len(word) < 2:
+            continue
+        if word not in found:
+            found.append(word)
+        if len(found) >= limit:
+            break
+    return found
+
+
+def same_product_name(first: str, second: str) -> bool:
+    """Do two product names, written by different people, name the same thing?
+
+    Used only between two deals at the same price, for posts whose links cannot be followed to a
+    store. All but one of the shorter name's leading words must be in the other name (all of
+    them when it has three or fewer), and every number in it must be: "Galaxy M35" and "Galaxy
+    A06", or two watches of one brand, share a price often enough.
+    """
+    a, b = name_words(first), name_words(second)
+    (short, long_, long_text) = (a, b, second) if len(a) <= len(b) else (b, a, first)
+    if len(short) < 2:
+        return False
+    # "128gb" in one name is "128 GB" in the other: numbers are looked for in the name run together.
+    run_together = re.sub(r"[^a-z0-9]", "", long_text.lower())
+    numbered = [word for word in short if any(ch.isdigit() for ch in word)]
+    if any(word not in run_together for word in numbered):
+        return False
+    shared = sum(1 for word in short if word in long_ or (word in numbered and word in run_together))
+    return shared >= (len(short) if len(short) <= 3 else len(short) - 1)
+
+
 def text_fingerprint(text: str, price: Optional[float]) -> str:
     """Fallback identity when a post has no resolvable product link."""
     words = re.findall(r"[a-z0-9]+", text.lower())
-    stop = {
-        "loot", "deal", "deals", "fast", "price", "error", "buy", "now", "grab", "at", "rs", "inr", "mrp", "off",
-        "the", "a", "an", "on", "for", "just", "only", "link", "http", "https", "www", "com", "in", "to", "and",
-        "with", "offer", "big", "hurry", "steal",
-    }
+    stop = _FILLER_WORDS
     significant = [w for w in words if w not in stop and not w.isdigit() and len(w) > 1][:10]
     basis = " ".join(sorted(set(significant))) + f"|{int(price) if price is not None else ''}"
     return "text:" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:16]

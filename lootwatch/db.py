@@ -119,6 +119,17 @@ class DB:
             ).fetchone()
         return tuple(row) if row else None
 
+    def alerts_near_price(self, price: float, since: float) -> List[Tuple[int, int, Optional[float], int, str, str]]:
+        """(id, tier, price, created_at, fingerprint, title) of the alerts since ``since`` priced within 1% of ``price``."""
+        margin = max(1.0, price * 0.01)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, tier, price, created_at, fingerprint, title FROM alerts WHERE created_at >= ? AND dropped = 0 "
+                "AND price BETWEEN ? AND ? ORDER BY created_at DESC LIMIT 40",
+                (int(since), price - margin, price + margin),
+            ).fetchall()
+        return [tuple(row) for row in rows]
+
     def add_alert(self, fingerprint: str, tier: int, price: Optional[float], title: str, source: str,
                   payload: str, now: Optional[float] = None) -> int:
         with self._lock, self._conn:

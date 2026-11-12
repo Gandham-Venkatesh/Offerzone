@@ -149,8 +149,9 @@ find_relief() {
 }
 
 run_shift() {
-  local flag="${RUNNER_TEMP:-/tmp}/relief-ready-$ME" finder="" code=0
-  local args=(--max-runtime "${LOOP_SECONDS:-840}")
+  local flag="${RUNNER_TEMP:-/tmp}/relief-ready-$ME" finder="" code=0 rc=0 restarts=0 elapsed remaining
+  local shift_seconds="${LOOP_SECONDS:-840}" overtime="${RELAY_MAX_OVERTIME:-1500}" began
+  local args=(--max-runtime "$shift_seconds")
   [ -n "${DRY_RUN:-}" ] && args+=(--dry-run)
   rm -f "$flag"
   if [ "${KEEP_RUNNING:-}" != "1" ]; then
@@ -160,10 +161,33 @@ run_shift() {
   else
     find_relief "$flag" &
     finder=$!
-    args+=(--handover-file "$flag" --max-overtime "${RELAY_MAX_OVERTIME:-1500}")
+    args+=(--handover-file "$flag" --max-overtime "$overtime")
   fi
-  # The scanner needs no GitHub token; only this script talks to GitHub.
-  env -u GH_TOKEN -u GITHUB_TOKEN python -m lootwatch "${args[@]}" || code=$?
+  began=$(date +%s)
+  while :; do
+    # The scanner needs no GitHub token; only this script talks to GitHub.
+    rc=0
+    env -u GH_TOKEN -u GITHUB_TOKEN python -m lootwatch "${args[@]}" || rc=$?
+    [ "$rc" -gt "$code" ] && code=$rc
+    [ -z "$finder" ] && break   # nobody is coming after this run: the shift is simply over
+    [ -e "$flag" ] && break     # relieved, or told that no relief can be had
+    elapsed=$(( $(date +%s) - began ))
+    [ "$elapsed" -ge $((shift_seconds + overtime)) ] && break
+    # The scanner ended although its relief is not there yet: it crashed. The runs must not stop
+    # for that. Start it again a few times; if it will not stay up, at least wait for the relief,
+    # so that the next run (on a fresh machine) gets its chance.
+    restarts=$((restarts + 1))
+    if [ "$restarts" -gt 5 ]; then
+      say "the scanner keeps stopping (exit $rc); waiting for the next run without it"
+      while [ ! -e "$flag" ] && [ $(( $(date +%s) - began )) -lt $((shift_seconds + overtime)) ]; do sleep "$POLL"; done
+      break
+    fi
+    say "the scanner stopped early (exit $rc); starting it again in 20 seconds (restart $restarts)"
+    sleep 20
+    remaining=$(( shift_seconds - ( $(date +%s) - began ) ))
+    [ "$remaining" -lt 30 ] && remaining=30
+    args[1]=$remaining
+  done
   if [ -n "$finder" ]; then
     kill "$finder" 2>/dev/null
     wait "$finder" 2>/dev/null

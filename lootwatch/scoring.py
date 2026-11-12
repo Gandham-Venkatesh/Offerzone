@@ -226,7 +226,11 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
     """
     text = title + ("\n" + body if body else "")
     if price is None:
-        return evaluate_text(text, settings)
+        # The member left the price fields empty: this is an offer or a coupon ("Flat Rs 25 on
+        # sending Rs 5000"), not a priced product. Whatever the wording states outright still
+        # counts; two bare numbers guessed to be a price and a list price do not.
+        verdict = evaluate_text(text, settings)
+        return None if verdict is not None and verdict.needs_trusted_link else verdict
     parsed = parse_text(text)
     if not parsed.text.strip() or parsed.expired == "over":
         return None

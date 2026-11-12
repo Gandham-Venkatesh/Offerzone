@@ -215,6 +215,13 @@ class Judging(unittest.TestCase):
         verdict = evaluate_stated("Boat earbuds 99% off", "", None, None, self.s)
         self.assertEqual(verdict.tier, TIER_HIGH)
         self.assertIsNone(evaluate_stated("Men Tshirts From 99", "", None, None, self.s))
+        labelled = evaluate_stated("Sony Bravia 55 inch TV - Deal Price: ₹2,499 (MRP ₹79,990)", "", None, None, self.s)
+        self.assertEqual(labelled.tier, TIER_URGENT)
+
+    def test_an_offer_card_is_not_mistaken_for_a_priced_product(self):
+        # Seen on DesiDime on 12 Nov 2026, with its price fields empty: two bare amounts, neither a price.
+        title = "Bajaj - Flat Rs 25 on sending Rs 5000 two times ( Single scratch card) - Got Rs 25"
+        self.assertIsNone(evaluate_stated(title, "", None, None, self.s))
 
     def test_tracker_drop_is_measured_against_the_usual_price(self):
         self.assertIsNone(evaluate_tracked("PUMA T-Shirt", 809, 1606, self.s, low=600), "50% below average is routine")
@@ -311,6 +318,34 @@ class SitePagesInTheMonitor(unittest.TestCase):
                           time.time() - 5)
             monitor.cycle()
         self.assertEqual(len(self.deals()), 1)
+
+    def test_a_deal_with_no_followable_link_is_matched_by_name_and_price(self):
+        """DealsMagnet's cards link only to DealsMagnet. The same deal from a channel must not ring again."""
+        self.settings.channels = ["alpha"]
+        self.web.channels["alpha"] = [{"id": 0, "html": "Welcome", "ts": time.time() - 86400, "buttons": []}]
+        self.web.pages["/new"] = desidime_page(desidime_card(7, "Old deal", ago="3 hours ago"))
+        site = self.web.base + "/elsewhere"  # a link that leads to no store
+        self.web.pages["/elsewhere"] = "<html><body>a deal page</body></html>"
+        with mock.patch("lootwatch.monitor.site_reader", side_effect=lambda u: parse_desidime if u.endswith("/new") else None), \
+                mock.patch("lootwatch.monitor.site_label", return_value="DealsMagnet"):
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = desidime_page(
+                desidime_card(8, "Liora Face Cleansing Wet Wipes - Pack of 500", price="₹ 400", mrp="₹ 7,500", buy=site))
+            monitor.cycle()
+            first = len(self.deals())
+            # Twenty minutes later a channel has it, a rupee apart, through a link of its own.
+            self.web.post("alpha", 5, f'Liora Face Cleansing Wet Wipes - Pack of 500 | Gentle and Refreshing<br/>'
+                                      f'Deal Price: ₹399 (MRP ₹7,500) <a href="{site}?x=1">buy</a>', time.time() - 5)
+            monitor.cycle()
+            # A different product at the same price is its own deal.
+            self.web.post("alpha", 6, f'Himalaya Baby Wipes - Pack of 12 combo<br/>Deal Price: ₹400 (MRP ₹7,500) '
+                                      f'<a href="{site}?x=2">buy</a>', time.time() - 5)
+            monitor.cycle()
+        self.assertEqual(first, 1)
+        titles = [p["title"] for p in self.deals()]
+        self.assertEqual(len(titles), 2, titles)
+        self.assertIn("Himalaya Baby Wipes", titles[1])
 
     def test_tracker_items_are_judged_by_their_drop(self):
         stamp = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 60))

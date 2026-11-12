@@ -19,7 +19,8 @@ import requests
 from .config import Settings, WatchItem
 from .db import DB
 from .fetch import Fetcher, policy_for
-from .links import TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host_of, product_key, text_fingerprint
+from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host_of, product_key, same_product_name,
+                    text_fingerprint)
 from .notify import Notifier, build_payload
 from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, evaluate_offer, evaluate_stated,
                       evaluate_text, evaluate_tracked)
@@ -392,15 +393,32 @@ class Monitor:
             tags=["warning"] if verdict.flags else _TAGS[verdict.tier],
             click=best_link or post_url, actions=actions,
         )
-        self._emit(fingerprint, verdict, payload, source, posted=ts)
+        self._emit(fingerprint, verdict, payload, source, posted=ts, name=subject)
+
+    def _twin(self, name: str, price: float, since: float) -> Optional[tuple]:
+        """An alert already raised for the same product at the same price, found by its name.
+
+        A deal read from a deal site's page, and many a channel post, carries no link that can be
+        followed to the store, so nothing ties it to the same deal arriving from elsewhere but
+        what it is called and what it costs.
+        """
+        for alert_id, tier, alert_price, created_at, fingerprint, title in self.db.alerts_near_price(price, since):
+            if same_product_name(name, str(title).rsplit(" — ", 1)[-1]):
+                return alert_id, tier, alert_price, created_at, fingerprint
+        return None
 
     def _emit(self, fingerprint: str, verdict: Verdict, payload: Dict[str, object], source: str,
-              posted: Optional[float] = None) -> bool:
+              posted: Optional[float] = None, name: str = "") -> bool:
         """De-duplicate, respect the daily budget, then send (or queue for retry)."""
         with self._emit_lock:
             now = time.time()
+            since = now - self.s.dedup_hours * 3600
+            previous = self.db.last_alert(fingerprint, since)
+            if previous is None and name and verdict.price is not None:
+                twin = self._twin(name, verdict.price, since)
+                if twin:
+                    previous, fingerprint = twin[:4], twin[4]  # from here on it is that deal
             sources = self.db.add_sighting(fingerprint, source, self.s.trending_window_min * 60, now)
-            previous = self.db.last_alert(fingerprint, now - self.s.dedup_hours * 3600)
             if previous:
                 _, prev_tier, prev_price, _ = previous
                 cheaper = verdict.price is not None and prev_price is not None and verdict.price <= prev_price * 0.9
