@@ -146,7 +146,8 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
             if not reader:
                 verdict = evaluate_text(i.text, settings)
             elif i.tracked:
-                verdict = evaluate_tracked(i.title, i.price, i.usual, settings, low=i.low, new_low=i.new_low)
+                verdict = evaluate_tracked(i.title, i.price, i.usual, settings, low=i.low, new_low=i.new_low,
+                                           mrp=i.mrp, in_stock=i.in_stock)
             else:
                 verdict = evaluate_stated(i.title, i.body, i.price, i.mrp, settings)
             verdicts.append(verdict)

@@ -19,6 +19,8 @@ The markup these readers lean on is what a redesign is least likely to touch: da
 
 from __future__ import annotations
 
+import hashlib
+import html
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -49,6 +51,7 @@ class SiteItem:
     high: Optional[float] = None
     low: Optional[float] = None
     new_low: bool = False
+    in_stock: bool = True
 
 
 class SiteError(ValueError):
@@ -91,12 +94,22 @@ def age_seconds(text: str) -> Optional[float]:
     count = 1.0 if number in (None, "a", "an") else 3.0 if number == "few" else float(number)
     unit = match.group("unit")
     key = "mo" if unit.startswith("mo") else unit[0]
+    if "about" in text and key == "h":
+        # Rounded wording ("about 1 hour ago" covers 45 to 89 minutes): take the youngest age it
+        # allows, so that the freshness limit decides and not the rounding.
+        return 45 * 60.0 if count <= 1 else (count - 0.5) * 3600
     return count * _UNIT_SECONDS[key]
 
 
 def _clean(text: str) -> str:
-    text = re.sub(r"[﻿​‌‍]", "", text or "")
+    text = re.sub(r"[\ufeff\u200b\u200c\u200d]", "", html.unescape(text or ""))  # names arrive escaped twice
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _item_id(prefix: str, code: str, price: Optional[float], title: str) -> str:
+    """What is announced goes into the id: a card listed again at a new price is a new item."""
+    what = str(int(price)) if price is not None else hashlib.sha1(title.encode("utf-8")).hexdigest()[:8]
+    return f"{prefix}{code}:{what}"
 
 
 def _summary(title: str, price: Optional[float], mrp: Optional[float], store: str, body: str) -> str:
@@ -173,8 +186,11 @@ def parse_desidime(html: str, url: str, now: float) -> List[SiteItem]:
             if href.startswith(("http://", "https://")) and host_of(href) != "desidime.com" and href not in links:
                 links.append(href)
         items.append(SiteItem(
-            item_id=f"dd{deal_id}", ts=stamp, title=title, text=_summary(title, price, mrp, store, body),
-            url=deal_url, links=links + [deal_url], body=body, price=price, mrp=mrp if mrp and price and mrp > price else None,
+            item_id=_item_id("dd", deal_id, price, title), ts=stamp, title=title,
+            text=_summary(title, price, mrp, store, body), url=deal_url,
+            # The "Buy Now" link alone says where the deal leads; the deal's own page only stands in
+            # when there is none.
+            links=links or [deal_url], body=body, price=price, mrp=mrp if mrp and price and mrp > price else None,
             store=store,
         ))
     if not items:
@@ -220,7 +236,9 @@ def parse_dealsmagnet(html: str, url: str, now: float) -> List[SiteItem]:
         note = " · ".join(notes)
         slug = re.search(r"([\w]+)/?$", urlsplit(deal_url).path)
         items.append(SiteItem(
-            item_id=f"dm{slug.group(1) if slug else deal_url}", ts=now - seconds if seconds is not None else None,
+            # The code names a product record that the site lists again and again, with new numbers.
+            item_id=_item_id("dm", slug.group(1) if slug else deal_url, price, title),
+            ts=now - seconds if seconds is not None else None,
             title=title, text=_summary(title, price, mrp, store, note), url=deal_url, links=[deal_url], body=note,
             price=price, mrp=mrp if mrp and price and mrp > price else None, store=store,
         ))
@@ -272,23 +290,28 @@ def parse_pricehistory(html: str, url: str, now: float) -> List[SiteItem]:
         low = re.search(r"\bLow\s*₹\s*([\d,]+)", text)
         high = re.search(r"\bHigh\s*₹\s*([\d,]+)", text)
         below = re.search(r"₹\s*([\d,]+)\s+below\s+its\s+average", text)
+        off_list = re.search(r"\bMRP\s*[−\-–]\s*(\d{1,2})\s*%", text)
         low_v = float(low.group(1).replace(",", "")) if low else None
         high_v = float(high.group(1).replace(",", "")) if high else None
         usual = price + float(below.group(1).replace(",", "")) if below else None
+        list_price = round(price / (1 - float(off_list.group(1)) / 100)) if off_list else None
         store = _clean(str(card.get("data-store", ""))).title()
         buy = card.select_one("a[data-link]")
         product_url = _store_link(str(buy.get("data-link", ""))) if buy is not None else ""
         facts = [fmt_inr(price)]
         if usual:
             facts.append(f"usually about {fmt_inr(usual)}")
+        if list_price:
+            facts.append(f"list price about {fmt_inr(list_price)}")
         if low_v and high_v:
             facts.append(f"seen between {fmt_inr(low_v)} and {fmt_inr(high_v)}")
         slug = urlsplit(page).path.rstrip("/").rsplit("/", 1)[-1]
         items.append(SiteItem(
             item_id=f"ph{slug}:{int(price)}", ts=stamp, title=title,
             text=title + "\n" + " · ".join(facts) + (f" · {store}" if store else ""), url=page,
-            links=[link for link in (product_url, page) if link], price=price, store=store, tracked=True,
-            usual=usual, high=high_v, low=low_v, new_low=str(card.get("data-low", "")) == "1",
+            links=[link for link in (product_url, page) if link], price=price, mrp=list_price, store=store,
+            tracked=True, usual=usual, high=high_v, low=low_v, new_low=str(card.get("data-low", "")) == "1",
+            in_stock=not re.search(r"out\s+of\s+stock|unavailable|sold\s+out", text, re.I),
         ))
     if not items:
         raise SiteError("no price-drop cards found on the tracker page (layout change?)")

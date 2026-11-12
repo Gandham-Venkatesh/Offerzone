@@ -208,6 +208,8 @@ class Settings:
     watch_drop_pct: float = 50.0  # % drop against a watched product's own usual price
     urgent_drop_pct: float = 80.0  # on a category page, a drop this deep is max priority; smaller ones are quieter
     tracker_drop_pct: float = 60.0  # a price tracker's drop counts from this % below the product's usual price
+    quick_coupon_pct: float = 60.0  # a food / quick-commerce coupon alerts from this share of the order taken off (0: never)
+    quick_loots: bool = True  # "Zepto loot @ 24": alert quietly although no list price can be checked
     floor_mrp_ratio: float = 3.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
     new_listing_discount: float = 85.0  # a NEW item above a floor alerts from this % off its list price
     absence_hours: float = 24.0  # a product unseen for this long is judged afresh when it returns
@@ -266,6 +268,8 @@ class Settings:
             watch_drop_pct=_num("WATCH_DROP_PCT", 50.0),
             urgent_drop_pct=_num("URGENT_DROP_PCT", 80.0),
             tracker_drop_pct=_num("TRACKER_DROP_PCT", 60.0),
+            quick_coupon_pct=_num("QUICK_COUPON_PCT", 60.0),
+            quick_loots=_flag("QUICK_LOOTS", True),
             floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 3.0),
             new_listing_discount=_num("NEW_LISTING_DISCOUNT", 85.0),
             absence_hours=_num("ABSENCE_HOURS", 24.0),

@@ -90,7 +90,11 @@ class Readers(unittest.TestCase):
     def test_times_written_as_words(self):
         self.assertEqual(age_seconds("1 minute ago"), 60)
         self.assertEqual(age_seconds(" 7 min "), 420)
-        self.assertEqual(age_seconds("about an hour ago"), 3600)
+        self.assertEqual(age_seconds("an hour ago"), 3600)
+        # Rounded wording gets the youngest age it allows: "about 1 hour" is what DesiDime writes from 45 minutes on.
+        self.assertEqual(age_seconds("about 1 hour ago"), 45 * 60)
+        self.assertEqual(age_seconds("about an hour ago"), 45 * 60)
+        self.assertEqual(age_seconds("about 3 hours ago"), 2.5 * 3600)
         self.assertEqual(age_seconds("2 hr"), 7200)
         self.assertEqual(age_seconds("just now"), 0)
         self.assertEqual(age_seconds("yesterday"), 86400)
@@ -107,12 +111,15 @@ class Readers(unittest.TestCase):
             desidime_card(2196439, "Myntra: clothing up to 82% off", price="82%", mrp=""),
         )
         items = parse_desidime(page, "https://www.desidime.com/new", now)
-        self.assertEqual([i.item_id for i in items], ["dd2196450", "dd2196448", "dd2196439"], "the blanked card is skipped")
+        self.assertEqual([i.item_id.split(":")[0] for i in items], ["dd2196450", "dd2196448", "dd2196439"],
+                         "the blanked card is skipped")
+        self.assertEqual(items[0].item_id, "dd2196450:1530", "the price is part of what was announced")
         hub = items[0]
         self.assertEqual((hub.price, hub.mrp, hub.store), (1530.0, 9999.0, "Amazon"))
         self.assertEqual(hub.ts, now - 60)
         self.assertEqual(hub.url, "https://www.desidime.com/deals/some-deal-2196450")
-        self.assertEqual(hub.links[0], "https://visit.desidime.com/visit/home-new-get-deals-1/2196450")
+        self.assertEqual(hub.links, ["https://visit.desidime.com/visit/home-new-get-deals-1/2196450"],
+                         "the Buy Now link alone says where the deal leads")
         self.assertEqual(hub.body, "Apply 50% Off Coupon")
         self.assertIn("₹1,530 (list price ₹9,999, 85% off) · Amazon", hub.text)
         pant = items[1]
@@ -127,7 +134,10 @@ class Readers(unittest.TestCase):
     def test_dealsmagnet_cards(self):
         now = 1_800_000_000.0
         items = parse_dealsmagnet(DEALSMAGNET, "https://www.dealsmagnet.com/new", now)
-        self.assertEqual([i.item_id for i in items], ["dm1cmsNcpJ", "dm1dieE1RE"])
+        self.assertEqual([i.item_id for i in items], ["dm1cmsNcpJ:22900", "dm1dieE1RE:400"])
+        # The code names a product record that the robot lists again and again: at a new price it is a new item.
+        again = parse_dealsmagnet(DEALSMAGNET.replace("</span>22900</div>", "</span>2290</div>"), "https://www.dealsmagnet.com/new", now)
+        self.assertEqual([i.item_id for i in again], ["dm1cmsNcpJ:2290", "dm1dieE1RE:400"])
         dyson, wipes = items
         self.assertEqual(dyson.title, "dyson Supersonic Hair Dryer", "the ribbon over the picture is not the title")
         self.assertEqual((dyson.price, dyson.mrp, dyson.store), (22900.0, 36900.0, "Myntra"))
@@ -153,6 +163,19 @@ class Readers(unittest.TestCase):
         self.assertIsNone(pixel.usual, "'below its highest' is not an average")
         self.assertTrue(pixel.new_low)
         self.assertEqual(pixel.links[0], "https://www.flipkart.com/product/p/itme?pid=MOBHPHNVBH6BSZ4M")
+        self.assertTrue(dove.in_stock)
+        self.assertIsNone(dove.mrp)
+
+    def test_tracker_card_notes(self):
+        # As printed on the real page: the discount to MRP, a stock note, and a name escaped twice.
+        page = tracker_page(tracker_card(
+            "levis-711-AbC", "Levi&amp;#39;s Women&amp;#39;s 711 Skinny Jean", 749,
+            '<p class="phd-price"><span class="phd-mrp">MRP −38%</span></p>'
+            '<p class="phd-range"><span>Low ₹549</span> <span>High ₹6,091</span></p>'
+            '<p class="phd-save">₹2,217 below its average</p><p class="phd-stock">Out of stock right now</p>'))
+        (item,) = parse_pricehistory(page, "https://pricehistory.app/price-drop", 0)
+        self.assertEqual(item.title, "Levi's Women's 711 Skinny Jean")
+        self.assertEqual((item.usual, item.mrp, item.in_stock), (2966.0, 1208, False))
 
     def test_which_addresses_are_read_as_pages(self):
         self.assertIs(site_reader("https://www.desidime.com/new"), parse_desidime)
@@ -164,9 +187,10 @@ class Readers(unittest.TestCase):
         self.assertEqual(site_label("https://pricehistory.app/price-drop"), "PriceHistory tracker")
 
     def test_desidime_buy_links_are_followed_to_the_store(self):
-        self.assertEqual(classify_host("visit.desidime.com"), "affiliate")
-        self.assertEqual(classify_host("ddime.in"), "affiliate")
-        self.assertEqual(classify_host("desidime.com"), "dealsite")
+        # ...and trusted only by where they end, like any short link: a member's deal can point anywhere.
+        self.assertEqual(classify_host("visit.desidime.com"), "generic")
+        self.assertEqual(classify_host("ddime.in"), "generic")
+        self.assertEqual(classify_host("www.desidime.com"), "dealsite")
         self.assertEqual(classify_host("link.amazon"), "affiliate")
         self.assertEqual(classify_host("notlink.amazon.example"), "unknown")
 
@@ -211,6 +235,25 @@ class Judging(unittest.TestCase):
         doubt = evaluate_stated("Nothing Phone (3a) Display Combo", "", 1999, None, self.s)
         self.assertEqual((doubt.tier, doubt.label), (TIER_NORMAL, "Trap match?"))
 
+    def test_a_card_with_a_price_but_no_list_price_is_read_for_what_its_wording_states(self):
+        watch = evaluate_stated("Fire-Boltt Rise Smart Watch @ 1099 (92%off) on amazon", "", 1099, None, self.s)
+        self.assertEqual((watch.tier, watch.price), (TIER_HIGH, 1099))
+        tv = evaluate_stated("Sony Bravia 55 inch 4K TV (MRP ₹79,990)", "", 2499, None, self.s)
+        self.assertEqual((tv.tier, tv.price, tv.mrp), (TIER_URGENT, 2499, 79990))
+        earbuds = evaluate_stated("Boat earbuds 99% off", "", 49, None, self.s)  # as a post "... 99% off @49" would be
+        self.assertEqual((earbuds.tier, earbuds.price), (TIER_URGENT, 49))
+        self.assertIsNone(evaluate_stated("[Pre Order] PS5 Grand Theft Auto VI (Standard)", "", 6048, None, self.s))
+        self.assertIsNone(evaluate_stated("Trial pack, 3 for 29500, earlier 99", "", 450, None, self.s), "bare numbers are not a list price")
+
+    def test_a_condition_anywhere_on_a_card_holds_it_at_high(self):
+        plain = evaluate_stated("Lakme Lipstick Combo", "Free delivery on orders above ₹499", 99, 4490, self.s)
+        self.assertEqual(plain.tier, TIER_URGENT, "a delivery threshold is not a condition on the price")
+        for note in ("Valid on orders above ₹4,999", "Only for new customers", "On minimum purchase of Rs. 2999"):
+            with self.subTest(note=note):
+                held = evaluate_stated("Lakme Lipstick Combo", note, 99, 4490, self.s)
+                self.assertEqual((held.tier, held.max_tier), (TIER_HIGH, TIER_HIGH))
+                self.assertIn("needs a qualifying purchase", held.reason)
+
     def test_a_card_without_prices_is_read_like_a_post(self):
         verdict = evaluate_stated("Boat earbuds 99% off", "", None, None, self.s)
         self.assertEqual(verdict.tier, TIER_HIGH)
@@ -241,6 +284,17 @@ class Judging(unittest.TestCase):
         self.assertIn("it has been as low as ₹549", seen_lower.reason)
         self.assertIsNone(evaluate_tracked("Adidas Predator", 3400, 8765, self.s, low=2999))
         self.assertIsNone(evaluate_tracked("No average known", 500, None, self.s))
+
+    def test_tracker_item_out_of_stock_is_not_announced(self):
+        self.assertIsNone(evaluate_tracked("Lenovo IdeaPad Slim 3", 5990, 52000, self.s, in_stock=False))
+
+    def test_tracker_average_above_the_list_price_is_not_believed(self):
+        # A reseller's fantasy price pulled the average to ₹2,966; the list price is about ₹1,208.
+        self.assertIsNone(evaluate_tracked("Dove Gofresh Body Wash", 749, 2966, self.s, low=549, mrp=1208),
+                          "38% under its list price is no event")
+        tv = evaluate_tracked("Samsung 55 inch TV", 9000, 80000, self.s, mrp=60000)
+        self.assertEqual((tv.tier, tv.was), (TIER_URGENT, 60000))
+        self.assertIn("85% below its list price of about ₹60,000", tv.reason)
 
     def test_tracker_trap(self):
         hit = evaluate_tracked("Nothing Phone (3a) Pro 5G (Black, 256 GB)", 4999, 29500, self.s)
@@ -318,6 +372,45 @@ class SitePagesInTheMonitor(unittest.TestCase):
                           time.time() - 5)
             monitor.cycle()
         self.assertEqual(len(self.deals()), 1)
+
+    def run_card(self, card_html):
+        self.web.pages["/new"] = desidime_page(desidime_card(7, "Old deal", ago="3 hours ago"))
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_desidime), \
+                mock.patch("lootwatch.monitor.site_label", return_value="DesiDime"):
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = desidime_page(card_html)
+            monitor.cycle()
+            monitor.cycle()
+        return self.deals()
+
+    def test_a_buy_link_that_ends_on_an_unknown_shop_is_quiet_and_says_so(self):
+        self.web.pages["/shop"] = "<html><body>Some shop nobody knows</body></html>"
+        self.web.redirects["/visit/9"] = self.web.base + "/shop"
+        (push,) = self.run_card(desidime_card(9, "Nude Matte Liquid Lipstick", price="₹ 149", mrp="₹ 8,999",
+                                              store="Hamara Mall", buy=self.web.base + "/visit/9"))
+        self.assertEqual(push["priority"], 3)
+        self.assertIn("not a known store", push["message"])
+
+    def test_a_buy_link_that_cannot_be_followed_is_held_at_high(self):
+        self.web.status_for["/visit/10"] = 500
+        (push,) = self.run_card(desidime_card(10, "Sony Bravia 55 inch 4K TV", price="₹ 2,499", mrp="₹ 79,990",
+                                              buy=self.web.base + "/visit/10"))
+        self.assertEqual(push["priority"], 4)
+        self.assertIn("could not check where the link goes", push["message"])
+
+    def test_a_card_listed_again_at_a_new_price_is_judged_again(self):
+        self.web.redirects["/visit/11"] = "https://www.amazon.in/dp/B0RELISTED1"
+        buy = self.web.base + "/visit/11"
+        first = self.run_card(desidime_card(11, "Dyson Supersonic Hair Dryer", price="₹ 22,900", mrp="₹ 36,900", buy=buy))
+        self.assertEqual(first, [], "38% off is an ordinary day")
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_desidime), \
+                mock.patch("lootwatch.monitor.site_label", return_value="DesiDime"):
+            self.web.pages["/new"] = desidime_page(
+                desidime_card(11, "Dyson Supersonic Hair Dryer", price="₹ 2,290", mrp="₹ 36,900", buy=buy))
+            self.monitors[-1].cycle()
+        (push,) = self.deals()
+        self.assertTrue(push["title"].startswith("94% off · ₹2,290 (MRP ₹36,900)"), push["title"])
 
     def test_a_deal_with_no_followable_link_is_matched_by_name_and_price(self):
         """DealsMagnet's cards link only to DealsMagnet. The same deal from a channel must not ring again."""

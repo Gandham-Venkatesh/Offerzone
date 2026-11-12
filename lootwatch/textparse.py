@@ -665,6 +665,15 @@ def _expiry(text: str) -> str:
     return "maybe" if hint else ""
 
 
+def states_condition(text: str) -> bool:
+    """Does any line of this text tie an offer to buying something else, or to who is buying?
+
+    For text whose price stands somewhere else (a deal-site card keeps it in a field of its own),
+    so there is no price line to look beside.
+    """
+    return any(_CONDITION.search(_FREE_DELIVERY.sub(" ", line)) for line in text.split("\n"))
+
+
 def _conditional(text: str, anchors: List[int]) -> bool:
     """Does the line a price stands on, or the line right after it, tie that price to buying
     something else ("on orders above ₹999", "for new customers")?"""

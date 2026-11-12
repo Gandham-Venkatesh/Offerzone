@@ -269,7 +269,11 @@ class TextVerdicts(unittest.TestCase):
                 self.assertIsNone(self.tier(text))
 
     def test_capped_coupons_and_closed_deals_are_not_deals(self):
-        self.assertIsNone(self.tier("SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)"))
+        # A capped coupon is never "95% off" a product. For a food app it is still worth a look as what it
+        # is: a coupon, counted at what the cap leaves of it (₹160 on ₹199 is 80%), and never at max priority.
+        coupon = evaluate_text("SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)", self.s)
+        self.assertEqual((coupon.label, coupon.tier, coupon.max_tier, round(coupon.discount)), ("Coupon", TIER_HIGH, TIER_HIGH, 80))
+        self.assertIsNone(self.tier("Mega sale: Up to 80% OFF!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)"), "any other shop: ignored")
         self.assertIsNone(self.tier("[ OVER ] Big Loot ₹1 (MRP ₹5,000) : https://instamart.in/item/x"))
 
     def test_below_threshold_is_ignored(self):
@@ -611,6 +615,66 @@ class OfferVerdicts(unittest.TestCase):
     def test_first_check_of_a_product_page_at_a_huge_discount(self):
         new = PriceInfo(baseline=None, observations=0, last_price=None, first_seen=True)
         self.assertEqual(evaluate_offer("Smart Watch", 499, 4999, new, self.s).tier, TIER_HIGH)
+
+
+class QuickCommerce(unittest.TestCase):
+    """Coupons and loot posts of food and quick-commerce apps (posts as seen on FoodJunction and swiggyLoots)."""
+
+    def setUp(self):
+        self.s = make_settings("")
+
+    def verdict(self, text):
+        return evaluate_text(text, self.s)
+
+    def test_big_coupons(self):
+        swiggy = self.verdict("Swiggy : Get Flat ₹160 off on Order Above ₹199\nCode : FLASHSALE\nValid Mostly For Metro Cities")
+        self.assertEqual((swiggy.tier, swiggy.max_tier, swiggy.label), (TIER_HIGH, TIER_HIGH, "Coupon"))
+        self.assertEqual(swiggy.headline, "Coupon: 80% off")
+        self.assertEqual(swiggy.reason, "Swiggy coupon: ₹160 off on a ₹199 order, code FLASHSALE")
+        self.assertEqual(swiggy.key, "coupon:swiggy:FLASHSALE")
+        zomato = self.verdict("Zomato New Promocode❤️\nGet 70% Off On Order Above ₹99\nMaximum Discount is ₹140\nCode :) MUNCHYBLISS")
+        self.assertEqual((zomato.tier, zomato.key), (TIER_NORMAL, "coupon:zomato:MUNCHYBLISS"))
+        self.assertIn("70% off up to ₹140 on orders from ₹99", zomato.reason)
+        capped = self.verdict("🚨 SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 80% OFF up to ₹160 (Min Order: ₹199)\n• Flat 70% OFF up to ₹140")
+        self.assertEqual(capped.tier, TIER_HIGH)
+        basket = self.verdict("Cred × Bigbasket Offers\nMany Bigbasket Coupon Available\nGet ₹150 Off on Order Above ₹249")
+        self.assertEqual((basket.tier, basket.key), (TIER_NORMAL, "coupon:bigbasket:60"))
+
+    def test_a_cap_makes_a_big_percentage_small(self):
+        # 80% off, but at most ₹50 on a ₹499 order: a tenth of the bill.
+        self.assertIsNone(self.verdict("Zepto: Flat 80% off up to ₹50 on orders above ₹499\nCode: ZEP50"))
+
+    def test_small_coupons_banners_and_other_shops_stay_quiet(self):
+        for text in (
+            "🎁Zomato Offer : 50% Off Upto ₹200\n₹100 order @ ₹50\nUse Code : HARP0532",
+            "Swiggy Offer : Pick ₹50 Free Cash/ Upto ₹150 Off Coupon.\nCombine With Restaurants Giving 70% Off Discount.",
+            "Blinkit: Up to 80% off on snacks",
+            "BigBasket Free Shopping Offer\nThey Credited Free Cash Again",
+            "Amazon: Flat 70% off on orders above ₹99 with code SAVE70",
+            "Swiggy: Flat ₹60 off on orders above ₹199\nCode: SAVE60",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(self.verdict(text))
+
+    def test_loot_posts_alert_quietly_without_a_list_price(self):
+        zepto = self.verdict("Zepto Loot\n@ 24\nhttps://www.zepto.com/pn/mccain-chilli-garlic-potato-bites/pvid/bfec78f0")
+        self.assertEqual((zepto.tier, zepto.max_tier, zepto.label, zepto.price), (TIER_NORMAL, TIER_NORMAL, "Quick loot", 24.0))
+        instamart = self.verdict("Swiggy Instamart Loot\nPigeon Air Fryer Large 5.5L @2999\nhttps://instamart.in/item/N67PETRK4E\nAvailable in Hyderabad")
+        self.assertIn("Instamart loot post", instamart.reason)
+        self.assertIsNone(self.verdict("[ OVER ] Big Loot ₹100\nhttps://instamart.in/item/IU2N2FNXT6"), "announced as over")
+        self.assertIsNone(self.verdict("⚡️Swiggy Dineout Loot Starting at ₹11"), "a range, not a price")
+        self.assertIsNone(self.verdict("Bigbasket : Karwa Chauth Sargi Box at ₹19"), "nobody called it a loot")
+        self.assertIsNone(self.verdict("Loot @ 24\nhttps://amzn.to/x"), "not one of these apps")
+
+    def test_the_ordinary_rules_still_come_first(self):
+        post = self.verdict("Zepto price error\nSony WH-1000XM5 @ ₹499 (MRP ₹34,990)")
+        self.assertEqual((post.tier, post.label), (TIER_URGENT, "Price error?"))
+
+    def test_both_can_be_switched_off(self):
+        self.s.quick_coupon_pct = 0
+        self.s.quick_loots = False
+        self.assertIsNone(self.verdict("Swiggy : Get Flat ₹160 off on Order Above ₹199\nCode : FLASHSALE"))
+        self.assertIsNone(self.verdict("Blinkit Loot ₹1\nhttps://bitli.in/Z6dkVo8"))
 
 
 if __name__ == "__main__":

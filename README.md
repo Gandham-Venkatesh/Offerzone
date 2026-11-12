@@ -82,7 +82,14 @@ kit with a ₹999 "MRP" is "92% off".
 A deal already alerted that turns up in three channels within 20 minutes goes up one level.
 
 **From a deal site's page** (DesiDime, DealsMagnet) the same ladder applies; the price and the
-list price are taken from the card's own fields instead of being read out of the wording.
+list price are taken from the card's own fields instead of being read out of the wording. A card
+whose price fields are empty is an offer or a coupon, not a priced product: it alerts only on
+what its wording states outright (a labelled price and MRP, a percentage with a price, "price
+error", a trap), never on two bare numbers.
+
+The same deal usually arrives from several places within the hour. It rings once: deals are
+matched by the store product their link leads to (DesiDime's "Buy Now" links are followed for
+that), and where no link can be followed, by name and price.
 
 **From the price tracker** nothing is a claim: each item comes with the price the product
 usually has. So the bar is how far the price stands below that, and it sits lower:
@@ -102,7 +109,20 @@ qualifying purchase ("₹1 on orders above ₹2,999"), the post hints that the d
 its link could not be checked. A link that leads to a site that is not a known store keeps the
 alert at Quiet, and copies of the post in other channels never lift it above that.
 
-Ignored: "upto 90% off" banners, capped coupons ("80% off up to ₹160"), amounts that belong to an
+**Food and quick-commerce apps** (Instamart, Zepto, Blinkit, BigBasket, JioMart, Flipkart Minutes,
+Swiggy, Zomato, Domino's, EatSure, magicpin) get a rule of their own, because their prices cannot
+be read and their deals are coupons and one-off loots:
+
+| Alert | ntfy priority | When |
+|---|---|---|
+| **High** | 4 | a coupon that takes 80% or more off the order it needs ("₹160 off on ₹199") |
+| **Quiet** | 3 | a coupon worth 60% to 80% of its order (`QUICK_COUPON_PCT`) · a post that calls something a loot and names a price ("Zepto loot @ 24"), although no list price can be checked (`QUICK_LOOTS`) |
+
+A percentage coupon is counted at what its cap leaves of it: "80% off up to ₹50 on orders above
+₹499" is a tenth of the bill and stays quiet. These never ring at max priority, and they are
+usually tied to a city or an account.
+
+Ignored: "upto 90% off" banners, capped coupons of ordinary shops ("80% off up to ₹160"), amounts that belong to an
 offer (cashback, coupons, bank and exchange discounts, EMIs, recharges), ranges ("under ₹999",
 "starting ₹599"), percentages that describe the product ("90% less oil"), posts that announce
 the deal is over, posts older than 20 minutes (60 when the channel itself could not be read in
@@ -202,6 +222,8 @@ restarts the runs if they ever stop. And why does a run wait for its successor? 
 run started its successor and left, GitHub kept that successor queued for 14 minutes and then
 failed to start it, and the monitor was dark for four and a half hours. Now nobody leaves before
 the relief is really there, and a relief that does not come up within three minutes is replaced.
+If the scanner itself crashes during a shift, the run starts it again and still hands over; such
+a run shows as failed in the Actions tab.
 
 Cautions for this route:
 
@@ -269,7 +291,8 @@ leaves the popular-product pages unmarked. Whose turn it is survives a restart.
 Croma, Reliance Digital, Ajio and any Shopify shop (boAt, Noise, Portronics, ...) give their
 own website a plain list of products with prices. Those addresses go into `watchlist.txt` like
 any page; `watchlist.txt` shows the forms that work. Sorting by price or by discount is part of
-the address.
+the address. A Shopify product counts at the price of its cheapest variant, in stock or not, so
+that a size selling out is not mistaken for a price change.
 
 ## Commands
 
@@ -304,6 +327,8 @@ python -m lootwatch               # scan forever
 | `WATCH_DROP_PCT` | `50` | A watched product alerts when it falls this far below the price it was seen at |
 | `URGENT_DROP_PCT` | `80` | On a category page, a fall this deep is max priority; smaller ones are quieter |
 | `TRACKER_DROP_PCT` | `60` | A price tracker's item alerts from this far below the product's usual price |
+| `QUICK_COUPON_PCT` | `60` | A food or quick-commerce coupon alerts from this share of the order taken off. `0` turns it off |
+| `QUICK_LOOTS` | `1` | Quiet alerts for "Zepto loot @ 24" posts of those apps, which carry no list price. `0` turns them off |
 | `FLOOR_MRP_RATIO` | `3` | A new item under a floor needs a list price this many times the floor |
 | `NEW_LISTING_DISCOUNT` | `85` | A product new to a floor page, above the floor, alerts from this % off its list price |
 | `ABSENCE_HOURS` | `24` | A reported product that was gone this long is judged afresh when it returns |

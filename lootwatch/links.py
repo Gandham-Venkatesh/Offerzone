@@ -25,6 +25,7 @@ STORE_DOMAINS = (
     "amazon.in", "flipkart.com", "shopsy.in", "myntra.com", "ajio.com", "meesho.com", "tatacliq.com",
     "croma.com", "reliancedigital.in", "jiomart.com", "vijaysales.com", "nykaa.com", "nykaafashion.com",
     "purplle.com", "firstcry.com", "snapdeal.com", "blinkit.com", "zepto.com", "zeptonow.com", "swiggy.com",
+    "instamart.in",
     "bigbasket.com", "zomato.com", "pharmeasy.in", "1mg.com", "netmeds.com", "apollopharmacy.in",
     "samsung.com", "mi.com", "oneplus.in", "nothing.tech", "apple.com", "boat-lifestyle.com", "lenskart.com",
     "pepperfry.com", "decathlon.in", "bewakoof.com", "thesouledstore.com", "paytm.com", "paytmmall.com",
@@ -35,10 +36,6 @@ TRUSTED_SHORTENERS = (
     "ajiio.in", "ajiio.co", "ekaro.in", "extp.in", "clnk.in", "linkredirect.in", "inr.deals", "wishlink.com",
     "onelink.me", "app.link",
     "link.amazon",  # Amazon's own short links (only Amazon can own a .amazon name)
-    # DesiDime's "Buy Now" links. They are followed like any short link, because the store page
-    # they end at is what identifies the product: the same deal then arrives only once, whether
-    # it is read from the website, from DesiDime's channel or from somebody else's.
-    "ddime.in", "visit.desidime.com",
 )
 # Deal communities and blogs: not shops, but a link to their own deal page is not a scam shop either.
 DEAL_SITES = (
@@ -46,7 +43,14 @@ DEAL_SITES = (
     "dealsmagnet.com", "pricehistoryapp.com", "pricehistory.app", "buyhatke.com", "smartprix.com", "reddit.com",
 )
 # Anyone can point these anywhere, so they are only trusted once they resolve to a store.
-GENERIC_SHORTENERS = ("bit.ly", "bitli.in", "tinyurl.com", "cutt.ly", "t.co", "is.gd", "rb.gy", "page.link", "shorturl.at")
+GENERIC_SHORTENERS = (
+    "bit.ly", "bitli.in", "tinyurl.com", "cutt.ly", "t.co", "is.gd", "rb.gy", "page.link", "shorturl.at",
+    # DesiDime's "Buy Now" links lead wherever a member's deal points. They are followed: the store
+    # page they end at is what identifies the product (the same deal then rings once, whether it
+    # is read from the website, from DesiDime's channel or from somebody else's), and a link that
+    # ends on a shop nobody knows gets the same warning as any other.
+    "ddime.in", "visit.desidime.com",
+)
 
 # Query parameters that track the click rather than identify the page.
 _TRACKING_PARAMS = re.compile(
@@ -100,10 +104,10 @@ def classify_host(host: str) -> str:
         return "store"
     if _in(host, TRUSTED_SHORTENERS):
         return "affiliate"
+    if _in(host, GENERIC_SHORTENERS):  # before the deal sites: visit.desidime.com is a redirect, not a page
+        return "generic"
     if _in(host, DEAL_SITES):
         return "dealsite"
-    if _in(host, GENERIC_SHORTENERS):
-        return "generic"
     return "unknown"
 
 

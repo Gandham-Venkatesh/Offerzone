@@ -83,6 +83,8 @@ jobs:
       WATCH_DROP_PCT: ${{ vars.WATCH_DROP_PCT }}
       URGENT_DROP_PCT: ${{ vars.URGENT_DROP_PCT }}
       TRACKER_DROP_PCT: ${{ vars.TRACKER_DROP_PCT }}
+      QUICK_COUPON_PCT: ${{ vars.QUICK_COUPON_PCT }}
+      QUICK_LOOTS: ${{ vars.QUICK_LOOTS }}
       MAX_POST_AGE_MIN: ${{ vars.MAX_POST_AGE_MIN }}
       LATE_POST_MIN: ${{ vars.LATE_POST_MIN }}
       DAILY_ALERT_LIMIT: ${{ vars.DAILY_ALERT_LIMIT }}

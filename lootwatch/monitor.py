@@ -250,7 +250,7 @@ class Monitor:
                 # nothing but measurements. Neither needs its numbers read out of the wording.
                 if item.tracked:
                     verdict = evaluate_tracked(item.title, item.price, item.usual, self.s, low=item.low,
-                                               new_low=item.new_low)
+                                               new_low=item.new_low, mrp=item.mrp, in_stock=item.in_stock)
                 else:
                     verdict = evaluate_stated(item.title, item.body, item.price, item.mrp, self.s)
                 if verdict:
@@ -370,7 +370,8 @@ class Monitor:
             best_link = candidates[0]
         elif not candidates and verdict.needs_trusted_link:
             return
-        fingerprint = fingerprint or text_fingerprint(text, verdict.price)
+        # A coupon is the same coupon whatever link a channel puts under it.
+        fingerprint = verdict.key or fingerprint or text_fingerprint(text, verdict.price)
 
         lines = [text[:600].strip(), ""]
         lines.extend("⚠ " + flag for flag in verdict.flags)
@@ -457,8 +458,9 @@ class Monitor:
 
             alert_id = self.db.add_alert(fingerprint, verdict.tier, verdict.price, str(payload.get("title", "")),
                                          source, json.dumps(payload, ensure_ascii=False), now)
-            log.info("ALERT [%s] %s (%s%s)", TIER_NAMES.get(verdict.tier, verdict.tier), payload.get("title"),
-                     self._display(source), f", posted {_age(now - posted)}" if posted else "")
+            log.info("ALERT [%s] %s (%s%s%s)", TIER_NAMES.get(verdict.tier, verdict.tier), payload.get("title"),
+                     self._display(source), f", posted {_age(now - posted)}" if posted else "",
+                     f", opens {host_of(str(payload['click']))}" if payload.get("click") else "")
             self._deliver(alert_id, payload, verdict.tier)
             return True
 
@@ -562,12 +564,15 @@ class Monitor:
         if channels:
             shift = self._cycle_no % len(channels)
             channels = channels[shift:] + channels[:shift]
-        jobs = [(self._scan_watch, item) for item in self._watch_batch()]
+        # Deal sites first: a deal is on their page before it is anywhere else, and each is one
+        # quick request to a site of its own.
+        jobs = [(self._scan_feed, url) for url in self.s.feeds]
         jobs += [(self._scan_channel, channel) for channel in channels]
-        jobs += [(self._scan_feed, url) for url in self.s.feeds]
+        jobs += [(self._scan_watch, item) for item in self._watch_batch()]
         # One thread per job (they mostly wait their turn for their site): a site that hangs then
-        # holds up only its own pages, never another site's.
-        threads = max(1, min(32, max(self.s.workers, len(jobs))))
+        # holds up only its own pages, never another site's, and nothing queues behind a store
+        # whose dozen pages take the whole minute.
+        threads = max(1, min(128, max(self.s.workers, len(jobs))))
         with concurrent.futures.ThreadPoolExecutor(max_workers=threads, thread_name_prefix="scan") as pool:
             futures = {pool.submit(fn, arg, deadline): arg for fn, arg in jobs}
             for future in concurrent.futures.as_completed(futures):
