@@ -21,7 +21,7 @@ on:
         description: "run = scan now | doctor = report which sources work (doctor-detail lists every post) | test-ntfy = send one test push"
         type: choice
         default: run
-        options: [run, doctor, doctor-detail, test-ntfy]
+        options: [run, doctor, doctor-detail, test-ntfy, probe]
       watchlist_file:
         description: "Page list to use (default watchlist.txt; the -try files hold candidates that are only being tested)"
         type: string
@@ -34,6 +34,10 @@ on:
         description: "Feed list to use (default feeds.txt)"
         type: string
         default: feeds.txt
+      probe_file:
+        description: "Addresses to fetch in probe mode"
+        type: string
+        default: probe-urls.txt
 
 permissions:
   contents: read
@@ -117,8 +121,17 @@ jobs:
             doctor) python -m lootwatch --doctor ;;
             doctor-detail) python -m lootwatch --doctor --verbose ;;
             test-ntfy) python -m lootwatch --test-ntfy ;;
+            probe) python tools/probe.py "${{ inputs.probe_file || 'probe-urls.txt' }}" probe-out ;;
             *) python -m lootwatch --max-runtime "$LOOP_SECONDS" ;;
           esac
+
+      - name: Keep what the probe fetched
+        if: always() && env.MODE == 'probe'
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-out
+          path: probe-out
+          retention-days: 2
 
       - name: Save state
         if: always() && env.MODE == 'run'
