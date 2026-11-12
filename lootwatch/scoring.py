@@ -203,7 +203,10 @@ def evaluate_text(text: str, settings: Settings) -> Optional[Verdict]:
     deny = settings.deny_pattern
     if deny and deny.search(parsed.text):
         return None
-    verdict = _judge(parsed, settings)
+    return _hedge(_judge(parsed, settings), parsed)
+
+
+def _hedge(verdict: Optional[Verdict], parsed: ParsedText) -> Optional[Verdict]:
     if verdict and parsed.expired:
         # Stock wording inside a sentence ("blue is out of stock now, black available") is not a
         # clear announcement, so the post is not thrown away: it goes out one step quieter.
@@ -213,6 +216,90 @@ def evaluate_text(text: str, settings: Settings) -> Optional[Verdict]:
         verdict.max_tier = min(verdict.max_tier, TIER_HIGH)
         verdict.notes.append("the post hints that this may already be over")
     return verdict
+
+
+def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional[float],
+                    settings: Settings) -> Optional[Verdict]:
+    """Judge a deal-site card: a title, free text, and a price and list price the site gives in
+    fields of their own. Those two need no reading out of the wording; everything else about
+    the card (trap names, "price error" wording, sold-out notes, conditions) is read as in a post.
+    """
+    text = title + ("\n" + body if body else "")
+    if price is None:
+        return evaluate_text(text, settings)
+    parsed = parse_text(text)
+    if not parsed.text.strip() or parsed.expired == "over":
+        return None
+    deny = settings.deny_pattern
+    if deny and deny.search(parsed.text):
+        return None
+    mrp = mrp if mrp and mrp > price else None
+    discount = _pct(mrp, price)
+    hit = match_trap(parse_text(title), settings.traps, price=price)
+    if hit:
+        trap = hit[0]
+        # The same doubt as on a store listing: a spare part is named after the phone too. A
+        # list price of at least twice the trap price says it is the device.
+        if mrp and mrp >= trap.max_price * 2:
+            verdict = Verdict(TIER_URGENT, f"trap '{trap.name}' at or under {fmt_inr(trap.max_price)}", price, mrp,
+                              discount, label="Trap hit")
+        else:
+            verdict = Verdict(TIER_NORMAL, f"named like trap '{trap.name}' at {fmt_inr(price)}, but no list price "
+                              "shows it is the device itself", price, mrp, discount, label="Trap match?",
+                              max_tier=TIER_NORMAL)
+        return _hedge(verdict, parsed)
+    if parsed.error_phrase:
+        return _hedge(Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp, discount,
+                              label="Price error?"), parsed)
+    if mrp is None:
+        return None
+    saving = mrp - price
+    tier = _ladder(discount, saving, price, settings)
+    if not tier:
+        return None
+    reason = f"{discount:.0f}% off, saves {fmt_inr(saving)}"
+    cap = TIER_URGENT
+    if parsed.conditional:
+        cap, reason = TIER_HIGH, reason + " (needs a qualifying purchase)"
+    return _hedge(Verdict(min(tier, cap), reason, price, mrp, discount, max_tier=cap), parsed)
+
+
+def evaluate_tracked(title: str, price: float, usual: Optional[float], settings: Settings,
+                     low: Optional[float] = None, new_low: bool = False) -> Optional[Verdict]:
+    """Judge a product from a price tracker's list of fresh price drops.
+
+    Nothing here is a claim: ``usual`` is the average price the tracker measured for this very
+    product and ``low`` the lowest it ever saw. So the bar is how far the price stands below its
+    own average, and it sits lower than for a "% off MRP" claim. A price the product has already
+    been under before is one step less remarkable.
+    """
+    hit = match_trap(parse_text(title), settings.traps, price=price)
+    if hit:
+        trap = hit[0]
+        if usual and usual >= trap.max_price * 2:
+            return Verdict(TIER_URGENT, f"trap '{trap.name}' at or under {fmt_inr(trap.max_price)}", price, None,
+                           _pct(usual, price), label="Trap hit", was=usual)
+        return Verdict(TIER_NORMAL, f"named like trap '{trap.name}' at {fmt_inr(price)}, but its usual price does "
+                       "not show it is the device itself", price, None, _pct(usual, price), label="Trap match?",
+                       max_tier=TIER_NORMAL, was=usual)
+    if not usual or usual <= price:
+        return None
+    drop = (usual - price) / usual * 100
+    saving = usual - price
+    if drop < settings.tracker_drop_pct or saving < settings.urgent_min_saving:
+        return None
+    middle = (settings.tracker_drop_pct + settings.urgent_drop_pct) / 2
+    tier = TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle else TIER_NORMAL
+    reason = f"{drop:.0f}% below the {fmt_inr(usual)} it usually costs"
+    at_low = new_low or low is None or price <= low * 1.03
+    if at_low:
+        reason += ", its lowest price so far"
+    else:
+        tier -= 1
+        reason += f" (it has been as low as {fmt_inr(low)})"
+        if tier < TIER_NORMAL:
+            return None
+    return Verdict(tier, reason, price, None, drop, label="Price drop", was=usual, max_tier=tier)
 
 
 def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:

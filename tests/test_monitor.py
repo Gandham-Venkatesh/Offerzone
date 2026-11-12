@@ -670,6 +670,21 @@ class EndToEnd(unittest.TestCase):
                          [(4, "Far below list price: 90% off · ₹7,999 (MRP ₹79,999) — Google Pixel 9 (Obsidian, 256 GB)")])
         self.assertIn("new on this page at 90% off its list price ₹79,999", self.web.pushes[0]["message"])
 
+    def test_whose_turn_it_is_survives_a_restart_and_marked_pages_come_round_more_often(self):
+        self.settings.channels = []
+        urls = [self.web.base + f"/page{n}" for n in range(4)]
+        self.settings.watchlist = [WatchItem(url=urls[0], label="plain a"), WatchItem(url=urls[1], label="plain b"),
+                                   WatchItem(url=urls[2], label="marked", weight=4.0), WatchItem(url=urls[3], label="new")]
+        monitor = self.monitor()
+        now = time.time()
+        monitor.db.health_ok(source_key("watch", urls[0]), 5, now=now - 100)
+        monitor.db.health_fail(source_key("watch", urls[1]), "HTTP 500", now=now - 300)
+        monitor.db.health_ok(source_key("watch", urls[2]), 5, now=now - 60)
+        restarted = self.monitor()
+        order = [item.label for item in restarted._watch_batch()]
+        # never read -> first; then the longest wait, with the marked page's 60 s counting as 240 s.
+        self.assertEqual(order, ["new", "plain b", "marked", "plain a"])
+
     def ld_listing(self, products):
         nodes = []
         for sku, name, price, mrp in products:

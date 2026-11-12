@@ -306,6 +306,8 @@ class DB:
         now = int(now or time.time())
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM seen WHERE seen_at < ?", (now - 14 * 86400,))
+            # A price tracker lists thousands of drops a day, and none stays on its page for an hour.
+            self._conn.execute("DELETE FROM seen WHERE seen_at < ? AND item_id LIKE 'ph%'", (now - 2 * 86400,))
             self._conn.execute("DELETE FROM sightings WHERE seen_at < ?", (now - 2 * 86400,))
             self._conn.execute("DELETE FROM alerts WHERE created_at < ?", (now - 30 * 86400,))
             self._conn.execute("DELETE FROM price_obs WHERE ts < ?", (now - 45 * 86400,))

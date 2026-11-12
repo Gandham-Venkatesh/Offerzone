@@ -7,6 +7,7 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -20,9 +21,11 @@ from .db import DB
 from .fetch import Fetcher, policy_for
 from .links import TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host_of, product_key, text_fingerprint
 from .notify import Notifier, build_payload
-from .scoring import TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, evaluate_offer, evaluate_text
+from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, evaluate_offer, evaluate_stated,
+                      evaluate_text, evaluate_tracked)
+from .sources.dealsites import SiteError, site_label, site_reader
 from .sources.feeds import FeedError, parse_feed
-from .sources.stores import extract_page
+from .sources.stores import extract_page, request_headers
 from .sources.telegram import parse_channel_page
 
 log = logging.getLogger("lootwatch")
@@ -113,6 +116,13 @@ class Monitor:
         self._names.update({source_key("feed", u): short_url(u, 50) for u in settings.feeds})
         self._names.update({source_key("watch", w.url): w.label or short_url(w.url, 50) for w in settings.watchlist})
         self._watch_hosts = {source_key("watch", w.url): host_of(w.url) for w in settings.watchlist}
+        # Whose turn it is survives a restart: with a long list and short runs, the pages at the
+        # top of the file would otherwise be read again and again and the rest hardly ever.
+        attempts = {row[0]: max(row[4] or 0, row[5] or 0) for row in db.health_rows()}
+        for item in settings.watchlist:
+            last = attempts.get(source_key("watch", item.url))
+            if last:
+                self._watch_checked[item.url] = float(last)
 
     def stop(self) -> None:
         self._stop.set()
@@ -190,9 +200,11 @@ class Monitor:
                 log.exception("failed to process %s", post.url)
 
     def _scan_feed(self, url: str, deadline: float) -> None:
+        """One line of feeds.txt: an RSS/Atom feed, or the new-deals page of a deal site."""
         source = source_key("feed", url)
-        result = self.fetcher.get(url, headers={"Accept": "application/atom+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.5"},
-                                  deadline=deadline)
+        reader = site_reader(url)
+        headers = None if reader else {"Accept": "application/atom+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.5"}
+        result = self.fetcher.get(url, headers=headers, deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
             return
         if not result.ok:
@@ -200,8 +212,8 @@ class Monitor:
             self._count("source_failures")
             return
         try:
-            items = parse_feed(result.text)
-        except FeedError as exc:
+            items = reader(result.text, url, time.time()) if reader else parse_feed(result.text)
+        except (FeedError, SiteError) as exc:
             self.db.health_fail(source, str(exc))
             self._count("source_failures")
             return
@@ -217,6 +229,7 @@ class Monitor:
         self.db.mark_seen(source, fresh)
         now = time.time()
         max_age = self._max_post_age(previous_ok, now)
+        label = site_label(url) if reader else host_of(url)
         for item in items:
             if item.item_id not in fresh:
                 continue
@@ -227,14 +240,25 @@ class Monitor:
                 self._count("stale")
                 continue
             try:
-                self._handle_post(source, host_of(url), item.text, item.text, item.links, item.url, item.ts)
+                if not reader:
+                    self._handle_post(source, label, item.text, item.text, item.links, item.url, item.ts)
+                    continue
+                # A deal-site card states its prices in fields of their own; a tracker item is
+                # nothing but measurements. Neither needs its numbers read out of the wording.
+                if item.tracked:
+                    verdict = evaluate_tracked(item.title, item.price, item.usual, self.s, low=item.low,
+                                               new_low=item.new_low)
+                else:
+                    verdict = evaluate_stated(item.title, item.body, item.price, item.mrp, self.s)
+                if verdict:
+                    self._announce(verdict, source, label, item.text, item.links, item.url, item.ts)
             except Exception:
                 log.exception("failed to process feed item %s", item.url)
 
     def _scan_watch(self, item: WatchItem, deadline: float) -> None:
         source = source_key("watch", item.url)
         host = host_of(item.url)
-        result = self.fetcher.get(item.url, deadline=deadline)
+        result = self.fetcher.get(item.url, headers=request_headers(item.url), deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
             return
         self._watch_checked[item.url] = time.time()
@@ -296,8 +320,12 @@ class Monitor:
     def _handle_post(self, source: str, label: str, text: str, analysis_text: str, links: List[str],
                      post_url: str, ts: Optional[float]) -> None:
         verdict = evaluate_text(analysis_text, self.s)
-        if verdict is None:
-            return
+        if verdict is not None:
+            self._announce(verdict, source, label, text, links, post_url, ts)
+
+    def _announce(self, verdict: Verdict, source: str, label: str, text: str, links: List[str],
+                  post_url: str, ts: Optional[float]) -> None:
+        """Check where a judged deal's links lead, then push it."""
         candidates = deal_links(links)
         best_link, fingerprint, trusted = "", None, False
         strange_host, unchecked = "", ""
@@ -361,9 +389,10 @@ class Monitor:
             tags=["warning"] if verdict.flags else _TAGS[verdict.tier],
             click=best_link or post_url, actions=actions,
         )
-        self._emit(fingerprint, verdict, payload, source)
+        self._emit(fingerprint, verdict, payload, source, posted=ts)
 
-    def _emit(self, fingerprint: str, verdict: Verdict, payload: Dict[str, object], source: str) -> bool:
+    def _emit(self, fingerprint: str, verdict: Verdict, payload: Dict[str, object], source: str,
+              posted: Optional[float] = None) -> bool:
         """De-duplicate, respect the daily budget, then send (or queue for retry)."""
         with self._emit_lock:
             now = time.time()
@@ -407,7 +436,8 @@ class Monitor:
 
             alert_id = self.db.add_alert(fingerprint, verdict.tier, verdict.price, str(payload.get("title", "")),
                                          source, json.dumps(payload, ensure_ascii=False), now)
-            log.info("ALERT [%s] %s (%s)", TIER_NAMES.get(verdict.tier, verdict.tier), payload.get("title"), source)
+            log.info("ALERT [%s] %s (%s%s)", TIER_NAMES.get(verdict.tier, verdict.tier), payload.get("title"),
+                     self._display(source), f", posted {_age(now - posted)}" if posted else "")
             self._deliver(alert_id, payload, verdict.tier)
             return True
 
@@ -464,10 +494,20 @@ class Monitor:
 
     # ---------------------------------------------------------- the cycle ---
     def _watch_batch(self) -> List[WatchItem]:
-        """Watchlist entries to check this cycle: longest-unchecked first, capped per site by its pacing."""
+        """Watchlist entries to check this cycle, capped per site by its pacing.
+
+        The most overdue page goes first. A page marked "!" or "!!" in the list counts its wait
+        4 or 12 times over, so it comes round that much more often than an unmarked one.
+        """
         budget: Dict[str, int] = {}
         chosen: List[WatchItem] = []
-        for item in sorted(self.s.watchlist, key=lambda w: self._watch_checked.get(w.url, 0.0)):
+        now = time.time()
+
+        def overdue(item: WatchItem) -> float:
+            last = self._watch_checked.get(item.url)
+            return float("inf") if not last else max(0.0, now - last) * item.weight
+
+        for item in sorted(self.s.watchlist, key=overdue, reverse=True):
             host = (urlsplit(item.url).hostname or "").lower()
             if host not in budget:
                 policy = policy_for(host)
@@ -686,8 +726,29 @@ class Monitor:
             if flag and len(new) == 1 and self.db.get(f"boot:{new[0]}") == "":
                 self.db.set(f"boot:{new[0]}", flag)
 
-    def run(self, once: bool = False, max_runtime: Optional[float] = None) -> int:
-        """Scan until stopped. Returns how many alerts had to be written off undelivered."""
+    @staticmethod
+    def _relieved(handover_file: str) -> bool:
+        """True once the handover file is there. It names the run that takes over, or says "none"
+        when no next run could be started and waiting any longer is pointless."""
+        try:
+            with open(handover_file, encoding="utf-8") as handle:
+                word = handle.read(100).strip()
+        except OSError:
+            return False
+        if word == "none":
+            log.warning("no next run could be started; stopping at the end of this shift")
+        else:
+            log.info("the next run is ready: handing over")
+        return True
+
+    def run(self, once: bool = False, max_runtime: Optional[float] = None,
+            handover_file: Optional[str] = None, max_overtime: float = 0.0) -> int:
+        """Scan until stopped. Returns how many alerts had to be written off undelivered.
+
+        ``max_runtime`` is the length of a shift. With ``handover_file`` the shift does not simply
+        end: scanning goes on until that file appears (whoever starts the next run creates it
+        once that run is ready to take over), for at most ``max_overtime`` seconds more.
+        """
         self._adopt_old_names()
         self.db.forget_health(self._all_sources())
         log.info(
@@ -698,6 +759,7 @@ class Monitor:
         started = time.time()
         number = 0
         last_duration = 0.0
+        overtime = False
         while not self._stop.is_set():
             number += 1
             cycle_started = time.time()
@@ -715,7 +777,22 @@ class Monitor:
                 break
             pause = max(1.0, cycle_started + self.s.interval - time.time())
             if max_runtime is not None and time.time() + pause + last_duration > started + max_runtime:
-                break
+                if not handover_file:
+                    break
+                if not overtime:
+                    overtime = True
+                    log.info("shift over after %d scans; staying on duty until the next run is ready", number)
+                if self._relieved(handover_file):
+                    break
+                if time.time() + pause > started + max_runtime + max_overtime:
+                    log.warning("no next run became ready in %ds of overtime; stopping anyway", int(max_overtime))
+                    break
+                wake = time.time() + pause
+                while time.time() < wake and not self._stop.is_set() and not os.path.exists(handover_file):
+                    self._stop.wait(1.0)
+                if self._relieved(handover_file):
+                    break
+                continue
             self._stop.wait(pause)
         self.flush_outbox()
         return int(self.stats.get("undelivered", 0))

@@ -34,10 +34,15 @@ TRUSTED_SHORTENERS = (
     "amzn.to", "amzn.in", "a.co", "fkrt.it", "fkrt.cc", "fkrt.co", "fkrt.to", "fkrt.site", "myntr.it", "myntr.in",
     "ajiio.in", "ajiio.co", "ekaro.in", "extp.in", "clnk.in", "linkredirect.in", "inr.deals", "wishlink.com",
     "onelink.me", "app.link",
+    "link.amazon",  # Amazon's own short links (only Amazon can own a .amazon name)
+    # DesiDime's "Buy Now" links. They are followed like any short link, because the store page
+    # they end at is what identifies the product: the same deal then arrives only once, whether
+    # it is read from the website, from DesiDime's channel or from somebody else's.
+    "ddime.in", "visit.desidime.com",
 )
 # Deal communities and blogs: not shops, but a link to their own deal page is not a scam shop either.
 DEAL_SITES = (
-    "desidime.com", "ddime.in", "indiafreestuff.in", "freekaamaal.com", "bigtricks.in", "flipshope.com", "grabon.in",
+    "desidime.com", "indiafreestuff.in", "freekaamaal.com", "bigtricks.in", "flipshope.com", "grabon.in",
     "dealsmagnet.com", "pricehistoryapp.com", "pricehistory.app", "buyhatke.com", "smartprix.com", "reddit.com",
 )
 # Anyone can point these anywhere, so they are only trusted once they resolve to a store.

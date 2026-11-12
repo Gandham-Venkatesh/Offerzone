@@ -1,0 +1,130 @@
+# Other stores under test
+https://api.croma.com/searchservices/v1/category/20?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma laptops
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=mobile%20phone%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search mobile phone
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=mobile%20phone%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular mobile phone
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=television%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search television
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=television%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular television
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=tablet%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search tablet
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=tablet%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular tablet
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=refrigerator%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search refrigerator
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=refrigerator%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular refrigerator
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=washing%20machine%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search washing machine
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=washing%20machine%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular washing machine
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=air%20conditioner%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search air conditioner
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=air%20conditioner%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular air conditioner
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=headphones%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search headphones
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=headphones%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular headphones
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=smart%20watch%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search smart watch
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=smart%20watch%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular smart watch
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=camera%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search camera
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=camera%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular camera
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=soundbar%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search soundbar
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=soundbar%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular soundbar
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=microwave%20oven%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search microwave oven
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=microwave%20oven%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular microwave oven
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=gaming%20console%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search gaming console
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=gaming%20console%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular gaming console
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search macbook
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=macbook%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular macbook
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=iphone%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma search iphone
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=iphone%3Arelevance&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma popular iphone
+https://api.croma.com/searchservices/v1/search?currentPage=0&query=%3Adiscount-desc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma biggest discounts
+https://api.croma.com/searchservices/v1/category/10?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 10
+https://api.croma.com/searchservices/v1/category/95?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 95
+https://api.croma.com/searchservices/v1/category/97?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 97
+https://api.croma.com/searchservices/v1/category/5?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 5
+https://api.croma.com/searchservices/v1/category/7?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 7
+https://api.croma.com/searchservices/v1/category/13?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 13
+https://api.croma.com/searchservices/v1/category/32?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 32
+https://api.croma.com/searchservices/v1/category/17?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 17
+https://api.croma.com/searchservices/v1/category/22?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 22
+https://api.croma.com/searchservices/v1/category/23?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 23
+https://api.croma.com/searchservices/v1/category/392?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 392
+https://api.croma.com/searchservices/v1/category/997?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 997
+https://api.croma.com/searchservices/v1/category/814?currentPage=0&query=%3Aprice-asc&fields=FULL&channel=WEB&channelCode=400049&pageSize=40 | | Croma category 814
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?page_no=1&page_size=50&sort_on=discount_dsc | | Reliance Digital biggest discounts
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/laptops/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital laptops
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?f=category%3Asmart-phones&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital smart-phones (f=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?category=smart-phones&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital smart-phones (category=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?f=category%3Ahigh-end-laptops&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital high-end-laptops (f=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?category=high-end-laptops&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital high-end-laptops (category=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?f=category%3Aregular-tablets&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital regular-tablets (f=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?category=regular-tablets&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital regular-tablets (category=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?f=category%3Atrue-wireless&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital true-wireless (f=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?category=true-wireless&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital true-wireless (category=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?f=category%3Asports-fitness-watches&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital sports-fitness-watches (f=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?category=sports-fitness-watches&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital sports-fitness-watches (category=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?f=category%3Abluetooth-wifi-speakers&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital bluetooth-wifi-speakers (f=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?category=bluetooth-wifi-speakers&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital bluetooth-wifi-speakers (category=)
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/mobiles/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection mobiles
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/smartphones/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection smartphones
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/televisions/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection televisions
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/tablets/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection tablets
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/refrigerators/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection refrigerators
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/washing-machines/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection washing-machines
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/air-conditioners/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection air-conditioners
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/headphones/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection headphones
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/smart-watches/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection smart-watches
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/collections/cameras/items?page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital collection cameras
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?q=television&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital search television
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?q=refrigerator&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital search refrigerator
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?q=washing%20machine&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital search washing machine
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?q=air%20conditioner&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital search air conditioner
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?q=iphone&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital search iphone
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?q=macbook&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital search macbook
+https://www.reliancedigital.in/ext/raven-api/catalog/v1.0/products?q=playstation&page_no=1&page_size=50&sort_on=price_asc | | Reliance Digital search playstation
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=nike%3Aprce-asc | | Ajio nike cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=nike%3Adiscount-desc | | Ajio nike biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=adidas%3Aprce-asc | | Ajio adidas cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=adidas%3Adiscount-desc | | Ajio adidas biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=puma%3Aprce-asc | | Ajio puma cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=puma%3Adiscount-desc | | Ajio puma biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=levis%3Aprce-asc | | Ajio levis cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=levis%3Adiscount-desc | | Ajio levis biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=tommy%20hilfiger%3Aprce-asc | | Ajio tommy hilfiger cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=tommy%20hilfiger%3Adiscount-desc | | Ajio tommy hilfiger biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=new%20balance%3Aprce-asc | | Ajio new balance cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=new%20balance%3Adiscount-desc | | Ajio new balance biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=asics%3Aprce-asc | | Ajio asics cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=asics%3Adiscount-desc | | Ajio asics biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=skechers%3Aprce-asc | | Ajio skechers cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=skechers%3Adiscount-desc | | Ajio skechers biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=superdry%3Aprce-asc | | Ajio superdry cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=superdry%3Adiscount-desc | | Ajio superdry biggest discounts
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=gap%3Aprce-asc | | Ajio gap cheapest
+https://www.ajio.com/api/search?currentPage=0&pageSize=45&format=json&query=gap%3Adiscount-desc | | Ajio gap biggest discounts
+https://www.boat-lifestyle.com/products.json?limit=250 | | boAt catalogue
+https://www.gonoise.com/products.json?limit=250 | | Noise catalogue
+https://www.portronics.com/products.json?limit=250 | | Portronics catalogue
+https://www.boultaudio.com/products.json?limit=250 | | Boult catalogue
+https://www.zebronics.com/products.json?limit=250 | | Zebronics catalogue
+https://www.mcaffeine.com/products.json?limit=250 | | mCaffeine catalogue
+https://beminimalist.co/products.json?limit=250 | | Minimalist catalogue
+https://bombayshavingcompany.com/products.json?limit=250 | | Bombay Shaving Company catalogue
+https://plumgoodness.com/products.json?limit=250 | | Plum catalogue
+https://www.ambraneindia.com/products.json?limit=250 | | Ambrane catalogue
+https://www.nothing.tech/products.json?limit=250 | | Nothing catalogue
+https://www.fire-boltt.com/products.json?limit=250 | | Fire-Boltt catalogue
+https://in.jbl.com/products.json?limit=250 | | JBL catalogue
+https://www.wakefit.co/products.json?limit=250 | | Wakefit catalogue
+https://www.thesleepcompany.in/products.json?limit=250 | | The Sleep Company catalogue
+https://www.snitch.com/products.json?limit=250 | | Snitch catalogue
+https://www.themancompany.com/products.json?limit=250 | | The Man Company catalogue
+https://www.beardo.in/products.json?limit=250 | | Beardo catalogue
+https://www.mokobara.com/products.json?limit=250 | | Mokobara catalogue
+https://www.uppercase.co.in/products.json?limit=250 | | uppercase catalogue
+https://www.atomberg.com/products.json?limit=250 | | Atomberg catalogue
+https://www.pebblecart.com/products.json?limit=250 | | Pebble catalogue
+https://www.crossbeats.com/products.json?limit=250 | | Crossbeats catalogue
+https://www.damensch.com/products.json?limit=250 | | DaMENSCH catalogue
+https://www.bewakoof.com/products.json?limit=250 | | Bewakoof catalogue
+https://www.vijaysales.com/c/laptops | | Vijay Sales laptops
+https://www.vijaysales.com/c/mobiles | | Vijay Sales mobiles
+https://www.vijaysales.com/c/televisions | | Vijay Sales televisions
+https://www.vijaysales.com/c/tablets | | Vijay Sales tablets
+https://www.vijaysales.com/c/air-conditioners | | Vijay Sales air-conditioners
+https://www.vijaysales.com/c/refrigerators | | Vijay Sales refrigerators
+https://www.vijaysales.com/c/washing-machines | | Vijay Sales washing-machines
+https://www.vijaysales.com/c/headphones-and-earphones | | Vijay Sales headphones-and-earphones
+https://www.vijaysales.com/c/smart-watches | | Vijay Sales smart-watches
+https://www.vijaysales.com/c/cameras | | Vijay Sales cameras

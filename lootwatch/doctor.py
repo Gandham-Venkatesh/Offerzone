@@ -17,9 +17,11 @@ from .config import Settings
 from .fetch import HAS_CURL_CFFI, Fetcher
 from .links import TRUSTED_KINDS, classify_host, deal_links, host_of
 from .monitor import _age, _first_line, short_url
-from .scoring import TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_text, is_side_product
+from .scoring import (TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_stated, evaluate_text, evaluate_tracked,
+                      is_side_product)
 from .sources.feeds import FeedError, parse_feed
-from .sources.stores import extract_page
+from .sources.dealsites import SiteError, site_reader
+from .sources.stores import extract_page, request_headers
 from .sources.telegram import parse_channel_page
 from .textparse import fmt_inr
 
@@ -122,31 +124,47 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
             print(f"  {count:>4} x {host:<28} {note}", file=out)
 
     if settings.feeds:
-        print(f"\nFEEDS ({len(settings.feeds)})", file=out)
+        print(f"\nFEEDS AND DEAL SITES ({len(settings.feeds)})", file=out)
     for url in settings.feeds:
         totals["feed"] += 1
-        result = fetcher.get(url)
+        result = fetcher.get(url, headers=None if site_reader(url) else {
+            "Accept": "application/atom+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.5"})
         name = short_url(url, 34)
         if not result.ok:
             print(_row("FAIL", name, result.problem), file=out)
             continue
+        reader = site_reader(url)
         try:
-            items = parse_feed(result.text)
-        except FeedError as exc:
+            items = reader(result.text, url, now) if reader else parse_feed(result.text)
+        except (FeedError, SiteError) as exc:
             print(_row("FAIL", name, str(exc)), file=out)
             continue
         totals["feed_ok"] += 1
         stamps = [i.ts for i in items if i.ts]
-        hits = sum(1 for i in items if evaluate_text(i.text, settings))
-        print(_row("OK", name, f"{len(items)} entries, newest {_age(now - max(stamps)) if stamps else 'unknown age'}"
-                               f" | would alert: {hits}"), file=out)
+        verdicts = []
+        for i in items:
+            if not reader:
+                verdict = evaluate_text(i.text, settings)
+            elif i.tracked:
+                verdict = evaluate_tracked(i.title, i.price, i.usual, settings, low=i.low, new_low=i.new_low)
+            else:
+                verdict = evaluate_stated(i.title, i.body, i.price, i.mrp, settings)
+            verdicts.append(verdict)
+        hits = sum(1 for v in verdicts if v)
+        print(_row("OK", name, f"{len(items)} {'deals' if reader else 'entries'}, newest "
+                               f"{_age(now - max(stamps)) if stamps else 'unknown age'} | would alert: {hits}"), file=out)
+        if verbose:
+            for i, verdict in zip(items, verdicts):
+                mark = f"P{verdict.tier} {verdict.headline} [{'; '.join([verdict.reason] + verdict.notes)}]" if verdict else "--"
+                age = _age(now - i.ts) if i.ts else "?"
+                print(f"          {age:>9} | {mark} | {_one_line(i.text, 200)}", file=out)
 
     if settings.watchlist:
         print(f"\nWATCHLIST ({len(settings.watchlist)}) - same-site pages are fetched a few seconds apart", file=out)
     for item in settings.watchlist:
         totals["watch"] += 1
         name = item.label or short_url(item.url, 34)
-        result = fetcher.get(item.url)
+        result = fetcher.get(item.url, headers=request_headers(item.url))
         if not result.ok:
             print(_row("FAIL", name[:34], f"{host_of(item.url)}: {result.problem}"), file=out)
             if verbose and result.text:

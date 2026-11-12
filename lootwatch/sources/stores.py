@@ -376,6 +376,8 @@ def _mine(blob: Any, host: str, base_url: str, offers: Dict[str, Offer]) -> None
         ident = next((str(node[k]) for k in _ID_KEYS if isinstance(node.get(k), (str, int)) and str(node[k])), "")
         ident = ident or hashlib.sha1(name.encode("utf-8")).hexdigest()[:12]
         link = next((node[k] for k in _URL_KEYS if isinstance(node.get(k), str) and node[k]), "")
+        if link and not link.startswith(("http://", "https://", "/")) and "/" in link:
+            link = "/" + link  # "some-product/p/123": a path from the site's root, not from this page
         url = urljoin(base_url, link) if link and ("/" in link or link.startswith("http")) else base_url
         key = f"{host}:{ident}"
         offers.setdefault(key, Offer(key, host, name.strip(), price, _clean_mrp(price, mrp), url))
@@ -447,11 +449,157 @@ def _generic(soup: BeautifulSoup, url: str, host: str, store_key: str = "") -> P
     return PageResult("none", note="no product data found in the page (it may need JavaScript, a login or a location)")
 
 
+# ------------------------------------------------- stores that answer in JSON -----
+# Some stores hand their own website a plain list of products. Asking for that list is lighter
+# for them and far more exact for us than reading the page built from it.
+MAX_CATALOGUE = 250
+_JSON_ACCEPT = {"Accept": "application/json, text/plain, */*"}
+
+
+def request_headers(url: str) -> Optional[Dict[str, str]]:
+    """Extra request headers for a watched address: its product-list addresses are asked for JSON."""
+    parts = urlsplit(url)
+    path = parts.path.lower()
+    host = (parts.hostname or "").lower()
+    if path.endswith(".json") or "/api/" in path or "-api/" in path or host.startswith("api."):
+        return dict(_JSON_ACCEPT)
+    return None
+
+
+def _number(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value > 0 else None
+    try:
+        number = float(str(value).replace(",", "").strip())
+    except ValueError:
+        return None
+    return number if number > 0 else None
+
+
+def _fynd_items(data: Dict[str, Any], site: str) -> List[Offer]:
+    """Reliance Digital (the Fynd / Jio Commerce storefront)."""
+    offers: List[Offer] = []
+    for item in data.get("items") or []:
+        if not isinstance(item, dict) or item.get("sellable") is False:
+            continue
+        name, slug = item.get("name"), item.get("slug")
+        prices = item.get("price") if isinstance(item.get("price"), dict) else {}
+        price = _number((prices.get("effective") or {}).get("min"))
+        mrp = _number((prices.get("marked") or {}).get("min"))
+        if not isinstance(name, str) or not name.strip() or not price:
+            continue
+        ident = str(item.get("uid") or item.get("item_code") or slug or name)
+        link = f"https://www.{site}/product/{slug}" if isinstance(slug, str) and slug else f"https://www.{site}/"
+        offers.append(Offer(f"{site}:{ident}", site, name.strip(), price, _clean_mrp(price, mrp), link))
+    return offers
+
+
+def _hybris_products(data: Dict[str, Any], site: str) -> List[Offer]:
+    """Croma and Ajio: a "products" list whose entries carry price.value and a relative url."""
+    from ..links import product_key
+
+    offers: List[Offer] = []
+    for item in data.get("products") or []:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        price = _number((item.get("price") or {}).get("value")) if isinstance(item.get("price"), dict) else None
+        if not isinstance(name, str) or not name.strip() or not price:
+            continue
+        mrp = None
+        for key in ("mrp", "wasPriceData"):
+            if isinstance(item.get(key), dict):
+                mrp = _number(item[key].get("value"))
+                break
+        brand = (item.get("fnlColorVariantData") or {}).get("brandName") if isinstance(item.get("fnlColorVariantData"), dict) else ""
+        title = name.strip() if not brand or name.lower().startswith(str(brand).lower()) else f"{brand} {name.strip()}"
+        path = item.get("url") if isinstance(item.get("url"), str) else ""
+        link = urljoin(f"https://www.{site}/", path) if path else f"https://www.{site}/"
+        ident = str(item.get("code") or path or name)
+        offers.append(Offer(product_key(link) or f"{site}:{ident}", site, title, price, _clean_mrp(price, mrp), link))
+    return offers
+
+
+def _shopify_products(data: Dict[str, Any], host: str) -> List[Offer]:
+    """A Shopify shop's public catalogue (/products.json): the cheapest variant in stock of each product."""
+    offers: List[Offer] = []
+    for item in data.get("products") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("variants"), list):
+            continue
+        title, handle = item.get("title"), item.get("handle")
+        best = None
+        for variant in item["variants"]:
+            if not isinstance(variant, dict) or variant.get("available") is False:
+                continue
+            price = _number(variant.get("price"))
+            if price and (best is None or price < best[0]):
+                best = (price, _number(variant.get("compare_at_price")))
+        if best is None or not isinstance(title, str) or not title.strip() or not isinstance(handle, str):
+            continue
+        offers.append(Offer(f"{host}:{item.get('id') or handle}", host, title.strip(), best[0],
+                            _clean_mrp(best[0], best[1]), f"https://{host}/products/{handle}"))
+    return offers
+
+
+def _json_page(url: str, text: str) -> PageResult:
+    host = host_of(url)
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return PageResult("none", note="the address answered with something that is neither a page nor valid JSON")
+    offers: List[Offer] = []
+    if isinstance(data, dict):
+        products = data.get("products")
+        first = products[0] if isinstance(products, list) and products and isinstance(products[0], dict) else {}
+        if isinstance(data.get("items"), list) and host.endswith("reliancedigital.in"):
+            offers = _fynd_items(data, "reliancedigital.in")
+        elif "variants" in first and "handle" in first:
+            offers = _shopify_products(data, host)
+        elif isinstance(first.get("price"), dict):
+            site = "croma.com" if host.endswith("croma.com") else "ajio.com" if host.endswith("ajio.com") else host
+            offers = _hybris_products(data, site)
+    if not offers:
+        mined: Dict[str, Offer] = {}
+        _mine(data, host, url, mined)
+        offers = list(mined.values())
+    if not offers:
+        return PageResult("none", note="no products found in the JSON this address returned")
+    return PageResult("listing", offers[:MAX_CATALOGUE])
+
+
+def _vijaysales_listing(soup: BeautifulSoup) -> PageResult:
+    offers: List[Offer] = []
+    for card in soup.select("div.product-card[data-child-sku]"):
+        sku = str(card.get("data-child-sku", "")).strip()
+        name = card.select_one(".product-name")
+        link = card.select_one("a[href]")
+        price_el = card.select_one("[data-price]")
+        price = _number(price_el.get("data-price")) if price_el is not None else None
+        if not sku or name is None or not price or not name.get_text(strip=True):
+            continue
+        mrp_el = card.select_one(".originalPrice")
+        mrp = parse_amount(mrp_el.get_text(" ", strip=True)) if mrp_el is not None else None
+        href = urljoin("https://www.vijaysales.com/", str(link.get("href", ""))) if link is not None else "https://www.vijaysales.com/"
+        offers.append(Offer(f"vijaysales.com:{sku}", "vijaysales.com", name.get_text(" ", strip=True), price,
+                            _clean_mrp(price, mrp), href))
+        if len(offers) >= MAX_OFFERS:
+            break
+    if not offers:
+        return PageResult("none", note="no product cards found on the Vijay Sales page")
+    return PageResult("listing", offers)
+
+
 def extract_page(url: str, html: str) -> PageResult:
     """Offers found on a watched page, whatever store it belongs to."""
     host = host_of(url)
     path = urlsplit(url).path
+    if html.lstrip()[:1] in ("{", "["):
+        return _json_page(url, html)
     soup = make_soup(html)
+    if host.endswith("vijaysales.com") and "/p/" not in path:
+        return _vijaysales_listing(soup)
     if host.endswith("amazon.in"):
         if _ASIN.search(path):
             return _amazon_product(soup, url)

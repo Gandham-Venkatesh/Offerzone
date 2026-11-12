@@ -85,18 +85,30 @@ def load_channels(path: Path) -> List[str]:
     return channels
 
 
+# How much more often a page marked "!" or "!!" comes round than an unmarked one.
+WATCH_WEIGHTS = {0: 1.0, 1: 4.0, 2: 12.0}
+
+
 @dataclass
 class WatchItem:
     url: str
     target: Optional[float] = None  # alert when the price is at or below this
     label: str = ""
+    weight: float = 1.0  # its share of the store's reading time, against an unmarked page's 1
 
 
 def load_watchlist(path: Path) -> List[WatchItem]:
-    """Lines look like:  URL  |  5000  |  optional label   (only the URL is required)."""
+    """Lines look like:  URL  |  5000  |  optional label   (only the URL is required).
+
+    A line may start with "!" or "!!": when a store has more pages than fit into one scan, such
+    a page is read 4 or 12 times as often as an unmarked one.
+    """
     items: List[WatchItem] = []
     seen = set()
     for line in read_lines(path):
+        marks = re.match(r"^(!{1,2})\s*", line)
+        if marks:
+            line = line[marks.end():]
         parts = [p.strip() for p in line.split("|")]
         url = parts[0]
         if not re.match(r"^https?://", url, re.I):
@@ -105,7 +117,7 @@ def load_watchlist(path: Path) -> List[WatchItem]:
         if url in seen:
             continue
         seen.add(url)
-        item = WatchItem(url=url)
+        item = WatchItem(url=url, weight=WATCH_WEIGHTS[len(marks.group(1)) if marks else 0])
         for part in parts[1:]:
             number = re.fullmatch(r"(?:₹|rs\.?)?\s*([\d,]+(?:\.\d+)?)", part, re.I)
             if number and item.target is None:
@@ -189,6 +201,7 @@ class Settings:
     loot_price: float = 10.0  # a price this low ("Rs 1 deal") counts even when the rupee saving is small
     watch_drop_pct: float = 50.0  # % drop against a watched product's own usual price
     urgent_drop_pct: float = 80.0  # on a category page, a drop this deep is max priority; smaller ones are quieter
+    tracker_drop_pct: float = 60.0  # a price tracker's drop counts from this % below the product's usual price
     floor_mrp_ratio: float = 3.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
     new_listing_discount: float = 85.0  # a NEW item above a floor alerts from this % off its list price
     absence_hours: float = 24.0  # a product unseen for this long is judged afresh when it returns
@@ -215,6 +228,7 @@ class Settings:
     telegram_base_url: str = "https://t.me/s"
     deny_words: str = DEFAULT_DENY_WORDS
     extra_store_domains: str = ""
+    site_gaps: str = ""  # "flipkart.com=3-5,t.me=0.5-1": seconds between two requests to a site
 
     db_path: str = "lootwatch.db"
     channels_file: str = "channels.txt"
@@ -245,6 +259,7 @@ class Settings:
             loot_price=_num("LOOT_PRICE", 10.0),
             watch_drop_pct=_num("WATCH_DROP_PCT", 50.0),
             urgent_drop_pct=_num("URGENT_DROP_PCT", 80.0),
+            tracker_drop_pct=_num("TRACKER_DROP_PCT", 60.0),
             floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 3.0),
             new_listing_discount=_num("NEW_LISTING_DISCOUNT", 85.0),
             absence_hours=_num("ABSENCE_HOURS", 24.0),
@@ -268,6 +283,7 @@ class Settings:
             telegram_base_url=_get("TELEGRAM_BASE_URL", "https://t.me/s").rstrip("/"),
             deny_words=_get("DENY_WORDS", DEFAULT_DENY_WORDS),
             extra_store_domains=_get("EXTRA_STORE_DOMAINS", ""),
+            site_gaps=_get("SITE_GAPS", ""),
             db_path=_get("DB_PATH", "lootwatch.db"),
             channels_file=_get("CHANNELS_FILE", "channels.txt"),
             watchlist_file=_get("WATCHLIST_FILE", "watchlist.txt"),

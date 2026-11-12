@@ -13,7 +13,7 @@ from . import __version__
 from .config import Settings, load_env_file
 from .db import DB
 from .doctor import run_doctor
-from .fetch import Fetcher
+from .fetch import Fetcher, set_site_gaps
 from .links import LinkResolver, set_extra_store_domains
 from .monitor import Monitor
 from .notify import Notifier, build_payload
@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--doctor", action="store_true", help="check every source once and print what works; pushes nothing")
     mode.add_argument("--test-ntfy", action="store_true", help="send one test push and exit")
     mode.add_argument("--max-runtime", type=float, metavar="SECONDS", help="keep scanning for about this long, then exit")
+    mode.add_argument("--handover-file", metavar="PATH",
+                      help="with --max-runtime: keep scanning past the end until this file appears "
+                           "(the next run is ready to take over)")
+    mode.add_argument("--max-overtime", type=float, default=1500.0, metavar="SECONDS",
+                      help="with --handover-file: give up waiting for the next run after this long (default: 1500)")
     mode.add_argument("--dry-run", action="store_true", help="scan normally but only log alerts instead of pushing them")
 
     cfg = parser.add_argument_group("settings")
@@ -77,6 +82,7 @@ def main(argv=None) -> int:
     })
     settings.load_lists()
     set_extra_store_domains(settings.extra_store_domains)
+    set_site_gaps(settings.site_gaps)
     notifier = Notifier(settings.ntfy_server, settings.ntfy_topic, settings.ntfy_token,
                         settings.ntfy_health_topic, dry_run=settings.dry_run)
 
@@ -111,7 +117,8 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, _stop)
     undelivered = 0
     try:
-        undelivered = monitor.run(once=args.once, max_runtime=args.max_runtime)
+        undelivered = monitor.run(once=args.once, max_runtime=args.max_runtime,
+                                  handover_file=args.handover_file, max_overtime=args.max_overtime)
     except KeyboardInterrupt:
         log.info("stopped")
     finally:

@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -24,6 +25,7 @@ _SETTING_NAMES = [
     "TRENDING_WINDOW_MIN", "DAILY_ALERT_LIMIT", "STARTUP_NOTE", "HEARTBEAT_HOUR", "TZ_OFFSET_MINUTES",
     "HEALTHCHECK_URL", "RESOLVE_LINKS", "USE_CURL_CFFI", "TELEGRAM_BASE_URL", "DENY_WORDS",
     "EXTRA_STORE_DOMAINS", "DB_PATH", "CHANNELS_FILE", "WATCHLIST_FILE", "TRAPS_FILE", "FEEDS_FILE", "LOG_LEVEL",
+    "SITE_GAPS", "TRACKER_DROP_PCT", "URGENT_DROP_PCT",
 ]
 
 
@@ -149,6 +151,68 @@ class CommandLine(CleanEnv):
         self.assertEqual(self.web.hits["POST /"], 0)
 
 
+class Handover(CleanEnv):
+    """--handover-file: a shift does not end until the next run says it is ready."""
+
+    def scan(self, *extra):
+        self.write("channels.txt", "alpha\n")
+        os.environ["TELEGRAM_BASE_URL"] = self.web.base + "/s"
+        self.web.post("alpha", 1, "hello", time.time() - 5)
+        started = time.time()
+        code = main(["--max-runtime", "1", "--interval", "15", "--dry-run", "--ntfy-server", self.web.base, *extra])
+        return code, time.time() - started
+
+    def test_keeps_scanning_until_the_file_appears(self):
+        flag = Path(self.folder, "relief-ready")
+        timer = threading.Timer(4.0, lambda: flag.write_text("ready", encoding="utf-8"))
+        timer.start()
+        try:
+            code, took = self.scan("--handover-file", str(flag), "--max-overtime", "120")
+        finally:
+            timer.cancel()
+        self.assertEqual(code, 0)
+        self.assertGreater(took, 3.5, "it must not leave before the next run is ready")
+        self.assertLess(took, 30, "and must leave soon after")
+
+    def test_gives_up_after_the_overtime_allowed(self):
+        code, took = self.scan("--handover-file", str(Path(self.folder, "never")), "--max-overtime", "3")
+        self.assertEqual(code, 0)
+        self.assertLess(took, 25)
+
+    def test_a_file_that_is_already_there_ends_the_shift_on_time(self):
+        flag = Path(self.folder, "relief-ready")
+        flag.write_text("ready", encoding="utf-8")
+        code, took = self.scan("--handover-file", str(flag))
+        self.assertEqual(code, 0)
+        self.assertLess(took, 10)
+
+
+class Lists(CleanEnv):
+    def test_watchlist_marks_set_how_often_a_page_comes_round(self):
+        from lootwatch.config import load_watchlist
+
+        self.write("watchlist.txt", "!! https://a.example/core | 2500 | Core page\n"
+                                    "! https://a.example/brand | 15000\n"
+                                    "https://a.example/popular | | Popular\n"
+                                    "!https://a.example/tight\n")
+        items = load_watchlist(Path(self.folder, "watchlist.txt"))
+        self.assertEqual([(i.url, i.target, i.label, i.weight) for i in items], [
+            ("https://a.example/core", 2500.0, "Core page", 12.0), ("https://a.example/brand", 15000.0, "", 4.0),
+            ("https://a.example/popular", None, "Popular", 1.0), ("https://a.example/tight", None, "", 4.0)])
+
+    def test_site_gaps_setting(self):
+        try:
+            fetch.set_site_gaps("flipkart.com=2-3.5, t.me = 0.1 , nonsense, croma.com=4")
+            self.assertEqual((fetch.policy_for("www.flipkart.com").min_gap, fetch.policy_for("www.flipkart.com").max_gap), (2.0, 3.5))
+            self.assertEqual(fetch.policy_for("t.me").min_gap, 0.3, "never faster than this")
+            self.assertEqual((fetch.policy_for("api.croma.com").min_gap, fetch.policy_for("api.croma.com").max_gap), (4.0, 4.0))
+            self.assertTrue(fetch.policy_for("www.flipkart.com").impersonate, "only the gap changes")
+            self.assertEqual(fetch.policy_for("www.flipkart.com").base_cooldown, 300)
+        finally:
+            fetch.set_site_gaps("")
+        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 3.0)
+
+
 class Doctor(CleanEnv):
     def test_report(self):
         now = time.time()
@@ -259,7 +323,7 @@ class Transport(unittest.TestCase):
         self.assertFalse(fetch.policy_for("t.me").sniff_challenge)
         self.assertTrue(fetch.policy_for("www.amazon.in").sniff_challenge)
         self.assertTrue(fetch.policy_for("www.amazon.in").impersonate)
-        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 5.0)
+        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 3.0)
 
     def test_amazon_waf_answer_counts_as_a_refusal(self):
         self.web.status_for["/waf"] = 202

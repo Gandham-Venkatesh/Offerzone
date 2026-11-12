@@ -1,22 +1,171 @@
-# Pages from other stores that are only being TESTED. Nothing here is watched by the live monitor.
-# Run the workflow in "doctor-detail" mode with this file to see which of them a plain request can read.
-
-# --- Myntra
-https://www.myntra.com/men-casual-shoes?sort=discount | | Myntra casual shoes by discount
-https://www.myntra.com/headphones?sort=price_asc | | Myntra headphones cheapest first
-# --- Ajio
-https://www.ajio.com/search/?text=sneakers | | Ajio sneakers search
-# --- quick commerce
-https://blinkit.com/s/?q=gulab%20jamun | | Blinkit search
-https://www.zepto.com/search?query=gulab+jamun | | Zepto search
-https://www.swiggy.com/instamart/search?custom_back=true&query=gulab+jamun | | Instamart search
-# --- other electronics stores
-https://www.croma.com/phones-wearables/mobile-phones/c/10 | | Croma mobile phones
-https://www.reliancedigital.in/collection/laptops | | Reliance Digital laptops
-https://www.vijaysales.com/c/laptops | | Vijay Sales laptops
-https://www.jiomart.com/c/electronics/mobiles-tablets/mobiles/4703 | | JioMart mobiles
-https://www.tatacliq.com/search/?searchCategory=all&text=laptop | | Tata Cliq laptops
-# --- Flipkart's sister store
-https://www.shopsy.in/search?q=smartphone&sort=price_asc | | Shopsy smartphones
-# --- Amazon, one more time, for the record
-https://www.amazon.in/s?k=nothing+phone | | Amazon search
+# Flipkart candidates under test (floors are set after this check)
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=price_asc | | Flipkart smartphones
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=price_asc | | Flipkart laptops
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=price_asc | | Flipkart TVs
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=price_asc | | Flipkart tablets
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=price_asc | | Flipkart refrigerators
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=price_asc | | Flipkart washing machines
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=price_asc | | Flipkart air conditioners
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=price_asc | | Flipkart monitors
+https://www.flipkart.com/cameras/dslr-mirrorless/pr?sid=jek%2Cp31%2Ctrv&sort=price_asc | | Flipkart DSLR and mirrorless cameras
+https://www.flipkart.com/desktop-pcs/pr?sid=6bo%2Cnl4&sort=price_asc | | Flipkart desktop PCs
+https://www.flipkart.com/computers-accessories/computer-components/graphic-cards/pr?sid=6bo%2Cg0i%2C6sn&sort=price_asc | | Flipkart graphics cards
+https://www.flipkart.com/computers-accessories/computer-components/processors/pr?sid=6bo%2Cg0i%2C17w&sort=price_asc | | Flipkart processors
+https://www.flipkart.com/computers-accessories/computer-components/motherboards/pr?sid=6bo%2Cg0i%2Cy7i&sort=price_asc | | Flipkart motherboards
+https://www.flipkart.com/microwave-ovens/pr?sid=j9e%2Cm38%2Co49&sort=price_asc | | Flipkart microwave ovens
+https://www.flipkart.com/dish-washers/pr?sid=j9e%2Cm38%2C58n&sort=price_asc | | Flipkart dishwashers
+https://www.flipkart.com/chimney/pr?sid=j9e%2Cm38%2Ctgz&sort=price_asc | | Flipkart chimneys
+https://www.flipkart.com/air-purifiers/pr?sid=j9e%2Cabm%2C3o4&sort=price_asc | | Flipkart air purifiers
+https://www.flipkart.com/water-purifiers/pr?sid=j9e%2Cabm%2Ci45&sort=price_asc | | Flipkart water purifiers
+https://www.flipkart.com/water-geysers/pr?sid=j9e%2Cabm%2Cbfm&sort=price_asc | | Flipkart geysers
+https://www.flipkart.com/home-kitchen/home-appliances/vacuum-cleaners/pr?sid=j9e%2Cabm%2Cul2&sort=price_asc | | Flipkart vacuum cleaners
+https://www.flipkart.com/air-coolers/pr?sid=j9e%2Cabm%2C52j&sort=price_asc | | Flipkart air coolers
+https://www.flipkart.com/home-kitchen/home-appliances/inverters-and-accessories/pr?sid=j9e%2Cabm%2Cve9&sort=price_asc | | Flipkart inverters
+https://www.flipkart.com/exercise-fitness/fitness-equipment/treadmills/pr?sid=qoc%2Camf%2Coyq&sort=price_asc | | Flipkart treadmills
+https://www.flipkart.com/exercise-fitness/fitness-equipment/exercise-bikes/pr?sid=qoc%2Camf%2Ceut&sort=price_asc | | Flipkart exercise bikes
+https://www.flipkart.com/sports/cycling/electric-cycle/pr?sid=abc%2Culv%2Ctwp&sort=price_asc | | Flipkart electric cycles
+https://www.flipkart.com/furniture/sofas/sofa-sets/pr?sid=wwe%2Cc3z%2Cr0c&sort=price_asc | | Flipkart sofa sets
+https://www.flipkart.com/furniture/beds/beds/pr?sid=wwe%2C7p7%2C4yf&sort=price_asc | | Flipkart beds
+https://www.flipkart.com/bags-wallets-belts/luggage-travel/suitcases/pr?sid=reh%2Cplk%2Ctvv&sort=price_asc | | Flipkart suitcases
+https://www.flipkart.com/audio-video/home-theaters/pr?sid=0pm%2Cehi&sort=price_asc | | Flipkart home theatres
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&sort=price_asc | | Flipkart smart watches
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&sort=price_asc | | Flipkart headphones
+https://www.flipkart.com/audio-video/speakers/pr?sid=0pm%2C0o7&sort=price_asc | | Flipkart speakers
+https://www.flipkart.com/mobile-accessories/power-banks/pr?sid=tyy%2C4mr%2Cfu6&sort=price_asc | | Flipkart power banks
+https://www.flipkart.com/computers-accessories/network-components/routers/pr?sid=6bo%2C70k%2C2a2&sort=price_asc | | Flipkart routers
+https://www.flipkart.com/computers/storage/internal-hard-drive/pr?sid=6bo%2Cjdy%2Cdus&sort=price_asc | | Flipkart internal drives and SSDs
+https://www.flipkart.com/computers-accessories/storage/hdd/external-hdd/pr?sid=6bo%2Cjdy%2Cnl6%2Cdvs&sort=price_asc | | Flipkart external hard disks
+https://www.flipkart.com/watches/wrist-watches/pr?sid=r18%2Cf13&sort=price_asc | | Flipkart wrist watches
+https://www.flipkart.com/mens-footwear/sports-shoes/pr?sid=osp%2Ccil%2C1cu&sort=price_asc | | Flipkart men's sports shoes
+https://www.flipkart.com/home-kitchen/home-appliances/fans/pr?sid=j9e%2Cabm%2Cwog&sort=price_asc | | Flipkart fans
+https://www.flipkart.com/mixerjuicergrinders/pr?sid=j9e%2Cm38%2C7ek&sort=price_asc | | Flipkart mixer grinders
+https://www.flipkart.com/gaming-consoles/pr?sid=4rr%2Cx1m&p%5B%5D=facets.brand%255B%255D%3DSony&p%5B%5D=facets.brand%255B%255D%3DMicrosoft&p%5B%5D=facets.brand%255B%255D%3DNintendo&sort=price_asc | | Flipkart consoles
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&sort=price_asc | | Flipkart all cameras
+https://www.flipkart.com/musical-instruments/pr?sid=ypu&sort=price_asc | | Flipkart musical instruments
+https://www.flipkart.com/home-improvement-tools/tools-and-measuring-equipment/power-tools/pr?sid=h1m%2Chww%2Cslm&sort=price_asc | | Flipkart power tools
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | | Flipkart Apple phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DGoogle&sort=price_asc | | Flipkart Google phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DOnePlus&sort=price_asc | | Flipkart OnePlus phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DNothing&sort=price_asc | | Flipkart Nothing phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DMotorola&sort=price_asc | | Flipkart Motorola phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DXiaomi&sort=price_asc | | Flipkart Xiaomi phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3Dvivo&sort=price_asc | | Flipkart vivo phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DOPPO&sort=price_asc | | Flipkart OPPO phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3Drealme&sort=price_asc | | Flipkart realme phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DPOCO&sort=price_asc | | Flipkart POCO phones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.brand%255B%255D%3DIQOO&sort=price_asc | | Flipkart IQOO phones
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | | Flipkart Apple laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DHP&sort=price_asc | | Flipkart HP laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DDell&sort=price_asc | | Flipkart Dell laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DLenovo&sort=price_asc | | Flipkart Lenovo laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DASUS&sort=price_asc | | Flipkart ASUS laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DAcer&sort=price_asc | | Flipkart Acer laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DMSI&sort=price_asc | | Flipkart MSI laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.brand%255B%255D%3DMicrosoft&sort=price_asc | | Flipkart Microsoft laptops
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | | Flipkart Apple tablets
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung tablets
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DLenovo&sort=price_asc | | Flipkart Lenovo tablets
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DXiaomi&sort=price_asc | | Flipkart Xiaomi tablets
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.brand%255B%255D%3DOnePlus&sort=price_asc | | Flipkart OnePlus tablets
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DSony&sort=price_asc | | Flipkart Sony TVs
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung TVs
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | | Flipkart LG TVs
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DXiaomi&sort=price_asc | | Flipkart Xiaomi TVs
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.brand%255B%255D%3DTCL&sort=price_asc | | Flipkart TCL TVs
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | | Flipkart Apple smart watches
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung smart watches
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DGarmin&sort=price_asc | | Flipkart Garmin smart watches
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.brand%255B%255D%3DGoogle&sort=price_asc | | Flipkart Google smart watches
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DApple&sort=price_asc | | Flipkart Apple headphones
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DBose&sort=price_asc | | Flipkart Bose headphones
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DSony&sort=price_asc | | Flipkart Sony headphones
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DSennheiser&sort=price_asc | | Flipkart Sennheiser headphones
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DJBL&sort=price_asc | | Flipkart JBL headphones
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung headphones
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DSony&sort=price_asc | | Flipkart Sony cameras
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DCanon&sort=price_asc | | Flipkart Canon cameras
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DNikon&sort=price_asc | | Flipkart Nikon cameras
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DGoPro&sort=price_asc | | Flipkart GoPro cameras
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DDJI&sort=price_asc | | Flipkart DJI cameras
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DFujifilm&sort=price_asc | | Flipkart Fujifilm cameras
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.brand%255B%255D%3DInsta360&sort=price_asc | | Flipkart Insta360 cameras
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung refrigerators
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | | Flipkart LG refrigerators
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung washing machines
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | | Flipkart LG washing machines
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DBosch&sort=price_asc | | Flipkart Bosch washing machines
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&p%5B%5D=facets.brand%255B%255D%3DIFB&sort=price_asc | | Flipkart IFB washing machines
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DDaikin&sort=price_asc | | Flipkart Daikin air conditioners
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | | Flipkart LG air conditioners
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DVoltas&sort=price_asc | | Flipkart Voltas air conditioners
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung air conditioners
+https://www.flipkart.com/home-kitchen/home-appliances/vacuum-cleaners/pr?sid=j9e%2Cabm%2Cul2&p%5B%5D=facets.brand%255B%255D%3DDyson&sort=price_asc | | Flipkart Dyson vacuum cleaners
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DLG&sort=price_asc | | Flipkart LG monitors
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DSamsung&sort=price_asc | | Flipkart Samsung monitors
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DDell&sort=price_asc | | Flipkart Dell monitors
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DBenQ&sort=price_asc | | Flipkart BenQ monitors
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity | | Flipkart popular smartphones
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity&page=2 | | Flipkart popular smartphones 2
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity&page=3 | | Flipkart popular smartphones 3
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=popularity | | Flipkart popular laptops
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=popularity&page=2 | | Flipkart popular laptops 2
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&sort=popularity&page=3 | | Flipkart popular laptops 3
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=popularity | | Flipkart popular TVs
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=popularity&page=2 | | Flipkart popular TVs 2
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&sort=popularity&page=3 | | Flipkart popular TVs 3
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=popularity | | Flipkart popular tablets
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&sort=popularity&page=2 | | Flipkart popular tablets 2
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=popularity | | Flipkart popular refrigerators
+https://www.flipkart.com/refrigerators/pr?sid=j9e%2Cabm%2Chzg&sort=popularity&page=2 | | Flipkart popular refrigerators 2
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=popularity | | Flipkart popular washing machines
+https://www.flipkart.com/washing-machines/pr?sid=j9e%2Cabm%2C8qx&sort=popularity&page=2 | | Flipkart popular washing machines 2
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=popularity | | Flipkart popular air conditioners
+https://www.flipkart.com/air-conditioners/pr?sid=j9e%2Cabm%2Cc54&sort=popularity&page=2 | | Flipkart popular air conditioners 2
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=popularity | | Flipkart popular monitors
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&sort=popularity&page=2 | | Flipkart popular monitors 2
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&sort=popularity | | Flipkart popular smart watches
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&sort=popularity&page=2 | | Flipkart popular smart watches 2
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&sort=popularity | | Flipkart popular headphones
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&sort=popularity&page=2 | | Flipkart popular headphones 2
+https://www.flipkart.com/audio-video/speakers/pr?sid=0pm%2C0o7&sort=popularity | | Flipkart popular speakers
+https://www.flipkart.com/audio-video/speakers/pr?sid=0pm%2C0o7&sort=popularity&page=2 | | Flipkart popular speakers 2
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&sort=popularity | | Flipkart popular cameras
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&sort=popularity&page=2 | | Flipkart popular cameras 2
+https://www.flipkart.com/gaming-consoles/pr?sid=4rr%2Cx1m&sort=popularity | | Flipkart popular gaming consoles
+https://www.flipkart.com/desktop-pcs/pr?sid=6bo%2Cnl4&sort=popularity | | Flipkart popular desktop PCs
+https://www.flipkart.com/computers-accessories/computer-components/graphic-cards/pr?sid=6bo%2Cg0i%2C6sn&sort=popularity | | Flipkart popular graphics cards
+https://www.flipkart.com/microwave-ovens/pr?sid=j9e%2Cm38%2Co49&sort=popularity | | Flipkart popular microwave ovens
+https://www.flipkart.com/air-purifiers/pr?sid=j9e%2Cabm%2C3o4&sort=popularity | | Flipkart popular air purifiers
+https://www.flipkart.com/water-purifiers/pr?sid=j9e%2Cabm%2Ci45&sort=popularity | | Flipkart popular water purifiers
+https://www.flipkart.com/home-kitchen/home-appliances/vacuum-cleaners/pr?sid=j9e%2Cabm%2Cul2&sort=popularity | | Flipkart popular vacuum cleaners
+https://www.flipkart.com/mobile-accessories/power-banks/pr?sid=tyy%2C4mr%2Cfu6&sort=popularity | | Flipkart popular power banks
+https://www.flipkart.com/computers-accessories/network-components/routers/pr?sid=6bo%2C70k%2C2a2&sort=popularity | | Flipkart popular routers
+https://www.flipkart.com/watches/wrist-watches/pr?sid=r18%2Cf13&sort=popularity | | Flipkart popular wrist watches
+https://www.flipkart.com/watches/wrist-watches/pr?sid=r18%2Cf13&sort=popularity&page=2 | | Flipkart popular wrist watches 2
+https://www.flipkart.com/mens-footwear/sports-shoes/pr?sid=osp%2Ccil%2C1cu&sort=popularity | | Flipkart popular men's sports shoes
+https://www.flipkart.com/mens-footwear/sports-shoes/pr?sid=osp%2Ccil%2C1cu&sort=popularity&page=2 | | Flipkart popular men's sports shoes 2
+https://www.flipkart.com/bags-wallets-belts/luggage-travel/suitcases/pr?sid=reh%2Cplk%2Ctvv&sort=popularity | | Flipkart popular suitcases
+https://www.flipkart.com/furniture/pr?sid=wwe&sort=popularity | | Flipkart popular furniture
+https://www.flipkart.com/home-kitchen/kitchen-appliances/pr?sid=j9e%2Cm38&sort=popularity | | Flipkart popular kitchen appliances
+https://www.flipkart.com/home-kitchen/kitchen-appliances/pr?sid=j9e%2Cm38&sort=popularity&page=2 | | Flipkart popular kitchen appliances 2
+https://www.flipkart.com/home-kitchen/home-appliances/pr?sid=j9e%2Cabm&sort=popularity | | Flipkart popular home appliances
+https://www.flipkart.com/home-kitchen/home-appliances/pr?sid=j9e%2Cabm&sort=popularity&page=2 | | Flipkart popular home appliances 2
+https://www.flipkart.com/exercise-fitness/fitness-equipment/pr?sid=qoc%2Camf&sort=popularity | | Flipkart popular fitness equipment
+https://www.flipkart.com/computers/storage/pr?sid=6bo%2Cjdy&sort=popularity | | Flipkart popular storage
+https://www.flipkart.com/audio-video/home-theaters/pr?sid=0pm%2Cehi&sort=popularity | | Flipkart popular home theatres
+https://www.flipkart.com/search?q=iphone&sort=popularity | | Flipkart search: iphone
+https://www.flipkart.com/search?q=macbook&sort=popularity | | Flipkart search: macbook
+https://www.flipkart.com/search?q=playstation+5&sort=popularity | | Flipkart search: playstation 5
+https://www.flipkart.com/search?q=dyson&sort=popularity | | Flipkart search: dyson
+https://www.flipkart.com/search?q=printer&sort=popularity | | Flipkart search: printer
+https://www.flipkart.com/search?q=projector&sort=popularity | | Flipkart search: projector
+https://www.flipkart.com/search?q=soundbar&sort=popularity | | Flipkart search: soundbar
+https://www.flipkart.com/search?q=gopro&sort=popularity | | Flipkart search: gopro
+https://www.flipkart.com/search?q=air+fryer&sort=popularity | | Flipkart search: air fryer
+https://www.flipkart.com/search?q=mattress&sort=popularity | | Flipkart search: mattress
+https://www.flipkart.com/search?q=robot+vacuum&sort=popularity | | Flipkart search: robot vacuum
+https://www.flipkart.com/search?q=ipad&sort=popularity | | Flipkart search: ipad
+https://www.flipkart.com/search?q=galaxy+s&sort=popularity | | Flipkart search: galaxy s
+https://www.flipkart.com/search?q=pixel&sort=popularity | | Flipkart search: pixel
