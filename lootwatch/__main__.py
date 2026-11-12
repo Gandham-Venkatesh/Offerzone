@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_argument_group("what to do (default: scan forever)")
     mode.add_argument("--once", action="store_true", help="run one scan and exit")
     mode.add_argument("--doctor", action="store_true", help="check every source once and print what works; pushes nothing")
-    mode.add_argument("--test-ntfy", action="store_true", help="send three test pushes (quiet, high, urgent) and exit")
+    mode.add_argument("--test-ntfy", action="store_true", help="send three test pushes a minute apart (quiet, high, urgent) and exit")
     mode.add_argument("--max-runtime", type=float, metavar="SECONDS", help="keep scanning for about this long, then exit")
     mode.add_argument("--handover-file", metavar="PATH",
                       help="with --max-runtime: keep scanning past the end until this file appears "
@@ -91,7 +91,8 @@ def main(argv=None) -> int:
         if not notifier.configured:
             log.error("NTFY_TOPIC is not set (use --ntfy-topic, the NTFY_TOPIC variable, or .env)")
             return 1
-        # One push per loudness, quietest first, so each can be heard and seen on its own.
+        # One push per loudness, quietest first and a minute apart, so each can be heard, looked at
+        # and silenced on its own before the next one arrives.
         samples = (
             (3, ["label"], "TEST 1 of 3, quiet (priority 3): 82% off · ₹899 (MRP ₹4,999) — test alert",
              "This is how an ordinary good deal arrives: 80% off or more, saving ₹2,000 or more."),
@@ -104,9 +105,12 @@ def main(argv=None) -> int:
         failed = 0
         for index, (priority, tags, title, message) in enumerate(samples):
             if index:
-                time.sleep(float(os.environ.get("TEST_PUSH_GAP", "4")))
+                gap = float(os.environ.get("TEST_PUSH_GAP") or 60)
+                log.info("next test push in %d seconds", gap)
+                time.sleep(gap)
             result = notifier.send(build_payload(
-                title=title, message=message + " Sent by your loot monitor's test; nothing is on sale.",
+                title=title, message=message + " Sent by your loot monitor's test; nothing is on sale."
+                + (" The next test follows in about a minute." if index < len(samples) - 1 else " This was the last test."),
                 priority=priority, tags=tags, click="https://www.flipkart.com/",
                 actions=[{"label": "Open deal", "url": "https://www.flipkart.com/"}],
             ))

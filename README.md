@@ -207,7 +207,8 @@ On Android, an old phone left on its charger does this without touching your mai
    optionally `NTFY_TOKEN` (an access token from a free ntfy account; ntfy limits anonymous
    senders per IP address, and GitHub's addresses are shared with everyone else's jobs).
 4. **Actions → Loot monitor → Run workflow → `test-ntfy`.** Your phone should ring three times: a
-   quiet, a high and an urgent test alert, a few seconds apart, so you can hear each priority.
+   quiet, a high and an urgent test alert, a minute apart, so you can hear each priority and
+   silence it before the next one comes.
 5. **Run workflow → `doctor`.** The log lists what GitHub's servers can and cannot read.
 6. **Settings → Secrets and variables → Actions → Variables → New repository variable**, name
    `KEEP_RUNNING`, value `1` (a variable, not a secret), then start one run by hand
@@ -308,7 +309,7 @@ python -m lootwatch --doctor      # check every source once; pushes nothing, sto
 ```
 
 ```bash
-python -m lootwatch --test-ntfy   # three test pushes: quiet, high, urgent
+python -m lootwatch --test-ntfy   # three test pushes a minute apart: quiet, high, urgent
 ```
 
 ```bash
