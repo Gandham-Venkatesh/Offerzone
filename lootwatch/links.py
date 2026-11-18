@@ -38,8 +38,10 @@ TRUSTED_SHORTENERS = (
     "link.amazon",  # Amazon's own short links (only Amazon can own a .amazon name)
 )
 # Deal communities and blogs: not shops, but a link to their own deal page is not a scam shop either.
+# (freekaamaal.com is left out on purpose: its posts inflate list prices, "99% off" against an MRP ten
+# times the real one, so a link to it is treated like any unknown site: quiet, with a warning.)
 DEAL_SITES = (
-    "desidime.com", "indiafreestuff.in", "freekaamaal.com", "bigtricks.in", "flipshope.com", "grabon.in",
+    "desidime.com", "indiafreestuff.in", "bigtricks.in", "flipshope.com", "grabon.in",
     "dealsmagnet.com", "pricehistoryapp.com", "pricehistory.app", "buyhatke.com", "smartprix.com", "reddit.com",
 )
 # Anyone can point these anywhere, so they are only trusted once they resolve to a store.

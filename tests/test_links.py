@@ -40,6 +40,11 @@ class SameProductByName(unittest.TestCase):
 
 
 class Hosts(unittest.TestCase):
+    def test_freekaamaal_is_not_trusted(self):
+        # Its posts inflate list prices; a link to it gets the warning any unknown site gets.
+        self.assertEqual(classify_host("freekaamaal.com"), "unknown")
+        self.assertEqual(classify_host("www.dealsmagnet.com"), "dealsite")
+
     def test_classification(self):
         cases = {
             "https://www.amazon.in/dp/B0ABCDEFGH": "store",
