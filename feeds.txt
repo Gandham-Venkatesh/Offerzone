@@ -12,9 +12,13 @@
 #                             price stands below the product's usual price: quietly from 60%,
 #                             loudly from 70%, at max priority from 80% (TRACKER_DROP_PCT,
 #                             URGENT_DROP_PCT), and only when at least Rs 2,000 is saved.
-https://www.desidime.com/new
 https://www.dealsmagnet.com/new
 https://pricehistory.app/price-drop
+# DesiDime's page was read here until 18 Nov 2026, when desidime.com began refusing GitHub's
+# servers (HTTP 403). A site that refuses is left alone; DesiDime's deals still arrive through
+# its Telegram channels (desidime, DesidimeHot in channels.txt), about twenty minutes later.
+# On a machine where --doctor shows it as OK, remove the leading "# " to read it directly again:
+# https://www.desidime.com/new
 
 # Any RSS or Atom feed of a deal blog or forum works as well; --doctor checks the ones you add.
 # Example (remove the leading "# " to enable):

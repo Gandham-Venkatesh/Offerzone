@@ -25,10 +25,10 @@ Each scan (default: every 60 seconds) it looks in four places:
 3. **Products and keywords you name.** Product pages in `watchlist.txt` alert on your target
    price. `traps.txt` holds lines like `nothing phone | 6000`: any page or post showing that
    product at or under ₹6,000 alerts.
-4. **Deal sites and public deal channels** (`feeds.txt`, `channels.txt`). DesiDime's and
-   DealsMagnet's new-deal pages are read directly, minutes before those deals are repeated on
-   Telegram; a price tracker's live list of drops covers Amazon; and 27 public Telegram channels
-   are read as a safety net. Posts are parsed for price, MRP and discount, de-duplicated across
+4. **Deal sites and public deal channels** (`feeds.txt`, `channels.txt`). DealsMagnet's
+   new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
+   would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
+   list of drops covers Amazon; and 27 public Telegram channels are read as a safety net. Posts are parsed for price, MRP and discount, de-duplicated across
    all of these, and filtered hard.
 
 ## What it cannot do
@@ -47,8 +47,8 @@ Each scan (default: every 60 seconds) it looks in four places:
 - **Blinkit, Zepto and Swiggy Instamart are not read directly.** Their prices come from app
   APIs tied to your delivery location and refuse plain requests. The tools that do work for them
   run inside your own logged-in browser (search GitHub for "PriceDrop Hunter" or "zepto-deals").
-  Here they are covered through DesiDime, where their coupons and loots are posted within
-  minutes, and through the quick-commerce channels in `channels.txt`.
+  Here they are covered through the deal channels, where their coupons, loots and "search this
+  in the app" hints are posted within minutes (see "Food and quick-commerce apps" below).
 
 ## How loud each alert is
 
@@ -278,7 +278,7 @@ give the **max priority** category a loud, distinct sound and let it override Do
 |---|---|
 | `watchlist.txt` | Store pages: category and brand pages with a floor, popular-product pages, product pages with a target |
 | `traps.txt` | `keywords \| max price` lines |
-| `feeds.txt` | Deal sites read as pages (DesiDime, DealsMagnet, the price tracker) and RSS/Atom feeds |
+| `feeds.txt` | Deal sites read as pages (DealsMagnet, the price tracker; DesiDime where it answers) and RSS/Atom feeds |
 | `channels.txt` | Public Telegram channels |
 | `.env` | Settings (copy `.env.example`). On GitHub use Secrets/Variables instead |
 

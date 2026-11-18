@@ -129,8 +129,7 @@ class CommandLine(CleanEnv):
         flipkart_load = sum(w.weight for w in settings.watchlist if "flipkart.com" in w.url)
         self.assertLess(flipkart_load / 12 / 12, 3.0, "the !! pages must come round within three minutes")
         self.assertGreaterEqual(len(settings.traps), 4)
-        self.assertEqual(settings.feeds, ["https://www.desidime.com/new", "https://www.dealsmagnet.com/new",
-                                          "https://pricehistory.app/price-drop"])
+        self.assertEqual(settings.feeds, ["https://www.dealsmagnet.com/new", "https://pricehistory.app/price-drop"])
 
     def test_test_ntfy_and_missing_topic(self):
         self.assertEqual(main(["--test-ntfy", "--ntfy-server", self.web.base]), 1)  # no topic anywhere
