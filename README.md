@@ -120,11 +120,29 @@ be read and their deals are coupons and one-off loots:
 | Alert | ntfy priority | When |
 |---|---|---|
 | **High** | 4 | a coupon that takes 80% or more off the order it needs ("₹160 off on ₹199") |
-| **Quiet** | 3 | a coupon worth 60% to 80% of its order (`QUICK_COUPON_PCT`) · a post that calls something a loot and names a price ("Zepto loot @ 24"), although no list price can be checked · a hint to look inside an app ("Instamart loot: search Shampoo, sort by discount high to low"; Ajio, Myntra and Nykaa count here too) · a "big loot" with no price whose link goes straight into a shop (`QUICK_LOOTS` switches the last three off) |
+| **Quiet** | 3 | a coupon worth 60% to 80% of its order (`QUICK_COUPON_PCT`) · a post that calls something a loot and names a price ("Zepto loot @ 24"), although no list price can be checked · a hint to look inside an app ("Instamart loot: search Shampoo, sort by discount high to low"; Ajio, Myntra and Nykaa count here too) (`QUICK_LOOTS` switches the last two off) |
 
 A percentage coupon is counted at what its cap leaves of it: "80% off up to ₹50 on orders above
 ₹499" is a tenth of the bill and stays quiet. These never ring at max priority, and they are
 usually tied to a city or an account. The same app hint from many channels arrives once.
+
+**Channels marked `!` in `channels.txt`** (the two Offerzone channels) are believed on their own
+word, because what they post is worth it:
+
+| Alert | ntfy priority | When |
+|---|---|---|
+| **Urgent** | 5 (max) | the post calls it a **big loot** (big, biggest, mega, super, bumper ... loot) and its link leads into a shop: Amazon, Flipkart, Myntra, Ajio, Instamart, Zepto, Blinkit ... |
+| **High** | 4 | a loot in a quick-commerce or fashion app (Instamart, Zepto, Blinkit, BigBasket, JioMart, Ajio, Myntra, Nykaa), by link or by a "search this, sort by discount" hint |
+| **Quiet** | 3 | any other post of theirs whose link leads into a shop |
+
+The link is followed before anything is pushed: a post whose link ends on another Telegram channel
+or on a site that is not a shop is not pushed at all. A big loot that only names a sale ("mobile
+accessories start @29") stays quiet. Whatever the ordinary rules make louder stays louder. Any
+other channel can be marked the same way. Elsewhere, "big loot" is just a word: on ordinary
+channels it is mostly an advert for other channels.
+
+A post whose only links go to other Telegram channels ("BIGGEST LOOT: iPhone 17 at ₹2,952", with a
+link to a Telegram folder) is held at Quiet with a warning, from any channel.
 
 **Credit cards, loans and referral schemes never alert**, however they are headed ("BIG LOOT:
 lifetime free credit card, refer 6 friends for a ₹25,000 voucher"). A post counts as one when it is

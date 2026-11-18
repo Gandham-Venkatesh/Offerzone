@@ -64,7 +64,7 @@ _BARE_CHANNEL = re.compile(r"^@?(?P<name>[A-Za-z][A-Za-z0-9_]{3,31})$")
 
 def parse_channel(entry: str) -> Optional[str]:
     """Accept '@name', 'name' or a t.me link; private invite links cannot be read publicly."""
-    entry = entry.strip()
+    entry = entry.strip().lstrip("!").strip()  # "!" marks a loot channel (see load_loot_channels)
     if "/+" in entry or "joinchat" in entry:
         return None
     match = _CHANNEL.match(entry) or _BARE_CHANNEL.match(entry)
@@ -87,6 +87,24 @@ def load_channels(path: Path) -> List[str]:
             seen.add(name.lower())
             channels.append(name)
     return channels
+
+
+def load_loot_channels(path: Path) -> List[str]:
+    """Channels marked with "!" in a channels file: their own "big loot" calls are believed.
+
+    Holds lowercase public names and invite codes (as written). See scoring.loot_channel_verdict.
+    """
+    from .sources.tgaccount import invite_code
+
+    marked: List[str] = []
+    for line in read_lines(path):
+        if not line.startswith("!"):
+            continue
+        rest = line[1:].strip()
+        found = invite_code(rest) or (parse_channel(rest) or "").lower()
+        if found and found not in marked:
+            marked.append(found)
+    return marked
 
 
 def load_private_channels(path: Path) -> List[str]:
@@ -271,6 +289,7 @@ class Settings:
 
     channels: List[str] = field(default_factory=list)
     private_channels: List[str] = field(default_factory=list)  # invite codes, read through a Telegram account
+    loot_channels: List[str] = field(default_factory=list)  # marked "!": lowercase names and invite codes
     watchlist: List[WatchItem] = field(default_factory=list)
     traps: List[Trap] = field(default_factory=list)
     feeds: List[str] = field(default_factory=list)
@@ -337,10 +356,11 @@ class Settings:
     def load_lists(self) -> None:
         """Read the list files. A half that is switched off on this machine is left empty."""
         self.traps = load_traps(Path(self.traps_file))
-        self.channels, self.private_channels, self.feeds, self.watchlist = [], [], [], []
+        self.channels, self.private_channels, self.loot_channels, self.feeds, self.watchlist = [], [], [], [], []
         if self.use_channels:
             self.channels = load_channels(Path(self.channels_file))
             self.private_channels = load_private_channels(Path(self.channels_file))
+            self.loot_channels = load_loot_channels(Path(self.channels_file))
             self.feeds = [u for u in read_lines(Path(self.feeds_file)) if re.match(r"^https?://", u, re.I)]
         if self.use_store_pages:
             self.watchlist = load_watchlist(Path(self.watchlist_file))

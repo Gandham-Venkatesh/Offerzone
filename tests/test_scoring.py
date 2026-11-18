@@ -688,12 +688,14 @@ class QuickCommerce(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(self.verdict(text))
 
-    def test_a_big_loot_needs_a_link_into_the_shop(self):
-        zepto = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"])
-        self.assertEqual((zepto.tier, zepto.label), (TIER_NORMAL, "Big loot"))
-        self.assertIsNone(evaluate_text("BIG LOOT : Swiggy Instamart", self.s, links=["https://t.me/+9MtPJAnaAnBkMmU1"]),
-                          "a link to another channel is an advert for that channel")
-        self.assertIsNone(evaluate_text("Big loot on Zepto", self.s), "no link at all")
+    def test_big_loots_are_believed_only_from_marked_channels(self):
+        # An ordinary channel's "big loot" is mostly an advert (see LootChannels for the marked ones).
+        self.assertIsNone(evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"]))
+        marked = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"], loot_channel=True)
+        self.assertEqual((marked.tier, marked.label), (TIER_URGENT, "Big loot"))
+        self.assertIsNone(evaluate_text("BIG LOOT : Swiggy Instamart", self.s, links=["https://t.me/+9MtPJAnaAnBkMmU1"],
+                                        loot_channel=True), "a link to another channel is an advert for that channel")
+        self.assertIsNone(evaluate_text("Big loot on Zepto", self.s, loot_channel=True), "no link at all")
 
     def test_both_can_be_switched_off(self):
         self.s.quick_coupon_pct = 0
@@ -742,6 +744,57 @@ class FinancePromotions(unittest.TestCase):
     def test_deal_site_cards_are_filtered_the_same_way(self):
         self.assertIsNone(evaluate_stated("Lifetime Free HDFC Swiggy Credit Card", "Apply now", 0.01, 500, self.s))
         self.assertIsNone(evaluate_stated("Free voucher worth ₹5,000", "", 1, 5000, self.s, links=["https://www.sbicard.com/apply"]))
+
+
+class LootChannels(unittest.TestCase):
+    """Channels marked "!" in channels.txt (the owner's two Offerzone channels): their word is believed."""
+
+    def setUp(self):
+        self.s = make_settings("iphone | 12000\n")
+
+    def judge(self, text, marked=True):
+        import re
+
+        return evaluate_text(text, self.s, links=re.findall(r"https?://\S+", text), loot_channel=marked)
+
+    def test_a_big_loot_with_a_shop_link_rings_at_max_priority(self):
+        for text in ("BIG LOOT 😱🔥\nhttps://amzn.to/4xyz", "Big Loot 🔥🔥\n🤑Loot ₹16 Per Peice\n➡️Add 10 Qty - https://myntr.it/MPy0kwy",
+                     "BIG LOOT on Zepto ₹19\nhttps://www.zepto.com/pn/x/pvid/1", "Mega loot 😍 https://instamart.in/item/ABC123",
+                     "BIGGEST LOOT 🔥 https://bitli.in/abc"):
+            with self.subTest(text=text):
+                verdict = self.judge(text)
+                self.assertEqual((verdict.tier, verdict.max_tier), (TIER_URGENT, TIER_URGENT))
+                self.assertIsNone(self.judge(text, marked=False) if "Zepto" not in text else None)
+        self.assertTrue(self.judge("BIG LOOT 😱🔥\nhttps://amzn.to/4xyz").needs_store_link, "the link must lead into a shop")
+        self.assertEqual(self.judge("Big Loot 🔥 Loot ₹16 https://myntr.it/x").price, 16)
+
+    def test_app_loots_ring_loudly_and_every_deal_is_pushed(self):
+        self.assertEqual(self.judge("Instamart Loot ₹99\nhttps://instamart.in/item/ABC123").tier, TIER_HIGH)
+        self.assertEqual(self.judge("Ajio loot: Puma shoes @ 599\nhttps://ajiio.in/xyz").tier, TIER_HIGH)
+        self.assertEqual(self.judge("Swiggy Instamart Loot\nSearch : Shampoo\n*Sort by Discount High to Low").tier, TIER_HIGH)
+        plain = self.judge("Milton Casserole Set @450\nhttps://amzn.to/4AxwlmB")
+        self.assertEqual((plain.tier, plain.needs_store_link), (TIER_NORMAL, True))
+        self.assertIsNone(self.judge("Milton Casserole Set @450\nhttps://amzn.to/4AxwlmB", marked=False))
+        stronger = self.judge("Sony WH-1000XM5 @ ₹499 (MRP ₹34,990) price error\nhttps://amzn.to/x")
+        self.assertEqual(stronger.tier, TIER_URGENT, "the ordinary rules still count, and the louder wins")
+
+    def test_what_is_never_pushed_even_from_a_marked_channel(self):
+        for text in (
+            "BIG LOOT : Get Lifetime Free HDFC Tata Neu Credit Card.\nApply Here : https://bitl.in/gJtQNQi",
+            "🚨 Big Loot : Nike Shoes FREE Using Scapia Coins\nApply Here ➡️ https://rb.gy/vaeryx",
+            "BIGGEST LOOT : BUY NOW🔥👇.\nLink - https://t.me/addlist/VETj13smDQVmMWE1\nClick On ADD FOLDER",
+            "BIGGEST LOOT : BUY NOW 😱🔥\nLink - https://Offerzone.in/telegram",
+            "91 CLUB BIGGEST LOOT 🎁\nLink :- https://91app11.com/#/register?invitationCode=284",
+            "[ OVER ] Big Loot ₹100 : https://instamart.in/item/IU2N2FNXT6",
+            "Good morning loot lovers!",
+            "Join our WhatsApp channel https://whatsapp.com/channel/abc",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(self.judge(text))
+
+    def test_a_sale_banner_is_not_a_big_loot(self):
+        banner = self.judge("Big Loot: Mobile Accessories Start @29\nhttps://bitli.in/gxyBp6n")
+        self.assertEqual(banner.tier, TIER_NORMAL)
 
 
 if __name__ == "__main__":

@@ -109,6 +109,7 @@ class Verdict:
     max_tier: int = TIER_URGENT  # no later upgrade (a deal trending across channels) may pass this
     was: Optional[float] = None  # the price this monitor saw before, when that is what it is compared with
     key: str = ""  # what makes this deal the same deal elsewhere, when its link does not (a coupon code)
+    needs_store_link: bool = False  # only worth a push when a link really leads into a shop
 
     @property
     def headline(self) -> str:
@@ -197,8 +198,13 @@ def match_trap(parsed: ParsedText, traps: Sequence[Trap], price: Optional[float]
     return None
 
 
-def evaluate_text(text: str, settings: Settings, links: Sequence[str] = ()) -> Optional[Verdict]:
-    """Judge a free-text deal post (Telegram message, feed entry). ``links`` are the post's links."""
+def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
+                  loot_channel: bool = False) -> Optional[Verdict]:
+    """Judge a free-text deal post (Telegram message, feed entry). ``links`` are the post's links.
+
+    ``loot_channel``: the post comes from a channel marked "!" in channels.txt, whose own word
+    for a deal is believed (see loot_channel_verdict).
+    """
     parsed = parse_text(text)
     if not parsed.text.strip() or parsed.expired == "over":
         return None
@@ -208,7 +214,64 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = ()) -> O
     hosts = _hosts(links)
     if is_finance_promo(parsed.text, hosts):
         return None
-    return _hedge(_judge(parsed, settings) or _quick_commerce(parsed, settings, hosts), parsed)
+    verdict = _judge(parsed, settings) or _quick_commerce(parsed, settings, hosts)
+    if loot_channel:
+        verdict = loot_channel_verdict(parsed, verdict, hosts)
+    return _hedge(verdict, parsed)
+
+
+# ---- channels marked "!" in channels.txt ------------------------------------------------------
+# Some channels are worth everything they post (the owner named the two big Offerzone ones). There
+# a post is believed on the channel's own word: every deal that links into a shop is pushed, a
+# loot in a quick-commerce or fashion app is pushed loudly, and a "big loot" that links into a shop
+# rings at max priority. Card, loan and referral promotions have been dropped before this, and a
+# post that only links to other Telegram channels is an advert and is not pushed at all.
+_BIG_LOOT = re.compile(
+    r"\b(?:big+|mega|biggest|massive|huge|super|crazy|bumper|insane)\s*loot\b|\bloot\s*(?:alert|loot)\b", re.I)
+_FROM_PRICE = re.compile(r"\b(?:start(?:s|ing)?|from|under|below|up\s?to)\s*(?:@|at|₹|rs\.?)\s*\d", re.I)
+_SOCIAL = ("instagram.com", "youtube.com", "youtu.be", "facebook.com", "fb.com", "x.com", "twitter.com",
+           "whatsapp.com", "wa.me", "play.google.com", "apps.apple.com", "telegram.org")
+
+
+def _shop_hosts(hosts: Sequence[str]) -> List[str]:
+    """Hosts that are, or may lead to, a shop: stores, their short links, and generic short links."""
+    from .links import classify_host
+
+    return [host for host in hosts if classify_host(host) in ("store", "affiliate", "generic")
+            and not any(host == social or host.endswith("." + social) for social in _SOCIAL)]
+
+
+def loot_channel_verdict(parsed: ParsedText, verdict: Optional[Verdict], hosts: Sequence[str]) -> Optional[Verdict]:
+    if verdict is not None and verdict.label == "App loot":
+        verdict.tier = verdict.max_tier = TIER_HIGH  # "search this in Instamart": from such a channel, a strong hint
+        return verdict
+    if not _shop_hosts(hosts):
+        return verdict  # nothing to buy through this post; the ordinary rules have had their say
+    text = parsed.text
+    big = bool(_BIG_LOOT.search(text))
+    app = _app_named(text, hosts, quick_only=False)
+    priced = [a.value for a in parsed.amounts if a.kind in ("sell", "plain")]
+    # "Accessories start @29", "under ₹499": a sale, not one product.
+    banner = (bool(parsed.amounts) and not priced) or bool(_FROM_PRICE.search(text))
+    if big and not banner:
+        tier, why = TIER_URGENT, "the channel calls it a big loot"
+    elif app and (_LOOT_WORD.search(text) or big):
+        tier, why = TIER_HIGH, f"{app} loot from a channel you marked"
+    else:
+        tier, why = TIER_NORMAL, "a deal from a channel you marked"
+    if parsed.conditional and tier > TIER_HIGH:
+        tier, why = TIER_HIGH, why + " (needs a qualifying purchase)"
+    if verdict is not None:
+        if tier > verdict.tier:
+            verdict.tier = tier
+            verdict.reason = why if verdict.label == "Quick loot" else f"{why} · {verdict.reason}"
+        verdict.max_tier = max(verdict.max_tier, tier)
+        if big and not verdict.label:
+            verdict.label = "Big loot"
+        return verdict
+    price = priced[0] if priced else None
+    return Verdict(tier, why + (f", at {fmt_inr(price)}" if price is not None else ""), price, None, 0.0,
+                   label="Big loot" if tier == TIER_URGENT else "Loot", max_tier=tier, needs_store_link=True)
 
 
 def _hosts(links: Sequence[str]) -> List[str]:
@@ -296,7 +359,6 @@ _AMOUNT_OFF = re.compile(
 _COUPON_CODE = re.compile(r"(?i:\bcode\b)[\s:)\-–👉]*([A-Z][A-Z0-9]{3,19})\b")
 _FLAT_BEFORE = re.compile(r"\bflat\s*$", re.I)
 _LOOT_WORD = re.compile(r"\bloot\b", re.I)
-_BIG_LOOT = re.compile(r"\b(?:big+|mega|biggest|massive|huge|super|crazy)\s+loot\b|\bloot\s+(?:alert|again\s+live)\b", re.I)
 # "Search : Shampoo / Sort by discount high to low": a hint to look inside the app.
 _SEARCH = re.compile(r"\bsearch\b(?:\s+(?:for|in\s+(?:the\s+)?app|on\s+\w+))?\s*(?P<mark>[:\-–=]|👉|➡️)?\s*[\"'“]?(?P<term>[^\n\"'”]{2,40})", re.I)
 _SORT_HINT = re.compile(r"\bsort\b[^\n]{0,40}\b(?:discount|price)\b|\b(?:discount|price)\s+(?:high|low)\s+to\s+(?:low|high)\b", re.I)
@@ -368,8 +430,7 @@ def _coupon_or_loot(parsed: ParsedText, settings: Settings, brand: str) -> Optio
 
 def _app_hint(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) -> Optional[Verdict]:
     """Loots inside an app, posted without a price: "Instamart: search Shampoo, sort by discount
-    high to low", or a "Big loot" that links straight into a shopping app. Quiet: they need a
-    look in the app, and are usually tied to a city."""
+    high to low". Quiet: they need a look in the app, and are usually tied to a city."""
     if not settings.quick_loots:
         return None
     text = parsed.text
@@ -383,16 +444,6 @@ def _app_hint(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) -> O
             sort = "" if not hint else " and sort by price" if "discount" not in hint.group(0).lower() else " and sort by discount"
             return Verdict(TIER_NORMAL, f"{app}: search “{term}”{sort} in the app", None, None, 0.0,
                            label="App loot", max_tier=TIER_NORMAL, key=f"apploot:{app.lower()}:{term.lower()}")
-    if _BIG_LOOT.search(text) and not parsed.amounts:
-        from .links import classify_host
-
-        # Only a link into the shop itself says where the loot is: "Big loot: Instamart" with a
-        # link to some other Telegram channel is an advert for that channel.
-        shop = _app_named("", hosts, quick_only=False) or next(
-            (host for host in hosts if classify_host(host) in ("store", "affiliate")), None)
-        if shop:
-            return Verdict(TIER_NORMAL, f"big loot at {shop}, no price given in the post", None, None, 0.0,
-                           label="Big loot", max_tier=TIER_NORMAL)
     return None
 
 

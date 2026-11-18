@@ -148,6 +148,16 @@ class Reader(unittest.TestCase):
 
 
 class Lists(unittest.TestCase):
+    def test_a_mark_makes_a_loot_channel(self):
+        from lootwatch.config import load_loot_channels
+
+        folder = tempfile.mkdtemp()
+        path = Path(folder) / "channels.txt"
+        path.write_text("! https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone\n!Loot_Dealsx\ndesidime\n", encoding="utf-8")
+        self.assertEqual(load_loot_channels(path), ["7rHGiXC8TnsxN2I9", "loot_dealsx"])
+        self.assertEqual(load_channels(path), ["Loot_Dealsx", "desidime"])
+        self.assertEqual(load_private_channels(path), ["7rHGiXC8TnsxN2I9"])
+
     def test_invite_links_are_kept_apart_from_public_channels(self):
         folder = tempfile.mkdtemp()
         path = Path(folder) / "channels.txt"
@@ -213,6 +223,51 @@ class InTheMonitor(unittest.TestCase):
         self.assertIn("Offerzone", push["message"])
         self.assertEqual(push["actions"][1]["url"], "https://t.me/c/1357275556/2")
         self.assertEqual(monitor._display("tg:+7rHGiXC8TnsxN2I9"), "Offerzone (invite-only)")
+
+    def test_a_marked_channel_rings_for_big_loots_with_shop_links_only(self):
+        from unittest import mock
+
+        from lootwatch import links
+        from lootwatch.config import load_traps
+
+        # The stand-in server plays a short-link service (like bit.ly): followed to see where it ends.
+        patcher = mock.patch.object(links, "GENERIC_SHORTENERS", links.GENERIC_SHORTENERS + ("127.0.0.1",))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        traps = Path(tempfile.mkdtemp()) / "traps.txt"
+        traps.write_text("iphone | 12000\n", encoding="utf-8")
+        self.settings.traps = load_traps(traps)
+        self.settings.loot_channels = ["7rHGiXC8TnsxN2I9"]
+        self.web.redirects["/r/amazon"] = "https://www.amazon.in/dp/B0BIGLOOT1"
+        self.web.redirects["/r/elsewhere"] = self.web.base + "/some-shop"
+        self.web.redirects["/r/telegram"] = "https://t.me/+AnotherChannel123"
+        self.web.pages["/some-shop"] = "<html><body>a shop nobody knows</body></html>"
+        now = time.time()
+
+        def post(number, text, links):
+            return TgPost("c/1357275556", number, now - 20, text, text, links=links)
+
+        self.page(TgPost("c/1357275556", 1, now - 7200, "Welcome", "Welcome"))
+        monitor = self.monitor()
+        monitor.cycle()
+        self.page(
+            post(2, "BIG LOOT 😱🔥 Buy fast", [self.web.base + "/r/amazon"]),
+            post(3, "BIG LOOT 🔥 hurry", [self.web.base + "/r/elsewhere"]),
+            post(4, "BIGGEST LOOT : BUY NOW 👇", ["https://t.me/addlist/VETj13smDQVmMWE1"]),
+            post(5, "BIGGEST LOOT : iPhone 17 at ONLY ₹2952 😱", ["https://t.me/addlist/zJpOTtO9ebM1NzM1"]),
+            post(6, "MEGA LOOT 🔥", [self.web.base + "/r/telegram"]),
+            post(7, "BIG LOOT: Lifetime free credit card, apply now", [self.web.base + "/r/amazon"]),
+        )
+        monitor.cycle()
+        pushes = [(p["priority"], p["title"]) for p in self.web.pushes]
+        self.assertEqual(pushes[0][0], 5, pushes)
+        self.assertTrue(pushes[0][1].startswith("Big loot"), pushes)
+        self.assertEqual(self.web.pushes[0]["click"], "https://www.amazon.in/dp/B0BIGLOOT1")
+        # 3 leads to an unknown shop, 4 and 6 to other channels, 7 is a card promotion: none of them rings.
+        # 5 names a product under its trap price but links only to a Telegram folder: quiet, with a warning.
+        self.assertEqual(len(pushes), 2, pushes)
+        self.assertEqual(pushes[1][0], 3)
+        self.assertIn("links only to Telegram channels", self.web.pushes[1]["message"])
 
     def test_a_channel_that_cannot_be_read_is_reported_like_any_source(self):
         self.account.errors["7rHGiXC8TnsxN2I9"] = "the Telegram account has not joined this channel: open the invite link"

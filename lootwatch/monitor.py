@@ -360,15 +360,21 @@ class Monitor:
     # ----------------------------------------------------- alert pipeline ---
     def _handle_post(self, source: str, label: str, text: str, analysis_text: str, links: List[str],
                      post_url: str, ts: Optional[float]) -> None:
-        verdict = evaluate_text(analysis_text, self.s, links=links)
+        verdict = evaluate_text(analysis_text, self.s, links=links, loot_channel=self._is_loot_channel(source))
         if verdict is not None:
             self._announce(verdict, source, label, text, links, post_url, ts)
+
+    def _is_loot_channel(self, source: str) -> bool:
+        """Is this a channel marked "!" in channels.txt?"""
+        if source.startswith("tg:+"):
+            return source[4:] in self.s.loot_channels
+        return source.startswith("tg:") and source[3:].lower() in self.s.loot_channels
 
     def _announce(self, verdict: Verdict, source: str, label: str, text: str, links: List[str],
                   post_url: str, ts: Optional[float]) -> None:
         """Check where a judged deal's links lead, then push it."""
         candidates = deal_links(links)
-        best_link, fingerprint, trusted = "", None, False
+        best_link, fingerprint, trusted, shop_link = "", None, False, False
         strange_host, unchecked = "", ""
         for link in candidates[:3]:
             host = host_of(link)
@@ -387,11 +393,20 @@ class Monitor:
                         unchecked = unchecked or f"{host} ({resolved.error if resolved else 'link checking is off'})"
             if kind in TRUSTED_KINDS:
                 trusted = True
+                shop_link = shop_link or kind in ("store", "affiliate")
                 if not best_link or kind == "store":
                     best_link = final
                 if kind == "store":
                     fingerprint = product_key(final)
                     break
+        if verdict.needs_store_link and not shop_link and (strange_host or not candidates or trusted):
+            return  # the post was only worth a push for a link into a shop, and it leads elsewhere
+        if links and not candidates and any(classify_host(host_of(link)) == "telegram" for link in links):
+            # "BIGGEST LOOT: iPhone at ₹2,952" with nothing but a link to a Telegram folder is an
+            # advert for other channels.
+            verdict.tier = min(verdict.tier, TIER_NORMAL)
+            verdict.max_tier = min(verdict.max_tier, TIER_NORMAL)
+            verdict.flags.append("the post links only to Telegram channels, not to a shop")
         if candidates and not trusted:
             if verdict.needs_trusted_link:
                 return

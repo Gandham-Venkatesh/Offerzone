@@ -42,7 +42,7 @@ _DEAD_LOGIN = ("AuthKeyUnregistered", "AuthKeyDuplicated", "SessionRevoked", "Se
 
 def invite_code(entry: str) -> Optional[str]:
     """The code of an invite link ("https://t.me/+uV5w..." -> "uV5w..."), or None."""
-    match = _INVITE.search(entry.strip())
+    match = _INVITE.search(entry.strip().lstrip("!").strip())
     return match.group(1) if match else None
 
 

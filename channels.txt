@@ -38,9 +38,13 @@ lootalerts                    # LootAlerts (21K) - about 11 posts an hour
 IHDBroadcast                  # IHD Deals Broadcast (20K)
 DesidimeHot                   # DesiDime handpicked (18K)
 
-# --- invite-only: read only when a Telegram account is set up (README: "Invite-only channels")
-https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone (3.9M)
-https://t.me/+uV5wcTkUWJEwM2Y1 # Offerzone Tricks (3.0M)
+# --- invite-only: read only when a Telegram account is set up (README: "Invite-only channels").
+#     The "!" marks a loot channel: its own word for a deal is believed. Every post of it that links
+#     into a shop is pushed, a quick-commerce or fashion-app loot loudly, and a "big loot" with a
+#     shop link at max priority. Card, loan and referral promotions and adverts for other channels
+#     still never are. Any channel can be marked this way.
+! https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone (3.9M)
+! https://t.me/+uV5wcTkUWJEwM2Y1 # Offerzone Tricks (3.0M)
 
 # --- quick commerce and food (Blinkit, Zepto, Swiggy Instamart, BigBasket)
 FoodJunction                  # FRJ food coupons (11K)

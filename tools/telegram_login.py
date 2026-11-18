@@ -7,13 +7,14 @@ It asks for the api_id and api_hash of an app you create at https://my.telegram.
 development tools), then logs in to Telegram the usual way: phone number, the code Telegram sends
 you, and your two-step password if you set one. Nothing is sent anywhere but to Telegram.
 
-At the end it prints a long "session string". Put it, with the api_id and api_hash, into the
-repository's Actions secrets as TG_SESSION, TG_API_ID and TG_API_HASH. The session string is a full
-login to that Telegram account: never paste it anywhere else. If it ever leaks, end it in Telegram
+It prints a long "session string". Put it, with the api_id and api_hash, into the repository's
+Actions secrets as TG_SESSION, TG_API_ID and TG_API_HASH. The session string is a full login to
+that Telegram account: never paste it anywhere else. If it ever leaks, end it in Telegram
 (Settings -> Devices) and run this again. A separate account that only joins deal channels is the
 safer choice.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -24,11 +25,7 @@ try:
 except ImportError:
     sys.exit("Telethon is not installed: run  pip install telethon  first.")
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-try:
-    from lootwatch.config import load_private_channels
-except Exception:  # run from somewhere else: the membership check is only a convenience
-    load_private_channels = None
+INVITE = re.compile(r"(?:t\.me|telegram\.me)/(?:\+|joinchat/)([A-Za-z0-9_\-]{8,64})")
 
 
 def main() -> None:
@@ -37,15 +34,21 @@ def main() -> None:
     with TelegramClient(StringSession(), api_id, api_hash) as client:  # asks for phone, code, password
         me = client.get_me()
         print(f"\nLogged in as {me.first_name or ''} {me.last_name or ''} (@{me.username or 'no username'}).")
-        channels = Path(__file__).resolve().parent.parent / "channels.txt"
-        if load_private_channels and channels.exists():
-            for code in load_private_channels(channels):
-                invite = client(functions.messages.CheckChatInviteRequest(code))
-                chat = getattr(invite, "chat", None)
-                title = getattr(chat, "title", None) or getattr(invite, "title", code)
-                print(f"  {title}: " + ("joined, can be read" if chat else "NOT joined yet: open t.me/+" + code + " and join"))
-        print("\nTG_SESSION (copy all of the next line into the GitHub secret; keep it private):\n")
+        print("\nTG_SESSION (copy ALL of the next line into the GitHub secret; keep it private):\n")
         print(client.session.save())
+        print()
+        channels = Path(__file__).resolve().parent.parent / "channels.txt"
+        codes = INVITE.findall(channels.read_text(encoding="utf-8")) if channels.exists() else []
+        for code in dict.fromkeys(codes):
+            try:
+                invite = client(functions.messages.CheckChatInviteRequest(code))
+            except Exception as exc:  # an expired link, for instance
+                print(f"  t.me/+{code}: could not check ({type(exc).__name__})")
+                continue
+            chat = getattr(invite, "chat", None)
+            title = getattr(chat, "title", None) or getattr(invite, "title", code)
+            print(f"  {title}: " + ("joined, the monitor can read it" if chat
+                                    else f"NOT joined yet: open https://t.me/+{code} with this account and join"))
 
 
 if __name__ == "__main__":
