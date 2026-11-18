@@ -7,13 +7,14 @@ import logging
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
 from .config import Settings, load_env_file
 from .db import DB
 from .doctor import run_doctor
-from .fetch import Fetcher
+from .fetch import Fetcher, set_site_gaps
 from .links import LinkResolver, set_extra_store_domains
 from .monitor import Monitor
 from .notify import Notifier, build_payload
@@ -28,8 +29,13 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_argument_group("what to do (default: scan forever)")
     mode.add_argument("--once", action="store_true", help="run one scan and exit")
     mode.add_argument("--doctor", action="store_true", help="check every source once and print what works; pushes nothing")
-    mode.add_argument("--test-ntfy", action="store_true", help="send one test push and exit")
+    mode.add_argument("--test-ntfy", action="store_true", help="send three test pushes a minute apart (quiet, high, urgent) and exit")
     mode.add_argument("--max-runtime", type=float, metavar="SECONDS", help="keep scanning for about this long, then exit")
+    mode.add_argument("--handover-file", metavar="PATH",
+                      help="with --max-runtime: keep scanning past the end until this file appears "
+                           "(the next run is ready to take over)")
+    mode.add_argument("--max-overtime", type=float, default=1500.0, metavar="SECONDS",
+                      help="with --handover-file: give up waiting for the next run after this long (default: 1500)")
     mode.add_argument("--dry-run", action="store_true", help="scan normally but only log alerts instead of pushing them")
 
     cfg = parser.add_argument_group("settings")
@@ -77,6 +83,7 @@ def main(argv=None) -> int:
     })
     settings.load_lists()
     set_extra_store_domains(settings.extra_store_domains)
+    set_site_gaps(settings.site_gaps)
     notifier = Notifier(settings.ntfy_server, settings.ntfy_topic, settings.ntfy_token,
                         settings.ntfy_health_topic, dry_run=settings.dry_run)
 
@@ -84,19 +91,38 @@ def main(argv=None) -> int:
         if not notifier.configured:
             log.error("NTFY_TOPIC is not set (use --ntfy-topic, the NTFY_TOPIC variable, or .env)")
             return 1
-        result = notifier.send(build_payload(
-            title="99% off · ₹400 (MRP ₹60,000) — test alert",
-            message="This is a test from your loot monitor. Real price-error alerts will look and sound like this one.",
-            priority=5, tags=["rotating_light"], click="https://www.flipkart.com/",
-            actions=[{"label": "Open deal", "url": "https://www.flipkart.com/"}],
-        ))
-        log.info("test push %s", "sent - check your phone" if result.ok else f"FAILED: {result.error}")
-        return 0 if result.ok else 1
+        # One push per loudness, quietest first and a minute apart, so each can be heard, looked at
+        # and silenced on its own before the next one arrives.
+        samples = (
+            (3, ["label"], "TEST 1 of 3, quiet (priority 3): 82% off · ₹899 (MRP ₹4,999) — test alert",
+             "This is how an ordinary good deal arrives: 80% off or more, saving ₹2,000 or more."),
+            (4, ["fire"], "TEST 2 of 3, high (priority 4): 92% off · ₹1,299 (MRP ₹16,999) — test alert",
+             "This is how a strong deal arrives: 90% off or more, or a fall to a fraction of the usual price."),
+            (5, ["rotating_light"], "TEST 3 of 3, URGENT (priority 5): 99% off · ₹400 (MRP ₹60,000) — test alert",
+             "This is how a price error arrives. Give this priority a loud sound of its own in the ntfy app and let it "
+             "through Do Not Disturb."),
+        )
+        failed = 0
+        for index, (priority, tags, title, message) in enumerate(samples):
+            if index:
+                gap = float(os.environ.get("TEST_PUSH_GAP") or 60)
+                log.info("next test push in %d seconds", gap)
+                time.sleep(gap)
+            result = notifier.send(build_payload(
+                title=title, message=message + " Sent by your loot monitor's test; nothing is on sale."
+                + (" The next test follows in about a minute." if index < len(samples) - 1 else " This was the last test."),
+                priority=priority, tags=tags, click="https://www.flipkart.com/",
+                actions=[{"label": "Open deal", "url": "https://www.flipkart.com/"}],
+            ))
+            failed += 0 if result.ok else 1
+            log.info("test push, priority %d: %s", priority, "sent" if result.ok else f"FAILED: {result.error}")
+        log.info("%s", "three test pushes sent - check your phone" if not failed else f"{failed} of 3 test pushes failed")
+        return 0 if not failed else 1
 
     if args.doctor:
         return run_doctor(settings, verbose=args.verbose)
 
-    if not (settings.channels or settings.feeds or settings.watchlist):
+    if not (settings.channels or settings.private_channels or settings.feeds or settings.watchlist):
         log.error("nothing to watch: %s, %s and %s are all empty or missing",
                   settings.channels_file, settings.feeds_file, settings.watchlist_file)
         return 1
@@ -111,7 +137,8 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, _stop)
     undelivered = 0
     try:
-        undelivered = monitor.run(once=args.once, max_runtime=args.max_runtime)
+        undelivered = monitor.run(once=args.once, max_runtime=args.max_runtime,
+                                  handover_file=args.handover_file, max_overtime=args.max_overtime)
     except KeyboardInterrupt:
         log.info("stopped")
     finally:

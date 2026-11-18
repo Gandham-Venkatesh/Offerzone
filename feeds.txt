@@ -1,5 +1,21 @@
-# Optional RSS / Atom feeds, one URL per line. Entries are judged exactly like Telegram posts.
-# Any deal blog or forum with a feed works. None are enabled by default; --doctor checks the ones you add.
+# Deal sites and feeds, one address per line. Every entry is judged like a channel post.
 #
-# Examples (remove the leading "# " to enable):
-# https://www.reddit.com/r/dealsforindia/new/.rss
+# These three are read as ordinary web pages, because a deal is on the page long before it is
+# repeated anywhere else (on 12 Nov 2026 DesiDime's own Telegram channel ran about twenty minutes
+# behind its website):
+#
+#   desidime.com/new          deals as members post them: title, price, list price, store
+#   dealsmagnet.com/new       the same kind of list, filled by a price robot
+#   pricehistory.app/price-drop   a price tracker's live list of Amazon and Flipkart products that
+#                             just got cheaper. This is the only window on Amazon the monitor has
+#                             (Amazon's own pages refuse it). Its items are judged by how far the
+#                             price stands below the product's usual price: quietly from 60%,
+#                             loudly from 70%, at max priority from 80% (TRACKER_DROP_PCT,
+#                             URGENT_DROP_PCT), and only when at least Rs 2,000 is saved.
+https://www.desidime.com/new
+https://www.dealsmagnet.com/new
+https://pricehistory.app/price-drop
+
+# Any RSS or Atom feed of a deal blog or forum works as well; --doctor checks the ones you add.
+# Example (remove the leading "# " to enable):
+# https://www.bigtricks.in/feed

@@ -66,6 +66,7 @@ class FakeWeb:
         self.ntfy_status = 200
         self.ntfy_retry_after: Optional[str] = None
         self.hits: "collections.Counter[str]" = collections.Counter()
+        self.get_headers: Dict[str, dict] = {}  # path -> request headers of the last GET for it
         self._server: Optional[ThreadingHTTPServer] = None
         self.port = 0
 
@@ -94,6 +95,7 @@ class FakeWeb:
             def do_GET(self) -> None:
                 path = self.path.split("?")[0]
                 web.hits[path] += 1
+                web.get_headers[path] = {k.lower(): v for k, v in self.headers.items()}
                 if path in web.status_for:
                     return self._send(web.status_for[path], "refused", headers=web.headers_for.get(path))
                 if path in web.redirects:

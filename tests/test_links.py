@@ -1,8 +1,42 @@
 import unittest
 
 from lootwatch.config import load_channels, load_traps, load_watchlist, parse_channel
-from lootwatch.links import LinkResolver, classify_host, deal_links, host_of, product_key, text_fingerprint
+from lootwatch.links import (LinkResolver, classify_host, deal_links, host_of, product_key, same_product_name,
+                             text_fingerprint)
 from tests.helpers import FakeWeb
+
+
+class SameProductByName(unittest.TestCase):
+    """Two sources naming one product, when no link ties them together (titles as seen on 12 Nov 2026)."""
+
+    def test_the_same_product_written_two_ways(self):
+        for first, second in (
+            ("MILTON Micronova Jr. Gift Set Inner Stainless Steel Casserole, Set of 3", "Lowest : Milton Micronova Jr. Gift Set (Set of 3)"),
+            ("CableCreation 5-in-1 USB C Hubs,Dock USBC Hub Multiport Adapter to HDMI", "CableCreation 5-in-1 USB C Hubs,Dock USBC Hub Multiport Adapter"),
+            ("Sony Bravia 55 inch 4K TV", "Sony Bravia TV loot"),
+            ("Apple iPhone 15 (Black, 128 GB)", "iPhone 15 128GB Black"),
+            ("Nothing Phone (3a) Pro 5G", "Nothing phone 3a pro price error"),
+            ("Signoraware Lunchbox", "SignoraWare Lunchbox"),
+        ):
+            with self.subTest(first=first, second=second):
+                self.assertTrue(same_product_name(first, second))
+                self.assertTrue(same_product_name(second, first))
+
+    def test_different_products_that_share_words(self):
+        for first, second in (
+            ("Samsung Galaxy M35 5G (Daybreak Blue, 128 GB)", "Samsung Galaxy A06 (Gold, 64 GB)"),
+            ("Apple iPhone 15 (Black, 128 GB)", "Apple iPhone 16 (Black, 128 GB)"),
+            ("boAt Rockerz 255 Pro+", "boAt Rockerz 450 Pro"),
+            ("Nothing Phone (3a) Pro", "Nothing Phone (2a) Plus"),
+            ("Fire-Boltt Glitz Women Smart Watch with 1.19 AMOLED Display", "Fire-Boltt Rise Smart Watch 1.85 HD Display"),
+            ("Fire-Boltt Ninja Call Pro Plus Smart Watch", "Fire-Boltt Trio 4.64 cm Smart Watch"),
+            ("Upto 70% Off On Signoraware Products", "Up to 61% Off On Signoraware Products"),
+            ("Nike Revolution 7", "Adidas Duramo"),
+            ("Loot", "Loot 999"),
+        ):
+            with self.subTest(first=first, second=second):
+                self.assertFalse(same_product_name(first, second))
+                self.assertFalse(same_product_name(second, first))
 
 
 class Hosts(unittest.TestCase):

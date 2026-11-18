@@ -4,7 +4,8 @@ from pathlib import Path
 
 from lootwatch.config import Settings, load_traps
 from lootwatch.db import PriceInfo
-from lootwatch.scoring import TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_offer, evaluate_text, is_accessory, is_side_product
+from lootwatch.scoring import (TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_offer, evaluate_stated, evaluate_text,
+                              is_accessory, is_finance_promo, is_side_product)
 
 
 def make_settings(traps: str = "") -> Settings:
@@ -269,7 +270,11 @@ class TextVerdicts(unittest.TestCase):
                 self.assertIsNone(self.tier(text))
 
     def test_capped_coupons_and_closed_deals_are_not_deals(self):
-        self.assertIsNone(self.tier("SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)"))
+        # A capped coupon is never "95% off" a product. For a food app it is still worth a look as what it
+        # is: a coupon, counted at what the cap leaves of it (₹160 on ₹199 is 80%), and never at max priority.
+        coupon = evaluate_text("SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)", self.s)
+        self.assertEqual((coupon.label, coupon.tier, coupon.max_tier, round(coupon.discount)), ("Coupon", TIER_HIGH, TIER_HIGH, 80))
+        self.assertIsNone(self.tier("Mega sale: Up to 80% OFF!\n• Flat 95% OFF up to ₹160 (Min Order: ₹199)"), "any other shop: ignored")
         self.assertIsNone(self.tier("[ OVER ] Big Loot ₹1 (MRP ₹5,000) : https://instamart.in/item/x"))
 
     def test_below_threshold_is_ignored(self):
@@ -528,6 +533,25 @@ class OfferVerdicts(unittest.TestCase):
         # Ordinary no-name listings show 50-70% off inflated list prices: quiet.
         self.assertIsNone(self.floor("Uniboom 60 cm (24 inch) HD Ready LED TV", 5753, self.NEW, mrp=19990))
         self.assertIsNone(self.floor("DOMO Slate SL39 Tablet", 8490, self.NEW, mrp=24990))
+
+    def test_page_sorted_by_discount_has_no_floor_and_never_rings_at_max(self):
+        # A floor of 0 marks a page sorted by biggest discount: clearance stock at 95% off is its normal top.
+        def new_on_page(title, price, mrp):
+            return evaluate_offer(title, price, mrp, self.NEW, self.s, target=0, listing=True)
+
+        tv = new_on_page("Croma 109 cm (43 inch) 4K Ultra HD LED Smart Google TV", 2999, 59990)
+        self.assertEqual((tv.tier, tv.max_tier, tv.label), (TIER_HIGH, TIER_HIGH, "Far below list price"))
+        # No floor: nothing "falls under" it, however cheap, and small things stay quiet.
+        self.assertIsNone(new_on_page("GOQii Mask", 14, 299))
+        self.assertIsNone(new_on_page("Philips TAE2146 Wired Earphone with Mic", 164, 899), "saves under Rs 2,000")
+        self.assertIsNone(new_on_page("Inbase TPU Back Cover for SAMSUNG Galaxy S23+", 24, 2499), "an accessory")
+        self.assertIsNone(new_on_page("LG 80 cm (32 inch) HD Ready LED TV", 11999, 24990), "52% off is nothing special here")
+        # What was on the page when it was first read never alerts this way.
+        seen = PriceInfo(baseline=2999, observations=3, last_price=2999, first_seen=False, last_age=60.0, quiet_price=2999)
+        self.assertIsNone(evaluate_offer("Croma 109 cm (43 inch) 4K Ultra HD LED Smart Google TV", 2999, 59990, seen, self.s,
+                                         target=0, listing=True))
+        # On a real floor page the same newcomer may ring at max priority, and needs the same real saving.
+        self.assertEqual(self.floor("Sony Bravia 55 inch 4K TV", 4500, self.NEW, mrp=99900).tier, TIER_URGENT)
         # Not for accessories, small list prices, products already known, or pages without a floor.
         self.assertIsNone(self.floor("Laptop Skin Sticker for 15.6 inch", 4500, self.NEW, mrp=39999 // 4))
         self.assertIsNone(self.floor("Mini Notebook", 4500, self.NEW, mrp=11999))
@@ -592,6 +616,132 @@ class OfferVerdicts(unittest.TestCase):
     def test_first_check_of_a_product_page_at_a_huge_discount(self):
         new = PriceInfo(baseline=None, observations=0, last_price=None, first_seen=True)
         self.assertEqual(evaluate_offer("Smart Watch", 499, 4999, new, self.s).tier, TIER_HIGH)
+
+
+class QuickCommerce(unittest.TestCase):
+    """Coupons and loot posts of food and quick-commerce apps (posts as seen on FoodJunction and swiggyLoots)."""
+
+    def setUp(self):
+        self.s = make_settings("")
+
+    def verdict(self, text):
+        return evaluate_text(text, self.s)
+
+    def test_big_coupons(self):
+        swiggy = self.verdict("Swiggy : Get Flat ₹160 off on Order Above ₹199\nCode : FLASHSALE\nValid Mostly For Metro Cities")
+        self.assertEqual((swiggy.tier, swiggy.max_tier, swiggy.label), (TIER_HIGH, TIER_HIGH, "Coupon"))
+        self.assertEqual(swiggy.headline, "Coupon: 80% off")
+        self.assertEqual(swiggy.reason, "Swiggy coupon: ₹160 off on a ₹199 order, code FLASHSALE")
+        self.assertEqual(swiggy.key, "coupon:swiggy:FLASHSALE")
+        zomato = self.verdict("Zomato New Promocode❤️\nGet 70% Off On Order Above ₹99\nMaximum Discount is ₹140\nCode :) MUNCHYBLISS")
+        self.assertEqual((zomato.tier, zomato.key), (TIER_NORMAL, "coupon:zomato:MUNCHYBLISS"))
+        self.assertIn("70% off up to ₹140 on orders from ₹99", zomato.reason)
+        capped = self.verdict("🚨 SWIGGY FLASHSALE: Up to 80% OFF Food Orders!\n• Flat 80% OFF up to ₹160 (Min Order: ₹199)\n• Flat 70% OFF up to ₹140")
+        self.assertEqual(capped.tier, TIER_HIGH)
+        basket = self.verdict("Cred × Bigbasket Offers\nMany Bigbasket Coupon Available\nGet ₹150 Off on Order Above ₹249")
+        self.assertEqual((basket.tier, basket.key), (TIER_NORMAL, "coupon:bigbasket:60"))
+
+    def test_a_cap_makes_a_big_percentage_small(self):
+        # 80% off, but at most ₹50 on a ₹499 order: a tenth of the bill.
+        self.assertIsNone(self.verdict("Zepto: Flat 80% off up to ₹50 on orders above ₹499\nCode: ZEP50"))
+
+    def test_small_coupons_banners_and_other_shops_stay_quiet(self):
+        for text in (
+            "🎁Zomato Offer : 50% Off Upto ₹200\n₹100 order @ ₹50\nUse Code : HARP0532",
+            "Swiggy Offer : Pick ₹50 Free Cash/ Upto ₹150 Off Coupon.\nCombine With Restaurants Giving 70% Off Discount.",
+            "Blinkit: Up to 80% off on snacks",
+            "BigBasket Free Shopping Offer\nThey Credited Free Cash Again",
+            "Amazon: Flat 70% off on orders above ₹99 with code SAVE70",
+            "Swiggy: Flat ₹60 off on orders above ₹199\nCode: SAVE60",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(self.verdict(text))
+
+    def test_loot_posts_alert_quietly_without_a_list_price(self):
+        zepto = self.verdict("Zepto Loot\n@ 24\nhttps://www.zepto.com/pn/mccain-chilli-garlic-potato-bites/pvid/bfec78f0")
+        self.assertEqual((zepto.tier, zepto.max_tier, zepto.label, zepto.price), (TIER_NORMAL, TIER_NORMAL, "Quick loot", 24.0))
+        instamart = self.verdict("Swiggy Instamart Loot\nPigeon Air Fryer Large 5.5L @2999\nhttps://instamart.in/item/N67PETRK4E\nAvailable in Hyderabad")
+        self.assertIn("Instamart loot post", instamart.reason)
+        self.assertIsNone(self.verdict("[ OVER ] Big Loot ₹100\nhttps://instamart.in/item/IU2N2FNXT6"), "announced as over")
+        self.assertIsNone(self.verdict("⚡️Swiggy Dineout Loot Starting at ₹11"), "a range, not a price")
+        self.assertIsNone(self.verdict("Bigbasket : Karwa Chauth Sargi Box at ₹19"), "nobody called it a loot")
+        self.assertIsNone(self.verdict("Loot @ 24\nhttps://amzn.to/x"), "not one of these apps")
+
+    def test_the_ordinary_rules_still_come_first(self):
+        post = self.verdict("Zepto price error\nSony WH-1000XM5 @ ₹499 (MRP ₹34,990)")
+        self.assertEqual((post.tier, post.label), (TIER_URGENT, "Price error?"))
+
+    def test_search_hints_for_shopping_apps(self):
+        shampoo = self.verdict("Swiggy Instamart Loot\nSearch : Shampoo\n*Sort by Discount High to Low\n*Check In Your Location")
+        self.assertEqual((shampoo.tier, shampoo.label, shampoo.max_tier), (TIER_NORMAL, "App loot", TIER_NORMAL))
+        self.assertEqual(shampoo.reason, "Instamart: search “Shampoo” and sort by discount in the app")
+        self.assertEqual(shampoo.key, "apploot:instamart:shampoo", "the same hint from many channels is one alert")
+        fruits = self.verdict("Swiggy Instamart\nSearch : Fruits and vegetables")
+        self.assertIn("“Fruits and vegetables”", fruits.reason)
+        bulb = self.verdict("Blinkit Loot\nSearch: Phillips Bulb and sort by price low to high")
+        self.assertEqual(bulb.reason, "Blinkit: search “Phillips Bulb” and sort by price in the app")
+        jeans = self.verdict("Myntra Loot 🔥\nSearch - Roadster jeans\nSort : Discount high to low")
+        self.assertEqual(jeans.reason, "Myntra: search “Roadster jeans” and sort by discount in the app")
+        self.assertIn("Ajio", self.verdict("Big loot on Ajio: search \"puma shoes\" and sort by discount").reason)
+        for text in ("Search for the best deals on our website", "Instamart is live in your city, search now",
+                     "Amazon: search Shampoo, sort by discount"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.verdict(text))
+
+    def test_a_big_loot_needs_a_link_into_the_shop(self):
+        zepto = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"])
+        self.assertEqual((zepto.tier, zepto.label), (TIER_NORMAL, "Big loot"))
+        self.assertIsNone(evaluate_text("BIG LOOT : Swiggy Instamart", self.s, links=["https://t.me/+9MtPJAnaAnBkMmU1"]),
+                          "a link to another channel is an advert for that channel")
+        self.assertIsNone(evaluate_text("Big loot on Zepto", self.s), "no link at all")
+
+    def test_both_can_be_switched_off(self):
+        self.s.quick_coupon_pct = 0
+        self.s.quick_loots = False
+        self.assertIsNone(self.verdict("Swiggy : Get Flat ₹160 off on Order Above ₹199\nCode : FLASHSALE"))
+        self.assertIsNone(self.verdict("Blinkit Loot ₹1\nhttps://bitli.in/Z6dkVo8"))
+
+
+class FinancePromotions(unittest.TestCase):
+    """Card, loan and referral promotions that loot channels post as "Big Loot" (posts as seen on 12 Nov 2026)."""
+
+    def setUp(self):
+        self.s = make_settings("")
+
+    def test_promotions_never_alert(self):
+        for text in (
+            "🚨Scapia New Referral Loot : Apply Lifetime Free Scapia Card & Get Tanishq Gift Voucher 🎁\nRefer 6 → ₹25000 Tanishq GV",
+            "BIG LOOT : Get Lifetime Free HDFC Tata Neu Credit Card.\nApply Here : https://bitl.in/gJtQNQi\nMust Apply Referral Code - SUCH1940",
+            "Some of our Followers Casually Applied for Scapia Card and Got Approved with Very Good Limits.\nApply Here : https://bitli.in/On8YptX",
+            "🔥 ROAR CREDIT CARD – LIFETIME FREE! 💳\n💸 Up to 20% Cashback\n🆓 ₹0 Joining + ₹0 Annual Fee",
+            "NEED AN URGENT PERSONAL LOAN? GET UP TO ₹15 LAKHS!\n• 100% Digital | Instant Approval",
+            "✅BIGGEST LOOT🔥: GET ₹788 Amazon Gift Card 😍\n*Apply Lifetime FREE AXIS MyZone Credit Card, & Enjoy ₹788 FREE Amazon GV",
+            "Price error 😱 ₹1 card offer: apply for the IndusInd Legend credit card today",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(is_finance_promo(text))
+                self.assertIsNone(evaluate_text(text, self.s))
+
+    def test_a_link_to_a_bank_is_a_promotion_too(self):
+        self.assertIsNone(evaluate_text("Big loot 🔥 Rs 500 free voucher, 99% off", self.s,
+                                        links=["https://apply.scapia.cards/landing_page?referral_code=x"]))
+        self.assertIsNone(evaluate_text("Price error!! iPhone voucher @ 99", self.s, links=["https://www.hdfcbank.com/x"]))
+
+    def test_bank_offers_that_come_with_a_product_deal_are_not_promotions(self):
+        for text in (
+            "Lenovo Idea Tab at 16,499\n*Apply 500 Coupon + *2,000 Off With SBI Credit Card.",
+            "iPhone 16 @ ₹54,999\n₹4,000 off with HDFC credit card, apply coupon",
+            "Samsung Galaxy S25 @ ₹54,999 (MRP ₹1,04,999)\nExtra 10% off with ICICI credit card",
+            "Zomato: apply code MUNCHYBLISS for 70% off",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(is_finance_promo(text))
+        deal = evaluate_text("Price error! Sony Bravia 55 inch @ ₹2,499 (MRP ₹79,990)\n₹1,000 off with SBI credit card", self.s)
+        self.assertEqual(deal.tier, TIER_URGENT)
+
+    def test_deal_site_cards_are_filtered_the_same_way(self):
+        self.assertIsNone(evaluate_stated("Lifetime Free HDFC Swiggy Credit Card", "Apply now", 0.01, 500, self.s))
+        self.assertIsNone(evaluate_stated("Free voucher worth ₹5,000", "", 1, 5000, self.s, links=["https://www.sbicard.com/apply"]))
 
 
 if __name__ == "__main__":

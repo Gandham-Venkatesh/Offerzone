@@ -15,7 +15,7 @@ import random
 import re
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -85,9 +85,9 @@ class Policy:
 _POLICIES: Tuple[Tuple[str, Policy], ...] = (
     # Telegram previews are made of other people's words (even the <title> is the channel's name),
     # so their content must never be able to look like a block. Telegram refuses with a status code.
-    ("t.me", Policy(0.8, 1.6, 60, 900, sniff_challenge=False)),
+    ("t.me", Policy(0.5, 1.0, 60, 900, sniff_challenge=False)),
     ("amazon.in", Policy(6.0, 10.0, 300, 7200, True)),
-    ("flipkart.com", Policy(5.0, 8.0, 300, 7200, True)),
+    ("flipkart.com", Policy(3.0, 5.0, 300, 7200, True)),
     ("myntra.com", Policy(6.0, 10.0, 300, 7200, True)),
     ("blinkit.com", Policy(6.0, 10.0, 300, 7200, True)),
     ("zepto.com", Policy(6.0, 10.0, 300, 7200, True)),
@@ -98,13 +98,41 @@ _DEFAULT_POLICY = Policy(3.0, 5.0, 120, 3600, True)
 _LOCAL_POLICY = Policy(0.0, 0.0, 1, 5)  # localhost: tests and self-hosted services
 
 
+_gap_overrides: Dict[str, Tuple[float, float]] = {}
+
+
+def set_site_gaps(spec: str) -> None:
+    """Change how long to wait between two requests to a site: "flipkart.com=3-5, t.me=0.5-1".
+
+    Everything else about the site's treatment stays (the back-off after a refusal above all).
+    Entries that make no sense are ignored with a warning; a gap is never allowed under 0.3 s.
+    """
+    _gap_overrides.clear()
+    for entry in (spec or "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        match = re.fullmatch(r"([a-z0-9.\-]+)\s*=\s*(\d+(?:\.\d+)?)\s*(?:-\s*(\d+(?:\.\d+)?))?", entry, re.I)
+        if not match:
+            log.warning("SITE_GAPS: cannot read %r (write it like flipkart.com=3-5)", entry)
+            continue
+        low = max(0.3, float(match.group(2)))
+        high = max(low, float(match.group(3) or match.group(2)))
+        _gap_overrides[match.group(1).lower().lstrip(".")] = (low, high)
+
+
 def policy_for(host: str) -> Policy:
     if host in ("localhost", "127.0.0.1", "::1"):
         return _LOCAL_POLICY
-    for domain, policy in _POLICIES:
+    policy = _DEFAULT_POLICY
+    for domain, candidate in _POLICIES:
         if host == domain or host.endswith("." + domain):
-            return policy
-    return _DEFAULT_POLICY
+            policy = candidate
+            break
+    for domain, (low, high) in _gap_overrides.items():
+        if host == domain or host.endswith("." + domain):
+            return replace(policy, min_gap=low, max_gap=high)
+    return policy
 
 
 @dataclass

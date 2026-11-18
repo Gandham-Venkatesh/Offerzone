@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+HISTORY_SPACING = 12 * 3600  # seconds between two stored readings of an unchanged price
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen (
     source TEXT NOT NULL, item_id TEXT NOT NULL, seen_at INTEGER NOT NULL,
@@ -117,6 +119,17 @@ class DB:
             ).fetchone()
         return tuple(row) if row else None
 
+    def alerts_near_price(self, price: float, since: float) -> List[Tuple[int, int, Optional[float], int, str, str]]:
+        """(id, tier, price, created_at, fingerprint, title) of the alerts since ``since`` priced within 1% of ``price``."""
+        margin = max(1.0, price * 0.01)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, tier, price, created_at, fingerprint, title FROM alerts WHERE created_at >= ? AND dropped = 0 "
+                "AND price BETWEEN ? AND ? ORDER BY created_at DESC LIMIT 40",
+                (int(since), price - margin, price + margin),
+            ).fetchall()
+        return [tuple(row) for row in rows]
+
     def add_alert(self, fingerprint: str, tier: int, price: Optional[float], title: str, source: str,
                   payload: str, now: Optional[float] = None) -> int:
         with self._lock, self._conn:
@@ -183,7 +196,8 @@ class DB:
 
         The baseline is the median of the stored history, so one odd reading
         neither creates nor hides a drop. History is thinned to one point per
-        hour unless the price changes.
+        twelve hours unless the price changes: thousands of products are followed,
+        and the whole state file travels from run to run.
         """
         now = int(now or time.time())
         with self._lock, self._conn:
@@ -196,16 +210,19 @@ class DB:
             newest = self._conn.execute(
                 "SELECT ts, price FROM price_obs WHERE key = ? ORDER BY ts DESC LIMIT 1", (key,)
             ).fetchone()
+            last_price = float(product[0]) if product and product[0] is not None else None
             info = PriceInfo(
-                baseline=statistics.median(history) if history else None,
-                observations=len(history),
-                last_price=float(product[0]) if product and product[0] is not None else None,
+                # Readings are kept for three weeks, the product itself for six: one that comes
+                # back after a month is compared with the price it was last seen at.
+                baseline=statistics.median(history) if history else last_price,
+                observations=len(history) or (1 if last_price is not None else 0),
+                last_price=last_price,
                 first_seen=product is None,
                 last_age=float(now - product[1]) if product and product[1] is not None else None,
                 quiet_price=float(product[2]) if product and product[2] is not None else None,
                 quiet_alerted=bool(product[3]) if product else False,
             )
-            if newest is None or abs(newest[1] - price) > 0.005 or now - newest[0] >= 3600:
+            if newest is None or abs(newest[1] - price) > 0.005 or now - newest[0] >= HISTORY_SPACING:
                 self._conn.execute("INSERT INTO price_obs (key, ts, price) VALUES (?, ?, ?)", (key, now, price))
             self._conn.execute(
                 "INSERT INTO products (key, store, title, url, first_seen, last_seen, last_price, mrp) "
@@ -306,9 +323,11 @@ class DB:
         now = int(now or time.time())
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM seen WHERE seen_at < ?", (now - 14 * 86400,))
+            # A price tracker lists thousands of drops a day, and none stays on its page for an hour.
+            self._conn.execute("DELETE FROM seen WHERE seen_at < ? AND item_id LIKE 'ph%'", (now - 2 * 86400,))
             self._conn.execute("DELETE FROM sightings WHERE seen_at < ?", (now - 2 * 86400,))
             self._conn.execute("DELETE FROM alerts WHERE created_at < ?", (now - 30 * 86400,))
-            self._conn.execute("DELETE FROM price_obs WHERE ts < ?", (now - 45 * 86400,))
+            self._conn.execute("DELETE FROM price_obs WHERE ts < ?", (now - 21 * 86400,))
             self._conn.execute("DELETE FROM products WHERE last_seen < ?", (now - 45 * 86400,))
             self._conn.execute("DELETE FROM kv WHERE key LIKE 'day:%' AND key < ?",
                                ("day:" + time.strftime("%Y-%m-%d", time.gmtime(now - 10 * 86400)),))

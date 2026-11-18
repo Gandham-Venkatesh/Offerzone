@@ -72,12 +72,16 @@ def parse_channel(entry: str) -> Optional[str]:
 
 
 def load_channels(path: Path) -> List[str]:
+    """The public channels of a channels file (invite links are collected by load_private_channels)."""
+    from .sources.tgaccount import invite_code
+
     channels: List[str] = []
     seen = set()
     for line in read_lines(path):
         name = parse_channel(line)
         if not name:
-            log.warning("channels: skipping %r (need a public @username; invite links cannot be read)", line)
+            if not invite_code(line):
+                log.warning("channels: skipping %r (not a channel name or a t.me link)", line)
             continue
         if name.lower() not in seen:
             seen.add(name.lower())
@@ -85,18 +89,44 @@ def load_channels(path: Path) -> List[str]:
     return channels
 
 
+def load_private_channels(path: Path) -> List[str]:
+    """The invite codes of the invite-only channels in a channels file (t.me/+xxxx links)."""
+    from .sources.tgaccount import invite_code
+
+    codes: List[str] = []
+    for line in read_lines(path):
+        code = invite_code(line)
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+
+# How much more often a page marked "!" or "!!" comes round than an unmarked one.
+WATCH_WEIGHTS = {0: 1.0, 1: 4.0, 2: 12.0}
+
+
 @dataclass
 class WatchItem:
     url: str
     target: Optional[float] = None  # alert when the price is at or below this
     label: str = ""
+    weight: float = 1.0  # its share of the store's reading time, against an unmarked page's 1
+    every: float = 0.0  # seconds to leave between two reads of this page (0: as often as its turn comes)
 
 
 def load_watchlist(path: Path) -> List[WatchItem]:
-    """Lines look like:  URL  |  5000  |  optional label   (only the URL is required)."""
+    """Lines look like:  URL  |  5000  |  optional label   (only the URL is required).
+
+    A line may start with "!" or "!!": when a store has more pages than fit into one scan, such
+    a page is read 4 or 12 times as often as an unmarked one. A field "every 15m" keeps a page
+    from being read more often than that (a brand's whole catalogue does not need a look a minute).
+    """
     items: List[WatchItem] = []
     seen = set()
     for line in read_lines(path):
+        marks = re.match(r"^(!{1,2})\s*", line)
+        if marks:
+            line = line[marks.end():]
         parts = [p.strip() for p in line.split("|")]
         url = parts[0]
         if not re.match(r"^https?://", url, re.I):
@@ -105,9 +135,16 @@ def load_watchlist(path: Path) -> List[WatchItem]:
         if url in seen:
             continue
         seen.add(url)
-        item = WatchItem(url=url)
+        item = WatchItem(url=url, weight=WATCH_WEIGHTS[len(marks.group(1)) if marks else 0])
         for part in parts[1:]:
             number = re.fullmatch(r"(?:₹|rs\.?)?\s*([\d,]+(?:\.\d+)?)", part, re.I)
+            pace = re.fullmatch(r"every\s+(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)", part, re.I)
+            if pace:
+                item.every = float(pace.group(1)) * {"s": 1, "m": 60, "h": 3600}[pace.group(2)[0].lower()]
+                continue
+            if re.match(r"every\b", part, re.I):
+                log.warning("watchlist: cannot read %r (write it like 'every 15m'); the page is read whenever its turn comes", part)
+                continue
             if number and item.target is None:
                 item.target = float(number.group(1).replace(",", ""))
             elif part:
@@ -189,6 +226,9 @@ class Settings:
     loot_price: float = 10.0  # a price this low ("Rs 1 deal") counts even when the rupee saving is small
     watch_drop_pct: float = 50.0  # % drop against a watched product's own usual price
     urgent_drop_pct: float = 80.0  # on a category page, a drop this deep is max priority; smaller ones are quieter
+    tracker_drop_pct: float = 60.0  # a price tracker's drop counts from this % below the product's usual price
+    quick_coupon_pct: float = 60.0  # a food / quick-commerce coupon alerts from this share of the order taken off (0: never)
+    quick_loots: bool = True  # "Zepto loot @ 24": alert quietly although no list price can be checked
     floor_mrp_ratio: float = 3.0  # a NEW item under a page's floor only counts if its MRP is this many times the floor
     new_listing_discount: float = 85.0  # a NEW item above a floor alerts from this % off its list price
     absence_hours: float = 24.0  # a product unseen for this long is judged afresh when it returns
@@ -215,6 +255,11 @@ class Settings:
     telegram_base_url: str = "https://t.me/s"
     deny_words: str = DEFAULT_DENY_WORDS
     extra_store_domains: str = ""
+    site_gaps: str = ""  # "flipkart.com=3-5,t.me=0.5-1": seconds between two requests to a site
+    # A Telegram account for invite-only channels (see sources/tgaccount.py). Secrets, all three.
+    tg_api_id: str = ""
+    tg_api_hash: str = ""
+    tg_session: str = ""
 
     db_path: str = "lootwatch.db"
     channels_file: str = "channels.txt"
@@ -225,6 +270,7 @@ class Settings:
     dry_run: bool = False
 
     channels: List[str] = field(default_factory=list)
+    private_channels: List[str] = field(default_factory=list)  # invite codes, read through a Telegram account
     watchlist: List[WatchItem] = field(default_factory=list)
     traps: List[Trap] = field(default_factory=list)
     feeds: List[str] = field(default_factory=list)
@@ -245,6 +291,9 @@ class Settings:
             loot_price=_num("LOOT_PRICE", 10.0),
             watch_drop_pct=_num("WATCH_DROP_PCT", 50.0),
             urgent_drop_pct=_num("URGENT_DROP_PCT", 80.0),
+            tracker_drop_pct=_num("TRACKER_DROP_PCT", 60.0),
+            quick_coupon_pct=_num("QUICK_COUPON_PCT", 60.0),
+            quick_loots=_flag("QUICK_LOOTS", True),
             floor_mrp_ratio=_num("FLOOR_MRP_RATIO", 3.0),
             new_listing_discount=_num("NEW_LISTING_DISCOUNT", 85.0),
             absence_hours=_num("ABSENCE_HOURS", 24.0),
@@ -268,6 +317,10 @@ class Settings:
             telegram_base_url=_get("TELEGRAM_BASE_URL", "https://t.me/s").rstrip("/"),
             deny_words=_get("DENY_WORDS", DEFAULT_DENY_WORDS),
             extra_store_domains=_get("EXTRA_STORE_DOMAINS", ""),
+            site_gaps=_get("SITE_GAPS", ""),
+            tg_api_id=_get("TG_API_ID", ""),
+            tg_api_hash=_get("TG_API_HASH", ""),
+            tg_session=_get("TG_SESSION", ""),
             db_path=_get("DB_PATH", "lootwatch.db"),
             channels_file=_get("CHANNELS_FILE", "channels.txt"),
             watchlist_file=_get("WATCHLIST_FILE", "watchlist.txt"),
@@ -284,12 +337,18 @@ class Settings:
     def load_lists(self) -> None:
         """Read the list files. A half that is switched off on this machine is left empty."""
         self.traps = load_traps(Path(self.traps_file))
-        self.channels, self.feeds, self.watchlist = [], [], []
+        self.channels, self.private_channels, self.feeds, self.watchlist = [], [], [], []
         if self.use_channels:
             self.channels = load_channels(Path(self.channels_file))
+            self.private_channels = load_private_channels(Path(self.channels_file))
             self.feeds = [u for u in read_lines(Path(self.feeds_file)) if re.match(r"^https?://", u, re.I)]
         if self.use_store_pages:
             self.watchlist = load_watchlist(Path(self.watchlist_file))
+
+    @property
+    def telegram_account(self) -> bool:
+        """Is there a Telegram login to read the invite-only channels with?"""
+        return bool(self.tg_api_id and self.tg_api_hash and self.tg_session)
 
     @property
     def deny_pattern(self) -> Optional["re.Pattern[str]"]:

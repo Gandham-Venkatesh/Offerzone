@@ -17,9 +17,11 @@ from .config import Settings
 from .fetch import HAS_CURL_CFFI, Fetcher
 from .links import TRUSTED_KINDS, classify_host, deal_links, host_of
 from .monitor import _age, _first_line, short_url
-from .scoring import TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_text, is_side_product
+from .scoring import (TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_stated, evaluate_text, evaluate_tracked,
+                      is_side_product)
 from .sources.feeds import FeedError, parse_feed
-from .sources.stores import extract_page
+from .sources.dealsites import SiteError, site_reader
+from .sources.stores import extract_page, request_headers
 from .sources.telegram import parse_channel_page
 from .textparse import fmt_inr
 
@@ -56,9 +58,14 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
           f"{settings.high_discount:.0f}%+ saving {fmt_inr(settings.min_saving)}+ (or priced {fmt_inr(settings.loot_price)} or less) is high | "
           f"{settings.min_discount:.0f}%+ saving {fmt_inr(settings.urgent_min_saving)}+ is quiet", file=out)
     print(f"store pages: under a page's floor, a trap ({len(settings.traps)} loaded) or your target is urgent | a fall of "
-          f"{settings.watch_drop_pct:.0f}%+ from the price a product was seen at alerts (urgent from "
-          f"{settings.urgent_drop_pct:.0f}%) | new on a floor page at {settings.new_listing_discount:.0f}%+ off its list "
-          f"price is high ({settings.urgent_discount:.0f}%+ urgent)", file=out)
+          f"{settings.watch_drop_pct:.0f}%+ from the price a product was seen at alerts when it saves "
+          f"{fmt_inr(settings.min_saving)}+ (urgent from {settings.urgent_drop_pct:.0f}% saving "
+          f"{fmt_inr(settings.urgent_min_saving)}+) | new on a floor page at {settings.new_listing_discount:.0f}%+ off its list "
+          f"price, saving {fmt_inr(settings.urgent_min_saving)}+, is high ({settings.urgent_discount:.0f}%+ urgent)", file=out)
+    print(f"price tracker: {settings.tracker_drop_pct:.0f}%+ below a product's usual price, saving "
+          f"{fmt_inr(settings.urgent_min_saving)}+, is quiet; urgent from {settings.urgent_drop_pct:.0f}% | food and "
+          f"quick-commerce coupons from {settings.quick_coupon_pct:.0f}% of the order"
+          f"{'' if settings.quick_coupon_pct > 0 else ' (off)'}", file=out)
     if not settings.use_channels:
         print("deal channels and feeds: switched off on this machine (USE_CHANNELS=0)", file=out)
     if not settings.use_store_pages:
@@ -90,7 +97,7 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
         details = []
         for post in page.posts:
             link_hosts.update(host_of(link) for link in deal_links(post.links))
-            verdict = evaluate_text(post.analysis_text, settings)
+            verdict = evaluate_text(post.analysis_text, settings, links=post.links)
             if verdict:
                 tiers[verdict.tier] += 1
                 if not sample or verdict.tier == TIER_URGENT:
@@ -109,6 +116,13 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
         if verbose:
             print("\n".join(details), file=out)
 
+    if settings.private_channels:
+        # Never logged in from here: Telegram ends a login that is used from two places at once,
+        # and the scan runs are using it.
+        state = ("a Telegram account is set up; the scan runs read them" if settings.telegram_account
+                 else "skipped: no Telegram account is set up (README: \"Invite-only channels\")")
+        print(f"\nINVITE-ONLY CHANNELS ({len(settings.private_channels)}): {state}", file=out)
+
     if link_hosts:
         print("\nLINK HOSTS IN THOSE POSTS (untrusted ones are pushed quietly with a warning, never as urgent)", file=out)
         for host, count in link_hosts.most_common(15):
@@ -122,31 +136,48 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
             print(f"  {count:>4} x {host:<28} {note}", file=out)
 
     if settings.feeds:
-        print(f"\nFEEDS ({len(settings.feeds)})", file=out)
+        print(f"\nFEEDS AND DEAL SITES ({len(settings.feeds)})", file=out)
     for url in settings.feeds:
         totals["feed"] += 1
-        result = fetcher.get(url)
+        result = fetcher.get(url, headers=None if site_reader(url) else {
+            "Accept": "application/atom+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.5"})
         name = short_url(url, 34)
         if not result.ok:
             print(_row("FAIL", name, result.problem), file=out)
             continue
+        reader = site_reader(url)
         try:
-            items = parse_feed(result.text)
-        except FeedError as exc:
+            items = reader(result.text, url, now) if reader else parse_feed(result.text)
+        except (FeedError, SiteError) as exc:
             print(_row("FAIL", name, str(exc)), file=out)
             continue
         totals["feed_ok"] += 1
         stamps = [i.ts for i in items if i.ts]
-        hits = sum(1 for i in items if evaluate_text(i.text, settings))
-        print(_row("OK", name, f"{len(items)} entries, newest {_age(now - max(stamps)) if stamps else 'unknown age'}"
-                               f" | would alert: {hits}"), file=out)
+        verdicts = []
+        for i in items:
+            if not reader:
+                verdict = evaluate_text(i.text, settings, links=i.links)
+            elif i.tracked:
+                verdict = evaluate_tracked(i.title, i.price, i.usual, settings, low=i.low, new_low=i.new_low,
+                                           mrp=i.mrp, in_stock=i.in_stock)
+            else:
+                verdict = evaluate_stated(i.title, i.body, i.price, i.mrp, settings, links=i.links)
+            verdicts.append(verdict)
+        hits = sum(1 for v in verdicts if v)
+        print(_row("OK", name, f"{len(items)} {'deals' if reader else 'entries'}, newest "
+                               f"{_age(now - max(stamps)) if stamps else 'unknown age'} | would alert: {hits}"), file=out)
+        if verbose:
+            for i, verdict in zip(items, verdicts):
+                mark = f"P{verdict.tier} {verdict.headline} [{'; '.join([verdict.reason] + verdict.notes)}]" if verdict else "--"
+                age = _age(now - i.ts) if i.ts else "?"
+                print(f"          {age:>9} | {mark} | {_one_line(i.text, 200)}", file=out)
 
     if settings.watchlist:
         print(f"\nWATCHLIST ({len(settings.watchlist)}) - same-site pages are fetched a few seconds apart", file=out)
     for item in settings.watchlist:
         totals["watch"] += 1
         name = item.label or short_url(item.url, 34)
-        result = fetcher.get(item.url)
+        result = fetcher.get(item.url, headers=request_headers(item.url))
         if not result.ok:
             print(_row("FAIL", name[:34], f"{host_of(item.url)}: {result.problem}"), file=out)
             if verbose and result.text:
@@ -165,7 +196,10 @@ def run_doctor(settings: Settings, out=sys.stdout, verbose: bool = False) -> int
         if verbose and page.kind == "listing":
             for o in sorted(page.offers, key=lambda o: o.price)[:8]:
                 print(f"          {fmt_inr(o.price):>9} (MRP {fmt_inr(o.mrp) if o.mrp else '-':>9}) {o.title[:90]}", file=out)
-        if page.kind == "listing" and item.target is not None:
+        if page.kind == "listing" and item.target == 0:
+            print(f"        sorted by discount, no floor: a product new to this page at {settings.new_listing_discount:.0f}%+ off, "
+                  f"saving {fmt_inr(settings.urgent_min_saving)}+, alerts (high priority).", file=out)
+        elif page.kind == "listing" and item.target is not None:
             under = [o for o in page.offers if o.price <= item.target and not is_side_product(o.title)]
             if under:
                 print(f"        note: {len(under)} of {len(page.offers)} are already at or under your {fmt_inr(item.target)} "

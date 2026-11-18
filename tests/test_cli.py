@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -24,6 +25,7 @@ _SETTING_NAMES = [
     "TRENDING_WINDOW_MIN", "DAILY_ALERT_LIMIT", "STARTUP_NOTE", "HEARTBEAT_HOUR", "TZ_OFFSET_MINUTES",
     "HEALTHCHECK_URL", "RESOLVE_LINKS", "USE_CURL_CFFI", "TELEGRAM_BASE_URL", "DENY_WORDS",
     "EXTRA_STORE_DOMAINS", "DB_PATH", "CHANNELS_FILE", "WATCHLIST_FILE", "TRAPS_FILE", "FEEDS_FILE", "LOG_LEVEL",
+    "SITE_GAPS", "TRACKER_DROP_PCT", "URGENT_DROP_PCT", "QUICK_COUPON_PCT", "QUICK_LOOTS",
 ]
 
 
@@ -95,25 +97,51 @@ class CommandLine(CleanEnv):
                             traps_file=str(root / "traps.txt"), feeds_file=str(root / "feeds.txt"))
         with self.assertNoLogs("lootwatch", level="WARNING"):
             settings.load_lists()
-        self.assertEqual(len(settings.channels), 10)
+        self.assertEqual(len(settings.channels), 27)
+        self.assertNotIn("freekaamaalindia", settings.channels, "dropped for inflated list prices")
         self.assertIn("desidime", settings.channels)
         self.assertEqual(len(settings.channels), len({c.lower() for c in settings.channels}))
         urls = [w.url for w in settings.watchlist]
-        self.assertEqual(len(urls), 13)
-        self.assertTrue(all("flipkart.com" in u for u in urls), "Amazon pages ship switched off")
+        self.assertEqual(len(urls), 149)
+        self.assertEqual(len(urls), len(set(urls)))
+        self.assertFalse(any("amazon." in u for u in urls), "Amazon pages ship switched off")
+        self.assertEqual(sum("flipkart.com" in u for u in urls), 90)
         laptops = next(w for w in settings.watchlist if w.label == "Flipkart laptops")
-        self.assertEqual(laptops.target, 5000.0)
+        self.assertEqual((laptops.target, laptops.weight, laptops.every), (6000.0, 12.0, 0.0))
+        apple = next(w for w in settings.watchlist if w.label == "Flipkart Apple phones")
+        self.assertEqual((apple.target, apple.weight), (18000.0, 4.0))
+        self.assertIn("facets.brand%255B%255D%3DApple", apple.url)
         popular = next(w for w in settings.watchlist if w.label == "Flipkart popular laptops")
-        self.assertIsNone(popular.target)
+        self.assertEqual((popular.target, popular.weight), (None, 1.0))
+        croma = next(w for w in settings.watchlist if w.label == "Croma laptops")
+        self.assertEqual((croma.target, croma.weight, croma.every), (15000.0, 4.0, 180.0))
+        # A page sorted by discount never carries a floor: its top is clearance stock at 95% off.
+        by_discount = [w for w in settings.watchlist if "discount-desc" in w.url or "discount_dsc" in w.url]
+        self.assertEqual(len(by_discount), 7)
+        self.assertTrue(all(not w.target for w in by_discount))
+        ajio = next(w for w in settings.watchlist if w.label == "Ajio nike, biggest discounts")
+        self.assertEqual((ajio.target, ajio.every), (0.0, 300.0), "0: newcomers at 85%+ off still alert")
+        self.assertIsNone(next(w for w in settings.watchlist if w.label == "Croma biggest discounts").target)
+        self.assertIsNone(next(w for w in settings.watchlist if w.label == "Croma macbooks, cheapest").target)
+        catalogue = next(w for w in settings.watchlist if w.label == "boAt catalogue")
+        self.assertEqual((catalogue.target, catalogue.every), (None, 900.0))
+        # every page a store's turn-taking has to serve still fits the picture the file's header gives
+        flipkart_load = sum(w.weight for w in settings.watchlist if "flipkart.com" in w.url)
+        self.assertLess(flipkart_load / 12 / 12, 3.0, "the !! pages must come round within three minutes")
         self.assertGreaterEqual(len(settings.traps), 4)
-        self.assertEqual(settings.feeds, [])
+        self.assertEqual(settings.feeds, ["https://www.desidime.com/new", "https://www.dealsmagnet.com/new",
+                                          "https://pricehistory.app/price-drop"])
 
     def test_test_ntfy_and_missing_topic(self):
         self.assertEqual(main(["--test-ntfy", "--ntfy-server", self.web.base]), 1)  # no topic anywhere
+        os.environ["TEST_PUSH_GAP"] = "0"
+        self.addCleanup(os.environ.pop, "TEST_PUSH_GAP", None)
         self.assertEqual(main(["--test-ntfy", "--ntfy-server", self.web.base, "--ntfy-topic", "t1"]), 0)
-        push = self.web.pushes[0]
-        self.assertEqual((push["topic"], push["priority"]), ("t1", 5))
-        self.assertIn("₹400", push["title"])
+        # One push per loudness, so that each can be heard on its own.
+        self.assertEqual([(p["priority"], p["tags"]) for p in self.web.pushes],
+                         [(3, ["label"]), (4, ["fire"]), (5, ["rotating_light"])])
+        self.assertTrue(all("test" in p["title"].lower() and p["topic"] == "t1" for p in self.web.pushes))
+        self.assertIn("₹400", self.web.pushes[-1]["title"])
 
     def test_each_half_can_be_switched_off_per_machine(self):
         self.write("channels.txt", "alpha\n")
@@ -149,6 +177,137 @@ class CommandLine(CleanEnv):
         self.assertEqual(self.web.hits["POST /"], 0)
 
 
+class Handover(CleanEnv):
+    """--handover-file: a shift does not end until the next run says it is ready."""
+
+    def scan(self, *extra):
+        self.write("channels.txt", "alpha\n")
+        os.environ["TELEGRAM_BASE_URL"] = self.web.base + "/s"
+        self.web.post("alpha", 1, "hello", time.time() - 5)
+        started = time.time()
+        code = main(["--max-runtime", "1", "--interval", "15", "--dry-run", "--ntfy-server", self.web.base, *extra])
+        return code, time.time() - started
+
+    def test_keeps_scanning_until_the_file_appears(self):
+        flag = Path(self.folder, "relief-ready")
+        timer = threading.Timer(4.0, lambda: flag.write_text("ready", encoding="utf-8"))
+        timer.start()
+        try:
+            code, took = self.scan("--handover-file", str(flag), "--max-overtime", "120")
+        finally:
+            timer.cancel()
+        self.assertEqual(code, 0)
+        self.assertGreater(took, 3.5, "it must not leave before the next run is ready")
+        self.assertLess(took, 30, "and must leave soon after")
+
+    def test_gives_up_after_the_overtime_allowed(self):
+        code, took = self.scan("--handover-file", str(Path(self.folder, "never")), "--max-overtime", "3")
+        self.assertEqual(code, 0)
+        self.assertLess(took, 25)
+
+    def test_a_file_that_is_already_there_ends_the_shift_on_time(self):
+        flag = Path(self.folder, "relief-ready")
+        flag.write_text("ready", encoding="utf-8")
+        code, took = self.scan("--handover-file", str(flag))
+        self.assertEqual(code, 0)
+        self.assertLess(took, 10)
+
+
+class SettingsReachTheScan(CleanEnv):
+    """A setting that is documented must do something when it is set the documented way."""
+
+    def test_new_settings_are_read_from_the_environment(self):
+        os.environ.update({"TRACKER_DROP_PCT": "72", "QUICK_COUPON_PCT": "0", "QUICK_LOOTS": "0", "SITE_GAPS": "flipkart.com=9-11"})
+        settings = Settings.from_env()
+        self.assertEqual((settings.tracker_drop_pct, settings.quick_coupon_pct, settings.quick_loots, settings.site_gaps),
+                         (72.0, 0.0, False, "flipkart.com=9-11"))
+        for name in ("TRACKER_DROP_PCT", "QUICK_COUPON_PCT", "QUICK_LOOTS", "SITE_GAPS"):
+            del os.environ[name]
+        defaults = Settings.from_env()
+        self.assertEqual((defaults.tracker_drop_pct, defaults.quick_coupon_pct, defaults.quick_loots), (60.0, 60.0, True))
+
+    def test_site_gaps_from_the_environment_reach_the_fetcher(self):
+        self.write("channels.txt", "alpha\n")
+        os.environ.update({"TELEGRAM_BASE_URL": self.web.base + "/s", "SITE_GAPS": "flipkart.com=9-11", "STARTUP_NOTE": "0",
+                           "HEARTBEAT_HOUR": "-1"})
+        self.web.post("alpha", 1, "hello", time.time() - 5)
+        self.addCleanup(fetch.set_site_gaps, "")
+        self.assertEqual(main(["--once", "--dry-run", "--ntfy-server", self.web.base]), 0)
+        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 9.0)
+
+    def test_a_store_list_address_is_asked_for_json_during_a_scan(self):
+        catalogue = {"products": [{"id": 1, "title": "boAt Rockerz 255", "handle": "rockerz-255",
+                                   "variants": [{"price": "1199.00", "compare_at_price": "3990.00", "available": True}]}]}
+        self.web.pages["/products.json"] = json.dumps(catalogue)
+        self.web.pages["/plain"] = "<html><body></body></html>"
+        self.write("watchlist.txt", f"{self.web.base}/products.json?limit=250 | | Catalogue\n{self.web.base}/plain\n")
+        os.environ.update({"STARTUP_NOTE": "0", "HEARTBEAT_HOUR": "-1"})
+        self.assertEqual(main(["--once", "--dry-run", "--ntfy-server", self.web.base]), 0)
+        self.assertIn("application/json", self.web.get_headers["/products.json"]["accept"])
+        self.assertNotIn("application/json", self.web.get_headers["/plain"]["accept"])
+
+    def test_the_workflow_passes_every_setting_the_readme_documents(self):
+        import re
+
+        root = Path(__file__).resolve().parent.parent
+        workflow = (root / ".github" / "workflows" / "monitor.yml").read_text(encoding="utf-8")
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        table = readme[readme.index("## Settings"):readme.index("## It tells you when it is not working")]
+        documented = set(re.findall(r"`([A-Z][A-Z0-9_]{3,})`", table))
+        passed = set(re.findall(r"^      ([A-Z][A-Z0-9_]+):", workflow, re.M))
+        self.assertGreater(len(documented), 25)
+        self.assertEqual(documented - passed, set(), "documented settings the GitHub workflow does not hand to the scanner")
+        # ...and the names the handover script goes by are the names of the workflow's steps.
+        relay = (root / "deploy" / "relay.sh").read_text(encoding="utf-8")
+        for constant in ("WAIT_STEP", "SCAN_STEP"):
+            name = re.search(constant + r'="([^"]+)"', relay).group(1)
+            self.assertIn(f"- name: {name}\n", workflow)
+        self.assertIn("relay.sh check", workflow)
+        scan = workflow[workflow.index("- name: Scan\n"):workflow.index("- name: Save state")]
+        self.assertIn("steps.need.outputs.surplus != '1'", scan, "a run that is not needed must not scan")
+        save = workflow[workflow.index("- name: Save state"):]
+        self.assertIn("hashFiles('state/lootwatch.db') != ''", save, "an empty folder must never become the newest state")
+        self.assertNotIn("dry_run", workflow, "no input may switch the live runs to a dry run")
+
+
+class Lists(CleanEnv):
+    def test_watchlist_marks_set_how_often_a_page_comes_round(self):
+        from lootwatch.config import load_watchlist
+
+        self.write("watchlist.txt", "!! https://a.example/core | 2500 | Core page\n"
+                                    "! https://a.example/brand | 15000\n"
+                                    "https://a.example/popular | | Popular\n"
+                                    "!https://a.example/tight\n"
+                                    "https://a.example/products.json | | Whole catalogue | every 15m\n"
+                                    "https://a.example/slow | every 2 hours | 900\n"
+                                    "https://a.example/mins | every 15 mins | Catalogue two\n")
+        items = load_watchlist(Path(self.folder, "watchlist.txt"))
+        self.assertEqual((items[-1].every, items[-1].label), (900.0, "Catalogue two"))
+        items.pop()
+        self.write("odd.txt", "https://a.example/odd | every fortnight | Odd\n")
+        with self.assertLogs("lootwatch", level="WARNING") as logs:
+            (odd,) = load_watchlist(Path(self.folder, "odd.txt"))
+        self.assertEqual((odd.every, odd.label), (0.0, "Odd"), "an unreadable pace is not taken for the label")
+        self.assertIn("every fortnight", logs.output[0])
+        self.assertEqual([(i.url, i.target, i.label, i.weight, i.every) for i in items], [
+            ("https://a.example/core", 2500.0, "Core page", 12.0, 0.0), ("https://a.example/brand", 15000.0, "", 4.0, 0.0),
+            ("https://a.example/popular", None, "Popular", 1.0, 0.0), ("https://a.example/tight", None, "", 4.0, 0.0),
+            ("https://a.example/products.json", None, "Whole catalogue", 1.0, 900.0),
+            ("https://a.example/slow", 900.0, "", 1.0, 7200.0)])
+
+    def test_site_gaps_setting(self):
+        try:
+            fetch.set_site_gaps("flipkart.com=2-3.5, t.me = 0.1 , nonsense, croma.com=4")
+            self.assertEqual((fetch.policy_for("www.flipkart.com").min_gap, fetch.policy_for("www.flipkart.com").max_gap), (2.0, 3.5))
+            self.assertEqual(fetch.policy_for("t.me").min_gap, 0.3, "never faster than this")
+            self.assertEqual((fetch.policy_for("api.croma.com").min_gap, fetch.policy_for("api.croma.com").max_gap), (4.0, 4.0))
+            self.assertTrue(fetch.policy_for("www.flipkart.com").impersonate, "only the gap changes")
+            self.assertEqual(fetch.policy_for("www.flipkart.com").base_cooldown, 300)
+        finally:
+            fetch.set_site_gaps("")
+        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 3.0)
+
+
 class Doctor(CleanEnv):
     def test_report(self):
         now = time.time()
@@ -165,8 +324,17 @@ class Doctor(CleanEnv):
 
         settings = Settings(ntfy_server=self.web.base, telegram_base_url=self.web.base + "/s", use_curl_cffi="off")
         settings.channels = ["alpha", "quiet", "ghost"]
-        settings.feeds = [self.web.base + "/feed.xml"]
+        settings.feeds = [self.web.base + "/feed.xml", self.web.base + "/new"]
         from lootwatch.config import WatchItem
+        from lootwatch.sources.dealsites import parse_desidime
+        from tests.test_dealsites import desidime_card, desidime_page
+
+        self.web.pages["/new"] = desidime_page(
+            desidime_card(8, "Sony Bravia 55 inch 4K TV", price="₹ 2,499", mrp="₹ 79,990"),
+            desidime_card(9, "Mixer Grinder", ago="12 minutes ago", price="₹ 1,403", mrp="₹ 3,499"))
+        patcher = mock.patch("lootwatch.doctor.site_reader", side_effect=lambda u: parse_desidime if u.endswith("/new") else None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
         listing = {"items": [{"id": "a", "name": "Mini Notebook 11 inch", "price": 999, "mrp": 1999},
                              {"id": "b", "name": "HP Laptop 15s", "price": 42990, "mrp": 59990},
@@ -180,6 +348,8 @@ class Doctor(CleanEnv):
         report = out.getvalue()
         self.assertEqual(code, 0)
         self.assertRegex(report, r"OK\s+@alpha\s+2 posts, newest 30s ago \| would alert: 1 urgent, 1 high, 0 quiet")
+        self.assertRegex(report, r"OK\s+127\.0\.0\.1/new\s+2 deals, newest 60s ago \| would alert: 1")
+        self.assertIn("Feeds readable:             2/2", report)
         self.assertIn("99% off · ₹400 (MRP ₹34,990)", report)
         self.assertRegex(report, r"WARN\s+@quiet .*quiet for days")
         self.assertRegex(report, r"FAIL\s+@ghost\s+no public preview")
@@ -259,7 +429,7 @@ class Transport(unittest.TestCase):
         self.assertFalse(fetch.policy_for("t.me").sniff_challenge)
         self.assertTrue(fetch.policy_for("www.amazon.in").sniff_challenge)
         self.assertTrue(fetch.policy_for("www.amazon.in").impersonate)
-        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 5.0)
+        self.assertEqual(fetch.policy_for("www.flipkart.com").min_gap, 3.0)
 
     def test_amazon_waf_answer_counts_as_a_refusal(self):
         self.web.status_for["/waf"] = 202

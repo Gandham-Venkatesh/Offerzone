@@ -30,7 +30,8 @@ from typing import List, Optional, Sequence
 
 from .config import Settings, Trap
 from .db import PriceInfo
-from .textparse import SOFT, ParsedText, _line_bounds, fmt_inr, naming_list, naming_words, parse_text, price_near
+from .textparse import (SOFT, ParsedText, _line_bounds, fmt_inr, naming_list, naming_words, parse_text, price_near,
+                        states_condition)
 
 TIER_URGENT, TIER_HIGH, TIER_NORMAL = 5, 4, 3
 TIER_NAMES = {TIER_URGENT: "urgent", TIER_HIGH: "high", TIER_NORMAL: "normal"}
@@ -107,6 +108,7 @@ class Verdict:
     notes: List[str] = field(default_factory=list)  # other things worth knowing before acting
     max_tier: int = TIER_URGENT  # no later upgrade (a deal trending across channels) may pass this
     was: Optional[float] = None  # the price this monitor saw before, when that is what it is compared with
+    key: str = ""  # what makes this deal the same deal elsewhere, when its link does not (a coupon code)
 
     @property
     def headline(self) -> str:
@@ -195,15 +197,206 @@ def match_trap(parsed: ParsedText, traps: Sequence[Trap], price: Optional[float]
     return None
 
 
-def evaluate_text(text: str, settings: Settings) -> Optional[Verdict]:
-    """Judge a free-text deal post (Telegram message, feed entry)."""
+def evaluate_text(text: str, settings: Settings, links: Sequence[str] = ()) -> Optional[Verdict]:
+    """Judge a free-text deal post (Telegram message, feed entry). ``links`` are the post's links."""
     parsed = parse_text(text)
     if not parsed.text.strip() or parsed.expired == "over":
         return None
     deny = settings.deny_pattern
     if deny and deny.search(parsed.text):
         return None
-    verdict = _judge(parsed, settings)
+    hosts = _hosts(links)
+    if is_finance_promo(parsed.text, hosts):
+        return None
+    return _hedge(_judge(parsed, settings) or _quick_commerce(parsed, settings, hosts), parsed)
+
+
+def _hosts(links: Sequence[str]) -> List[str]:
+    from .links import host_of
+
+    return [host for host in (host_of(link) for link in links) if host]
+
+
+# ---- credit cards, loans and referral schemes ---------------------------------------------------
+# Loot channels mix in card and loan promotions, often headed "Big Loot" ("Apply lifetime free
+# Scapia card & get a ₹25,000 voucher"). They are never a deal on something to buy. A bank offer
+# that comes with a product deal ("₹1,245 off with SBI credit card") is not one of them: what
+# marks a promotion is applying for the card or loan itself, its fees and limits, or a referral
+# scheme, or a link that leads to a bank.
+_FINANCE_TEXT = re.compile(
+    r"\blife\s?-?time\s+free\b|\bltf\b|\b(?:zero|nil|no)\s+(?:joining|annual)\s+fees?\b|\b(?:joining|annual)\s+fees?\b"
+    r"|\bpre-?approved\b|\bcredit\s+limits?\b|\b(?:good|high|huge|very\s+good)\s+limits?\b|\bcard\s+(?:approv\w*|applications?)\b"
+    r"|\bgot\s+approved\b|\bapproved\s+(?:with|instantly|in\s+\d)|\bv-?kyc\b|\bcibil\b|\bcredit\s+score\b"
+    r"|\brefer\s+\d+\b|\breferral\s+(?:loot|bonus|code|link|program\w*|offer)\b|\binvite\s+\d+\s+friends\b"
+    r"|\b(?:personal|instant|gold|business|home)\s+loans?\b|\bloan\s+(?:app|approval|up\s?to|offer)\b"
+    r"|\b(?:scapia|onecard|one\s+card|uni\s+cards?|super\.money|jupiter\s+(?:card|money)|slice\s+(?:card|upi)"
+    r"|kiwi\s+(?:card|upi)|fi\s+money|niyo\s+(?:card|global))\b",
+    re.I,
+)
+_NOT_APPLY = (r"(?!\s+(?:the\s+)?(?:₹|rs\.?)?\s*[\d,]*\s*(?:%\s*)?(?:off\s+)?"
+              r"(?:coupon|code|promo|voucher|offer|bank\s+offer|cashback|discount))")
+# What stands between "apply" and "card" must not be the terms of a bank offer on a product.
+_NO_OFFER_WORDS = r"(?:(?!\b(?:off|discount|cashback|with|on|coupon)\b)[^.\n|]){0,40}"
+_APPLY_CARD = re.compile(
+    r"\bapply(?:ing)?\b" + _NOT_APPLY + _NO_OFFER_WORDS + r"\b(?:credit\s+|debit\s+)?cards?\b"
+    r"|\b(?:credit|debit)\s+cards?\b[^.\n|]{0,40}\bapply\b" + _NOT_APPLY +
+    r"|\bget\s+(?:your|a|an|the)\s+(?:\w+\s+){0,3}credit\s+card\b",
+    re.I,
+)
+FINANCE_DOMAINS = (
+    "sbicard.com", "hdfcbank.com", "icicibank.com", "axisbank.com", "idfcfirstbank.com", "aubank.in", "kotak.com",
+    "yesbank.in", "indusind.com", "rblbank.com", "federalbank.co.in", "bobcard.co.in", "americanexpress.com",
+    "bankbazaar.com", "paisabazaar.com", "getonecard.app", "uni.club", "jupiter.money", "sliceit.com", "gokiwi.in",
+    "poonawallafincorp.com", "creditmantri.com", "cred.club", "kreditbee.in", "moneyview.in", "navi.com",
+)
+
+
+def is_finance_promo(text: str, hosts: Sequence[str] = ()) -> bool:
+    """A credit-card, loan or referral promotion, not a deal on something to buy."""
+    if _FINANCE_TEXT.search(text) or _APPLY_CARD.search(text):
+        return True
+    return any(host.endswith(".cards") or host.startswith("apply.")
+               or any(host == domain or host.endswith("." + domain) for domain in FINANCE_DOMAINS) for host in hosts)
+
+
+# ---- quick commerce and food apps ------------------------------------------------------------
+# Their prices cannot be read (they depend on the delivery address and live inside the apps), and
+# their deals are coupons and one-off loots that the ladder above ignores on purpose: "80% off up
+# to ₹160" is ordinary noise for a shopping site. For these apps it is the whole game, so the big
+# ones get a rule of their own, always quiet or high, never max. The fashion apps (Ajio, Myntra,
+# Nykaa) only take part in the "search for this in the app" hints.
+_QUICK_BRANDS = tuple((re.compile(r"(?<![a-z])(?:" + pattern + r")(?![a-z])", re.I), name, hosts, quick)
+                      for pattern, name, hosts, quick in (
+    # the more particular name first: "Swiggy Instamart" is Instamart
+    (r"instamart", "Instamart", ("instamart.in",), True),
+    (r"flipkart\s+minutes", "Flipkart Minutes", (), True),
+    (r"zepto", "Zepto", ("zepto.com", "zeptonow.com"), True),
+    (r"blinkit", "Blinkit", ("blinkit.com",), True),
+    (r"big\s?basket|bb\s?now", "BigBasket", ("bigbasket.com",), True),
+    (r"jio\s?mart", "JioMart", ("jiomart.com",), True),
+    (r"swiggy", "Swiggy", ("swiggy.com",), True),
+    (r"zomato", "Zomato", ("zomato.com",), True),
+    (r"domino'?s", "Domino's", (), True),
+    (r"eatsure", "EatSure", (), True),
+    (r"magicpin", "magicpin", (), True),
+    (r"ajio", "Ajio", ("ajio.com", "ajiio.in", "ajiio.co"), False),
+    (r"myntra", "Myntra", ("myntra.com", "myntr.it", "myntr.in"), False),
+    (r"nykaa", "Nykaa", ("nykaa.com", "nykaafashion.com"), False),
+))
+_RUPEES = r"(?:₹|rs\.?)\s?(\d[\d,]*)"
+_COUPON_PCT = re.compile(r"(\d{2,3})\s*%\s*(?:off|discount|cashback)", re.I)
+_UPTO_BEFORE = re.compile(r"\bup\s?to\s*$", re.I)
+_COUPON_CAP = re.compile(r"(?:\bup\s?to|\bmax(?:imum)?\.?(?:\s+discount)?(?:\s+is)?(?:\s+of)?)\s*:?\s*" + _RUPEES, re.I)
+_MIN_ORDER = re.compile(
+    r"(?:\borders?|\bcart|\bpurchase|\bbill|\bshopping|\bmin(?:imum)?\.?)(?:\s+(?:order|cart|value|amount))*\s*"
+    r"(?:above|over|of|worth|from|:|-)?\s*" + _RUPEES, re.I)
+_AMOUNT_OFF = re.compile(
+    _RUPEES + r"\s*(?:off|discount|cashback)\s*(?:on|for)\s*(?:a\s+)?(?:min(?:imum)?\.?\s*)?(?:(?:orders?|cart|purchase|bill|shopping)\s*)?"
+    r"(?:value\s*)?(?:above|over|of|worth|from)?\s*" + _RUPEES, re.I)
+_COUPON_CODE = re.compile(r"(?i:\bcode\b)[\s:)\-–👉]*([A-Z][A-Z0-9]{3,19})\b")
+_FLAT_BEFORE = re.compile(r"\bflat\s*$", re.I)
+_LOOT_WORD = re.compile(r"\bloot\b", re.I)
+_BIG_LOOT = re.compile(r"\b(?:big+|mega|biggest|massive|huge|super|crazy)\s+loot\b|\bloot\s+(?:alert|again\s+live)\b", re.I)
+# "Search : Shampoo / Sort by discount high to low": a hint to look inside the app.
+_SEARCH = re.compile(r"\bsearch\b(?:\s+(?:for|in\s+(?:the\s+)?app|on\s+\w+))?\s*(?P<mark>[:\-–=]|👉|➡️)?\s*[\"'“]?(?P<term>[^\n\"'”]{2,40})", re.I)
+_SORT_HINT = re.compile(r"\bsort\b[^\n]{0,40}\b(?:discount|price)\b|\b(?:discount|price)\s+(?:high|low)\s+to\s+(?:low|high)\b", re.I)
+_SEARCH_END = re.compile(r"\s*(?:[*•|,]|\bsort\b|\band\s+(?:then\s+)?(?:sort|apply|filter|check|use)\b|\bthen\b|\bin\s+(?:the\s+)?app\b|\bon\s+(?:instamart|zepto|blinkit|bigbasket|ajio|myntra)\b).*$", re.I)
+
+
+def _app_named(text: str, hosts: Sequence[str], quick_only: bool) -> Optional[str]:
+    for pattern, name, domains, quick in _QUICK_BRANDS:
+        if quick_only and not quick:
+            continue
+        if pattern.search(text) or any(host == d or host.endswith("." + d) for host in hosts for d in domains):
+            return name
+    return None
+
+
+def _quick_commerce(parsed: ParsedText, settings: Settings, hosts: Sequence[str] = ()) -> Optional[Verdict]:
+    text = parsed.text
+    brand = _app_named(text, hosts, quick_only=True)
+    if brand is not None:
+        verdict = _coupon_or_loot(parsed, settings, brand)
+        if verdict:
+            return verdict
+    return _app_hint(parsed, settings, hosts)
+
+
+def _coupon_or_loot(parsed: ParsedText, settings: Settings, brand: str) -> Optional[Verdict]:
+    text = parsed.text
+    lines = text.split("\n")
+    best = None  # (effective percent, wording)
+    for index, line in enumerate(lines):
+        around = " ".join(lines[max(0, index - 1):index + 2])
+        flat = _AMOUNT_OFF.search(line)
+        if flat:
+            off, order = (float(group.replace(",", "")) for group in flat.groups())
+            if 0 < off <= order and order >= 49:
+                found = (off / order * 100, f"{fmt_inr(off)} off on a {fmt_inr(order)} order")
+                best = found if best is None or found[0] > best[0] else best
+        for percent in _COUPON_PCT.finditer(line):
+            rate = float(percent.group(1))
+            if rate > 100 or _UPTO_BEFORE.search(line[:percent.start()]):
+                continue  # "up to 80% off" is a banner, not a coupon
+            cap = _COUPON_CAP.search(line, percent.end()) or (
+                _COUPON_CAP.search(lines[index + 1]) if index + 1 < len(lines) else None)
+            least = _MIN_ORDER.search(around)
+            if not (cap or least or _FLAT_BEFORE.search(line[:percent.start()])):
+                continue  # "restaurants giving 70% off" describes a sale; a coupon states its terms
+            wording = f"{rate:.0f}% off"
+            effective = rate
+            if cap:
+                wording += f" up to {fmt_inr(float(cap.group(1).replace(',', '')))}"
+            if least:
+                wording += f" on orders from {fmt_inr(float(least.group(1).replace(',', '')))}"
+            if cap and least and float(least.group(1).replace(",", "")) > 0:
+                effective = min(rate, float(cap.group(1).replace(",", "")) / float(least.group(1).replace(",", "")) * 100)
+            best = (effective, wording) if best is None or effective > best[0] else best
+    if best and settings.quick_coupon_pct > 0 and best[0] >= settings.quick_coupon_pct:
+        code = _COUPON_CODE.search(text)
+        tier = TIER_HIGH if best[0] >= settings.min_discount else TIER_NORMAL
+        return Verdict(tier, f"{brand} coupon: {best[1]}" + (f", code {code.group(1)}" if code else ""), None, None,
+                       best[0], label="Coupon", max_tier=tier,
+                       key=f"coupon:{brand.lower()}:{code.group(1) if code else int(best[0])}")
+    if settings.quick_loots and _LOOT_WORD.search(text):
+        price = next((amount.value for amount in parsed.amounts if amount.kind in ("sell", "plain")), None)
+        if price is not None:
+            return Verdict(TIER_NORMAL, f"{brand} loot post, no list price to check it against", price, None, 0.0,
+                           label="Quick loot", max_tier=TIER_NORMAL)
+    return None
+
+
+def _app_hint(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) -> Optional[Verdict]:
+    """Loots inside an app, posted without a price: "Instamart: search Shampoo, sort by discount
+    high to low", or a "Big loot" that links straight into a shopping app. Quiet: they need a
+    look in the app, and are usually tied to a city."""
+    if not settings.quick_loots:
+        return None
+    text = parsed.text
+    app = _app_named(text, hosts, quick_only=False)
+    search = _SEARCH.search(text)
+    if app and search:
+        term = _SEARCH_END.sub("", search.group("term")).strip(" .:-–")
+        hinted = bool(search.group("mark")) or _SORT_HINT.search(text) or _LOOT_WORD.search(text)
+        if hinted and 2 <= len(term) <= 40 and re.search(r"[a-z]{2}", term, re.I):
+            hint = _SORT_HINT.search(text)
+            sort = "" if not hint else " and sort by price" if "discount" not in hint.group(0).lower() else " and sort by discount"
+            return Verdict(TIER_NORMAL, f"{app}: search “{term}”{sort} in the app", None, None, 0.0,
+                           label="App loot", max_tier=TIER_NORMAL, key=f"apploot:{app.lower()}:{term.lower()}")
+    if _BIG_LOOT.search(text) and not parsed.amounts:
+        from .links import classify_host
+
+        # Only a link into the shop itself says where the loot is: "Big loot: Instamart" with a
+        # link to some other Telegram channel is an advert for that channel.
+        shop = _app_named("", hosts, quick_only=False) or next(
+            (host for host in hosts if classify_host(host) in ("store", "affiliate")), None)
+        if shop:
+            return Verdict(TIER_NORMAL, f"big loot at {shop}, no price given in the post", None, None, 0.0,
+                           label="Big loot", max_tier=TIER_NORMAL)
+    return None
+
+
+def _hedge(verdict: Optional[Verdict], parsed: ParsedText) -> Optional[Verdict]:
     if verdict and parsed.expired:
         # Stock wording inside a sentence ("blue is out of stock now, black available") is not a
         # clear announcement, so the post is not thrown away: it goes out one step quieter.
@@ -213,6 +406,112 @@ def evaluate_text(text: str, settings: Settings) -> Optional[Verdict]:
         verdict.max_tier = min(verdict.max_tier, TIER_HIGH)
         verdict.notes.append("the post hints that this may already be over")
     return verdict
+
+
+def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional[float],
+                    settings: Settings, links: Sequence[str] = ()) -> Optional[Verdict]:
+    """Judge a deal-site card: a title, free text, and a price and list price the site gives in
+    fields of their own. Those two need no reading out of the wording; everything else about
+    the card (trap names, "price error" wording, sold-out notes, conditions) is read as in a post.
+    """
+    text = title + ("\n" + body if body else "")
+    if is_finance_promo(text, _hosts(links)):
+        return None
+    if price is None:
+        # The member left the price fields empty: this is an offer or a coupon ("Flat Rs 25 on
+        # sending Rs 5000"), not a priced product. Whatever the wording states outright still
+        # counts; two bare numbers guessed to be a price and a list price do not.
+        verdict = evaluate_text(text, settings)
+        return None if verdict is not None and verdict.needs_trusted_link else verdict
+    parsed = parse_text(text)
+    if not parsed.text.strip() or parsed.expired == "over":
+        return None
+    deny = settings.deny_pattern
+    if deny and deny.search(parsed.text):
+        return None
+    mrp = mrp if mrp and mrp > price else None
+    discount = _pct(mrp, price)
+    hit = match_trap(parse_text(title), settings.traps, price=price)
+    if hit:
+        trap = hit[0]
+        # The same doubt as on a store listing: a spare part is named after the phone too. A
+        # list price of at least twice the trap price says it is the device.
+        if mrp and mrp >= trap.max_price * 2:
+            verdict = Verdict(TIER_URGENT, f"trap '{trap.name}' at or under {fmt_inr(trap.max_price)}", price, mrp,
+                              discount, label="Trap hit")
+        else:
+            verdict = Verdict(TIER_NORMAL, f"named like trap '{trap.name}' at {fmt_inr(price)}, but no list price "
+                              "shows it is the device itself", price, mrp, discount, label="Trap match?",
+                              max_tier=TIER_NORMAL)
+        return _hedge(verdict, parsed)
+    if parsed.error_phrase:
+        return _hedge(Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp, discount,
+                              label="Price error?"), parsed)
+    if mrp is None:
+        # The list price field was left empty (or repeats the price). The wording may still state
+        # it, or a percentage: read the card as a post whose price is known and labelled. As with
+        # an empty price field, two bare numbers guessed into a pair do not count.
+        verdict = evaluate_text(f"{title}\nDeal price: {fmt_inr(price)}" + ("\n" + body if body else ""), settings)
+        return None if verdict is not None and verdict.needs_trusted_link else verdict
+    saving = mrp - price
+    tier = _ladder(discount, saving, price, settings)
+    if not tier:
+        return None
+    reason = f"{discount:.0f}% off, saves {fmt_inr(saving)}"
+    cap = TIER_URGENT
+    # The price stands in a field, not on a line of the text, so a condition can be anywhere in it.
+    if parsed.conditional or states_condition(parsed.text):
+        cap, reason = TIER_HIGH, reason + " (needs a qualifying purchase)"
+    return _hedge(Verdict(min(tier, cap), reason, price, mrp, discount, max_tier=cap), parsed)
+
+
+def evaluate_tracked(title: str, price: float, usual: Optional[float], settings: Settings,
+                     low: Optional[float] = None, new_low: bool = False, mrp: Optional[float] = None,
+                     in_stock: bool = True) -> Optional[Verdict]:
+    """Judge a product from a price tracker's list of fresh price drops.
+
+    Nothing here is a claim: ``usual`` is the average price the tracker measured for this very
+    product and ``low`` the lowest it ever saw. So the bar is how far the price stands below its
+    own average, and it sits lower than for a "% off MRP" claim. A price the product has already
+    been under before is one step less remarkable.
+
+    On marketplace listings a reseller's passing fantasy price can pull the average above the
+    product's list price; the price is then measured against the list price (``mrp``) instead.
+    A product the tracker shows as out of stock is not announced at all.
+    """
+    if not in_stock:
+        return None
+    reference, called = usual, "it usually costs"
+    if usual and mrp and mrp < usual:
+        reference, called = mrp, "list price"
+    hit = match_trap(parse_text(title), settings.traps, price=price)
+    if hit:
+        trap = hit[0]
+        if reference and reference >= trap.max_price * 2:
+            return Verdict(TIER_URGENT, f"trap '{trap.name}' at or under {fmt_inr(trap.max_price)}", price, None,
+                           _pct(reference, price), label="Trap hit", was=reference)
+        return Verdict(TIER_NORMAL, f"named like trap '{trap.name}' at {fmt_inr(price)}, but its usual price does "
+                       "not show it is the device itself", price, None, _pct(reference, price), label="Trap match?",
+                       max_tier=TIER_NORMAL, was=reference)
+    if not reference or reference <= price:
+        return None
+    drop = (reference - price) / reference * 100
+    saving = reference - price
+    if drop < settings.tracker_drop_pct or saving < settings.urgent_min_saving:
+        return None
+    middle = (settings.tracker_drop_pct + settings.urgent_drop_pct) / 2
+    tier = TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle else TIER_NORMAL
+    reason = (f"{drop:.0f}% below the {fmt_inr(reference)} it usually costs" if called == "it usually costs"
+              else f"{drop:.0f}% below its list price of about {fmt_inr(reference)}")
+    at_low = new_low or low is None or price <= low * 1.03
+    if at_low:
+        reason += ", its lowest price so far"
+    else:
+        tier -= 1
+        reason += f" (it has been as low as {fmt_inr(low)})"
+        if tier < TIER_NORMAL:
+            return None
+    return Verdict(tier, reason, price, None, drop, label="Price drop", was=reference, max_tier=tier)
 
 
 def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
@@ -385,6 +684,14 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
                 # a few readings of a seller's passing high price. So the size of the fall sets
                 # the volume: only a fall to a fraction of the price is treated as an error.
                 # (A fall to under the page's floor has already rung above.)
+                # And with thousands of products followed, a no-name gadget going from ₹449 to
+                # ₹199 is not worth anyone's attention: the fall has to save real money, or be so
+                # deep that it is news at any price (earbuds from ₹999 to ₹9), and then quietly.
+                if saving < settings.min_saving:
+                    if drop < settings.urgent_drop_pct:
+                        return None
+                    return Verdict(TIER_NORMAL, f"dropped {drop:.0f}% from the {fmt_inr(info.baseline)} it was seen at",
+                                   price, None, drop, label="Price drop", was=info.baseline, max_tier=TIER_NORMAL)
                 middle = (settings.watch_drop_pct + settings.urgent_drop_pct) / 2
                 tier = min(tier, TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle
                            else TIER_NORMAL)
@@ -404,10 +711,13 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
     if listing and target is not None and (info.first_seen or returning) and mrp and price > target:
         discount = _pct(mrp, price)
         if (discount >= settings.new_listing_discount and mrp >= target * settings.floor_mrp_ratio
-                and not is_side_product(title, strong_mrp=_strong_mrp(mrp, target))):
-            tier = TIER_URGENT if discount >= settings.urgent_discount else TIER_HIGH
+                and mrp - price >= settings.urgent_min_saving
+                and not is_side_product(title, strong_mrp=_strong_mrp(mrp, target) if target else False)):
+            # A floor of 0 marks a page sorted by discount. The top of such a page is always at
+            # 95% off and more (clearance stock), so a newcomer there is worth a look, not a siren.
+            tier = TIER_URGENT if discount >= settings.urgent_discount and target > 0 else TIER_HIGH
             return Verdict(tier, f"new on this page at {discount:.0f}% off its list price {fmt_inr(mrp)}", price, mrp,
-                           discount, label="Far below list price")
+                           discount, label="Far below list price", max_tier=tier)
 
     if not listing and info.first_seen:
         discount = _pct(mrp, price)
