@@ -101,8 +101,13 @@ class FakeClient:
             raise self.error
         return self.messages[:limit]
 
-    async def disconnect(self):
-        self.connected = False
+    def disconnect(self):
+        asyncio.get_running_loop()  # like Telethon's, it works only on the client's own loop
+
+        async def done():
+            self.connected = False
+
+        return done()
 
 
 @unittest.skipUnless(HAS_TELETHON, "needs telethon")
@@ -122,6 +127,8 @@ class Reader(unittest.TestCase):
         self.assertEqual((page.status, page.title, [p.post_id for p in page.posts]), ("ok", "Offerzone", [12]))
         reader.read("uV5wcTkUWJEwM2Y1")
         self.assertEqual(client.asked, ["uV5wcTkUWJEwM2Y1"], "the invite is looked up once per run")
+        reader.close()
+        self.assertFalse(client.connected, "the run ends with a clean goodbye to Telegram")
 
     def test_says_what_is_wrong(self):
         page, error = self.reader(FakeClient(joined=False)).read("abcdefgh123")

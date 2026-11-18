@@ -170,6 +170,11 @@ class AccountReader:
         except Exception:
             log.exception("could not handle the live post %s", post.url)
 
+    async def _disconnect(self) -> None:
+        # On the client's own loop: Telethon picks the loop from the thread it is called on, and
+        # from any other thread it ends up working on a loop the connection does not belong to.
+        await self._client.disconnect()
+
     async def _stop_listening(self) -> None:
         self._on_post = None  # set on the loop itself, so no message is half way through
 
@@ -247,7 +252,7 @@ class AccountReader:
             self._live.shutdown(wait=True)  # posts already taken are seen through
         try:
             if self._client is not None and self._client.is_connected():
-                self._call(self._client.disconnect(), 10)
+                self._call(self._disconnect(), 10)
         except Exception:  # the run is ending anyway
             pass
         self._loop.call_soon_threadsafe(self._loop.stop)

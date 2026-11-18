@@ -296,6 +296,13 @@ class Judging(unittest.TestCase):
         self.assertEqual((tv.tier, tv.was), (TIER_URGENT, 60000))
         self.assertIn("85% below its list price of about ₹60,000", tv.reason)
 
+    def test_an_average_made_of_placeholder_prices_is_not_believed(self):
+        # Pushed on 18 Nov 2026: diapers at ₹255 that "usually cost" ₹21,24,855, and had been cheaper before.
+        self.assertIsNone(evaluate_tracked("HIMALAYA Total Care Pant Diapers - L (28 Pieces)", 255, 2124855, self.s, low=239))
+        # A price error at a new low still counts, however far below its average.
+        error = evaluate_tracked("Lenovo IdeaPad Slim 3", 999, 52000, self.s, low=999, new_low=True)
+        self.assertEqual(error.tier, TIER_URGENT)
+
     def test_tracker_trap(self):
         hit = evaluate_tracked("Nothing Phone (3a) Pro 5G (Black, 256 GB)", 4999, 29500, self.s)
         self.assertEqual((hit.tier, hit.label), (TIER_URGENT, "Trap hit"))

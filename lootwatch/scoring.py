@@ -555,6 +555,10 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     reason = (f"{drop:.0f}% below the {fmt_inr(reference)} it usually costs" if called == "it usually costs"
               else f"{drop:.0f}% below its list price of about {fmt_inr(reference)}")
     at_low = new_low or low is None or price <= low * 1.03
+    if not at_low and reference >= 20 * price:
+        # It has sold for less than this before, yet "usually" costs twenty times as much: the
+        # average holds a seller's placeholder price (diapers at ₹255 that "usually cost" ₹21 lakh).
+        return None
     if at_low:
         reason += ", its lowest price so far"
     else:
