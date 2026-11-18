@@ -11,7 +11,7 @@ import os
 import re
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from urllib.parse import urlsplit
 
 import requests
@@ -104,6 +104,7 @@ class Monitor:
         self.stats: "collections.Counter[str]" = collections.Counter()
         self._stats_lock = threading.Lock()
         self._emit_lock = threading.Lock()
+        self._claim_lock = threading.Lock()
         self._watch_checked: Dict[str, float] = {}
         self._ntfy_pause_until = 0.0
         self._last_ping = 0.0
@@ -205,12 +206,11 @@ class Monitor:
         self.db.health_ok(source, len(page.posts))
         self._deal_source_read()
         first_contact = self.db.get(f"boot:{source}") == ""
-        fresh = self.db.unseen(source, [str(p.post_id) for p in page.posts])
+        fresh = self._claim(source, [str(p.post_id) for p in page.posts])
         if first_contact:
             self.db.set(f"boot:{source}", int(time.time()))
         if not fresh:
             return
-        self.db.mark_seen(source, fresh)
         now = time.time()
         max_age = self._max_post_age(previous_ok, now)
         for post in page.posts:
@@ -226,6 +226,31 @@ class Monitor:
                 self._handle_post(source, label, post.text, post.analysis_text, post.links, post.url, post.ts)
             except Exception:
                 log.exception("failed to process %s", post.url)
+
+    def _claim(self, source: str, ids: List[str]) -> Set[str]:
+        """The ids not seen before, now marked seen: a post read two ways is handled only once."""
+        with self._claim_lock:
+            fresh = self.db.unseen(source, ids)
+            if fresh:
+                self.db.mark_seen(source, fresh)
+        return fresh
+
+    def _live_post(self, code: str, post) -> None:
+        """A post Telegram sent the moment it was published in an invite-only channel."""
+        source = f"tg:+{code}"
+        if self.db.get(f"boot:{source}") == "":
+            return  # not read once yet: that first reading decides what is old news
+        if not self._claim(source, [str(post.post_id)]):
+            return  # the reading on a schedule got there first
+        self._count("posts")
+        self._count("live")
+        age = time.time() - post.ts if post.ts is not None else 0.0
+        if age > self.s.max_post_age_min * 60:
+            self._count("stale")
+            return
+        label = (getattr(self.account, "titles", None) or {}).get(code) or self._display(source)
+        log.info("live post in %s, %.0fs after it was published: %s", label, max(age, 0.0), post.url)
+        self._handle_post(source, label, post.text, post.analysis_text, post.links, post.url, post.ts)
 
     def _scan_feed(self, url: str, deadline: float) -> None:
         """One line of feeds.txt: an RSS/Atom feed, or the new-deals page of a deal site."""
@@ -846,6 +871,8 @@ class Monitor:
             len(self.s.channels) + len(self._private), len(self.s.feeds), len(self.s.watchlist), self.s.min_discount, self.s.interval,
             " | DRY RUN" if self.s.dry_run else "",
         )
+        if self._private and hasattr(self.account, "listen"):
+            self.account.listen(self._live_post)  # Offerzone's posts as they come, not a minute later
         started = time.time()
         number = 0
         last_duration = 0.0
@@ -856,9 +883,10 @@ class Monitor:
             stats = self.cycle(deadline_after=120.0 if once else None)
             last_duration = time.time() - cycle_started
             log.info(
-                "scan #%d: %ds | %d new posts (%d too old) | %d prices | alerts sent: %d urgent, %d high, %d other"
+                "scan #%d: %ds | %d new posts (%d too old%s) | %d prices | alerts sent: %d urgent, %d high, %d other"
                 " | %d duplicates | %d source failures%s",
-                number, stats.get("seconds", 0), stats.get("posts", 0), stats.get("stale", 0), stats.get("prices", 0),
+                number, stats.get("seconds", 0), stats.get("posts", 0), stats.get("stale", 0),
+                f", {stats['live']} sent live by Telegram" if stats.get("live") else "", stats.get("prices", 0),
                 stats.get("sent_urgent", 0), stats.get("sent_high", 0), stats.get("sent_normal", 0),
                 stats.get("duplicates", 0), stats.get("source_failures", 0),
                 f" | {stats['unreached']} not reached in time" if stats.get("unreached") else "",

@@ -360,6 +360,11 @@ the two channels with the others. What to know:
   two channels failing with "Telegram ended the saved login"), run step 3 again and replace
   `TG_SESSION`.
 - If the session string ever leaks, end it in Telegram: *Settings → Devices*, then make a new one.
+- New posts arrive the moment they are published: while a scan runs, Telegram itself sends each
+  new post of the two channels to the login, and the alert goes out within seconds (the scan log
+  says `live post in Offerzone, 2s after it was published`). The reading once a minute goes on as
+  well; it catches what is posted in the few seconds between two runs. A post is pushed once,
+  however it arrives.
 - The monitor only reads, one request per channel a minute. Telegram's terms allow that for your
   own account, but it is your account that does it.
 

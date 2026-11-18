@@ -796,6 +796,30 @@ class LootChannels(unittest.TestCase):
         banner = self.judge("Big Loot: Mobile Accessories Start @29\nhttps://bitli.in/gxyBp6n")
         self.assertEqual(banner.tier, TIER_NORMAL)
 
+    def test_posts_from_the_owners_screenshots(self):
+        """The Offerzone and Offerzone Tricks posts the owner showed, as they were posted."""
+        phone = "BIGGEST LOOT : Nothing Phone 4a (8GB, 256GB) at ₹400.\n\nhttps://amzn.to/4Af8zeJ"
+        boat = "BIG LOOT : Upto 97% Off On Boat Earbuds.\n\nhttps://link.amazon/B020Kn9Ho"
+        for text in (phone, boat):
+            with self.subTest(text=text):
+                self.assertEqual(self.judge(text).tier, TIER_URGENT)
+                # later the channel edits the post; seen only then, it is not pushed
+                self.assertIsNone(self.judge(text + "\n\nEdit - Over Now ❌.\n\nMissing Loots? Check Out This Post : Click Here."))
+        instamart = self.judge("Swiggy Instamart Loot\n\nSearch : NOICE")
+        self.assertEqual((instamart.tier, instamart.label), (TIER_HIGH, "App loot"))
+        for text in (
+            "BIG LOOT 👆 Don't Miss 🔥.\n\nGet Nike Shoes for FREE (Using Scapia Coins) + Get Gold Vouchers ❤️‍🔥.\n\n"
+            "Apply From Here : https://bitl.in/h4anXGT\n\nMore Details : https://t.me/c/1702197669/13357\n"
+            "Note - Jiska Reject Hua Tha Vo Bhi Try Fast With Trick, Approved Horha Hai.\n*Try With Axis Bank - Approved Jaldi Hoga.",
+            "BIG LOOT : Get Lifetime Free HDFC Tata Neu Credit Card 🔥😍.\n\nApply here >> https://bitl.in/hdjPYf4\n\n"
+            "Referral Code >> BINA802\n\n✅Zero Joining Fee\n✅Zero Annual Fee (FD Base)\n📇 No CIBIL? No worries! Just Open FD & Get Approved.",
+            "Ozians!!\n\nFor More Loot Deals 🥳, MUST JOIN All Channels 🔥👇.\n\nLink : https://Offerzone.in/telegram\n\n"
+            "*Big & Heavy Loots will Post in Offerzone Only ❤️‍🔥.",
+            "BIGGEST LOOT : Lucky Ozians Received Vivo X300 at ₹7000 🔥❤️‍🔥. Post Link - https://t.me/c/1357275556/9999",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(self.judge(text))
+
 
 if __name__ == "__main__":
     unittest.main()

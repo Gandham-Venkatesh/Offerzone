@@ -74,6 +74,10 @@ class FakeClient:
         self.joined, self.messages, self.authorized, self.error = joined, list(messages), authorized, error
         self.connected = False
         self.asked = []
+        self.handlers = []
+
+    def add_event_handler(self, callback, event=None):
+        self.handlers.append((callback, event))
 
     def is_connected(self):
         return self.connected
@@ -135,6 +139,46 @@ class Reader(unittest.TestCase):
         client.error = None
         self.assertIsNone(reader.read("abcdefgh123")[0], "a dead login stays dead for this run")
 
+    def test_new_posts_are_handed_on_the_moment_telegram_sends_them(self):
+        import threading
+
+        client = FakeClient(messages=[SimpleNamespace(id=1, date=datetime.now(timezone.utc), message="Welcome", entities=[])])
+        reader = self.reader(client)
+        got, done = [], threading.Event()
+
+        def on_post(code, post):
+            got.append((code, post.post_id, post.url, post.links, threading.current_thread().name))
+            done.set()
+
+        reader.listen(on_post)
+        reader.read("uV5wcTkUWJEwM2Y1")  # the first reading tells which chat the invite stands for
+        (handler, builder), = client.handlers
+        self.assertEqual(type(builder).__name__, "NewMessage")
+
+        def arrive(message):
+            asyncio.run_coroutine_threadsafe(handler(SimpleNamespace(message=message)), reader._loop).result(5)
+
+        def message(chat, number, text):
+            return SimpleNamespace(id=number, date=datetime.now(timezone.utc), message=text, entities=[],
+                                   peer_id=SimpleNamespace(channel_id=chat))
+
+        arrive(message(999, 5, "a message in another chat of the account"))
+        arrive(message(1357275556, 6, ""))  # a bare picture
+        arrive(message(1357275556, 7, "BIG LOOT : Boat Earbuds https://amzn.to/x"))
+        self.assertTrue(done.wait(5))
+        reader.close()
+        self.assertEqual(len(got), 1, got)
+        code, number, url, links, thread = got[0]
+        self.assertEqual((code, number, url, links), ("uV5wcTkUWJEwM2Y1", 7, "https://t.me/c/1357275556/7", ["https://amzn.to/x"]))
+        self.assertTrue(thread.startswith("telegram-live"), "the post is handled off the event loop")
+        asyncio.run(handler(SimpleNamespace(message=message(1357275556, 8, "after the run ended"))))
+        self.assertEqual(len(got), 1, "nothing is handed on once the reader is closed")
+
+    def test_without_listen_no_handler_is_added(self):
+        client = FakeClient(messages=[])
+        self.reader(client).read("uV5wcTkUWJEwM2Y1")
+        self.assertEqual(client.handlers, [])
+
     def test_waits_when_telegram_asks_it_to(self):
         error = type("FloodWaitError", (Exception,), {"seconds": 120})("wait")
         client = FakeClient(error=error)
@@ -177,6 +221,11 @@ class FakeAccount:
         self.pages = {}
         self.errors = {}
         self.closed = False
+        self.on_post = None
+        self.titles = {"7rHGiXC8TnsxN2I9": "Offerzone"}
+
+    def listen(self, on_post):
+        self.on_post = on_post
 
     def read(self, code):
         if code in self.errors:
@@ -289,6 +338,35 @@ class InTheMonitor(unittest.TestCase):
     def test_the_account_is_closed_when_the_run_ends(self):
         self.monitor().run(once=True)
         self.assertTrue(self.account.closed)
+
+    def test_a_post_sent_live_alerts_at_once_and_only_once(self):
+        self.web.redirects["/r/1"] = "https://www.amazon.in/dp/B0SONYXM51"
+        self.page(TgPost("c/1357275556", 1, time.time() - 7200, "Welcome", "Welcome"))
+        monitor = self.monitor()
+        monitor.run(once=True)  # the run starts listening, and reads the channel once
+        self.assertIsNotNone(self.account.on_post)
+        text = "Price Error 😱 Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)"
+        fresh = TgPost("c/1357275556", 2, time.time() - 2, text, text, links=[self.web.base + "/r/1"])
+        self.account.on_post("7rHGiXC8TnsxN2I9", fresh)
+        (push,) = self.web.pushes
+        self.assertEqual(push["priority"], 5)
+        self.assertIn("Offerzone", push["message"])
+        self.page(TgPost("c/1357275556", 1, time.time() - 7200, "Welcome", "Welcome"), fresh)
+        monitor.cycle()  # the scheduled reading finds the same post: it was handled already
+        self.account.on_post("7rHGiXC8TnsxN2I9", fresh)  # and Telegram sending it twice changes nothing
+        self.assertEqual(len(self.web.pushes), 1)
+
+    def test_a_live_post_waits_for_the_first_reading_and_old_ones_are_dropped(self):
+        monitor = self.monitor()
+        listened = []
+        self.account.listen = listened.append
+        text = "Price Error Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)"
+        monitor._live_post("7rHGiXC8TnsxN2I9", TgPost("c/1357275556", 3, time.time(), text, text))
+        self.assertEqual(self.web.pushes, [], "before the channel was read once, its first reading decides")
+        self.page(TgPost("c/1357275556", 1, time.time() - 7200, "Welcome", "Welcome"))
+        monitor.cycle()
+        monitor._live_post("7rHGiXC8TnsxN2I9", TgPost("c/1357275556", 4, time.time() - 3 * 3600, text, text))
+        self.assertEqual(self.web.pushes, [], "a post hours old is not news, however it arrives")
 
 
 if __name__ == "__main__":

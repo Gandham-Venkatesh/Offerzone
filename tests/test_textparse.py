@@ -181,7 +181,10 @@ class Claims(unittest.TestCase):
         for text in ("Deal over ❌", "Expired", "OOS now", "Now OOS ❌", "Out of stock", "price increased again",
                      "Sold out in 2 min", "Loot ended", "Stock finished", "It's out of stock", "Already OOS",
                      "Nothing Phone @ 400\nOOS", "[ OVER ] Big Loot ₹1 (MRP ₹5,000)", "Price error deal over ❌ expired",
-                     "Sony XM5 @ ₹400 | Expired"):
+                     "Sony XM5 @ ₹400 | Expired",
+                     # how Offerzone marks a loot that has ended, by editing the post
+                     "BIG LOOT : Upto 97% Off On Boat Earbuds.\n\nhttps://link.amazon/B020Kn9Ho\n\nEdit - Over Now ❌.",
+                     "Edit : Over ❌", "Over Now ❌", "Loot ₹99\nOver ❌"):
             with self.subTest(text=text):
                 self.assertEqual(parse_text(text).expired, "over")
 

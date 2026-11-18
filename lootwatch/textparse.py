@@ -231,6 +231,8 @@ _STATUS = re.compile(
     r"\[\s*(?:over|expired|ended|oos|sold\s*out|closed|finished|out\s+of\s+stock)\s*\]"
     r"|\bexpired\b|\bsold\s+out\b"
     r"|\b(?:deal|loot|offer|sale|stock)\s+(?:is\s+|has\s+|got\s+)?(?:over|ended|gone|closed|finished)\b"
+    # Offerzone edits its posts when a loot ends: "Edit - Over Now ❌".
+    r"|\bedit(?:ed)?\s*[-:–—]+\s*over\b|\bover\s+now\b|\bover\b(?=\s*[❌✖✗🚫⛔])"
     r"|\bprice\s+(?:has\s+|is\s+|got\s+)?(?:increased|hiked|revised|corrected|back\s+to\s+(?:normal|regular|original|mrp))\b"
     r"|\bno\s+longer\s+available\b"
     r"|\b(?:now|currently|is|its|it['’]s|went|gone|got|already|again)\s+(?:oos|out\s+of\s+stock)\b"
