@@ -360,13 +360,18 @@ the two channels with the others. What to know:
   two channels failing with "Telegram ended the saved login"), run step 3 again and replace
   `TG_SESSION`.
 - If the session string ever leaks, end it in Telegram: *Settings → Devices*, then make a new one.
-- New posts arrive the moment they are published: while a scan runs, Telegram itself sends each
-  new post of the two channels to the login, and the alert goes out within seconds (the scan log
-  says `live post in Offerzone, 2s after it was published`). The reading once a minute goes on as
-  well; it catches what is posted in the few seconds between two runs. A post is pushed once,
+- New posts are caught within seconds: the two channels are read every 5 seconds through the
+  login (`TG_FAST_SECONDS`), each time asking only for messages newer than the last one seen.
+  Telegram also pushes new posts to the login, but on a channel with millions of members that
+  push came half a minute late, so asking wins. The scan log shows how late the pushes come
+  (`Telegram pushed 2 post(s) 3-35s after they were published`). A post is pushed to you once,
   however it arrives.
-- The monitor only reads, one request per channel a minute. Telegram's terms allow that for your
-  own account, but it is your account that does it.
+- **Public channels can be just as fast:** join them with the same Telegram account (mute and
+  archive them there, so your phone stays quiet). Telegram then pushes their posts to the login as
+  they appear, and the scan log says `Telegram pushes the posts of N of the 27 public channels`.
+  Channels it has not joined are read from their web page once a minute, as before.
+- The monitor only reads. Telegram's terms allow that for your own account, but it is your account
+  that does it; if Telegram ever asks it to slow down, it reads less often on its own.
 
 ## Commands
 
@@ -417,6 +422,7 @@ python -m lootwatch               # scan forever
 | `HEARTBEAT_HOUR` | `9` | Daily "still running" note (India time). `-1` turns it off |
 | `HEALTHCHECK_URL` | – | A [healthchecks.io](https://healthchecks.io) ping URL; it alerts you if scans stop |
 | `TG_API_ID` / `TG_API_HASH` / `TG_SESSION` | – | Secrets: the Telegram login for invite-only channels (see "Invite-only channels") |
+| `TG_FAST_SECONDS` | 5 | Seconds between two readings of the invite-only channels through that login (0: once a scan) |
 | `EXTRA_STORE_DOMAINS` | – | Extra shop domains to treat as trusted, comma separated |
 | `DENY_WORDS` | see `.env.example` | Posts containing these are ignored |
 | `CURL_IMPERSONATE` | `chrome124` | Browser profile presented to stores when `curl_cffi` is installed |

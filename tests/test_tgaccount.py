@@ -75,6 +75,12 @@ class FakeClient:
         self.connected = False
         self.asked = []
         self.handlers = []
+        self.dialogs = []
+        self.min_ids = []
+
+    async def iter_dialogs(self):
+        for dialog in self.dialogs:
+            yield dialog
 
     def add_event_handler(self, callback, event=None):
         self.handlers.append((callback, event))
@@ -96,10 +102,11 @@ class FakeClient:
             return SimpleNamespace(chat=SimpleNamespace(id=1357275556, title="Offerzone"))
         return SimpleNamespace(title="Offerzone")  # a ChatInvite: the link works, the account is not in
 
-    async def get_messages(self, chat, limit):
+    async def get_messages(self, chat, limit, min_id=0):
         if self.error:
             raise self.error
-        return self.messages[:limit]
+        self.min_ids.append(min_id)
+        return [m for m in self.messages if m.id > min_id][:limit]
 
     def disconnect(self):
         asyncio.get_running_loop()  # like Telethon's, it works only on the client's own loop
@@ -181,6 +188,45 @@ class Reader(unittest.TestCase):
         asyncio.run(handler(SimpleNamespace(message=message(1357275556, 8, "after the run ended"))))
         self.assertEqual(len(got), 1, "nothing is handed on once the reader is closed")
 
+    def test_a_reading_of_newer_messages_only(self):
+        def message(number, text):
+            return SimpleNamespace(id=number, date=datetime.now(timezone.utc), message=text, entities=[])
+
+        client = FakeClient(messages=[message(12, "Loot ₹99"), message(11, "")])
+        reader = self.reader(client)
+        self.assertEqual([p.post_id for p in reader.read("uV5wcTkUWJEwM2Y1", newer_only=True)[0].posts], [12])
+        page, error = reader.read("uV5wcTkUWJEwM2Y1", newer_only=True)
+        self.assertEqual((page.status, page.posts, error), ("ok", [], ""), "nothing new is not a failure")
+        client.messages.insert(0, message(14, ""))  # a bare picture still moves the mark on
+        reader.read("uV5wcTkUWJEwM2Y1", newer_only=True)
+        client.messages.insert(0, message(15, "BIG LOOT https://amzn.to/x"))
+        self.assertEqual([p.post_id for p in reader.read("uV5wcTkUWJEwM2Y1", newer_only=True)[0].posts], [15])
+        self.assertEqual(client.min_ids, [0, 12, 12, 14])
+        self.assertEqual(reader.read("uV5wcTkUWJEwM2Y1")[0].status, "ok", "an ordinary reading still reads the page")
+
+    def test_public_channels_the_login_has_joined_are_pushed_too(self):
+        import threading
+
+        client = FakeClient(messages=[])
+        client.dialogs = [SimpleNamespace(entity=SimpleNamespace(id=555, username="epicdeals_in", usernames=None)),
+                          SimpleNamespace(entity=SimpleNamespace(id=556, username=None,
+                                                                 usernames=[SimpleNamespace(username="LootersIndia")])),
+                          SimpleNamespace(entity=SimpleNamespace(id=557, username="somefriend", usernames=None))]
+        reader = self.reader(client)
+        got, done = [], threading.Event()
+        reader.listen(lambda code, post: (got.append((code, post.url)), done.set()),
+                      public=["EpicDeals_in", "lootersindia", "desidime"])
+        with self.assertLogs("lootwatch", level="INFO") as logs:
+            reader.read("uV5wcTkUWJEwM2Y1")
+        self.assertTrue(any("2 of the 3 public channels" in line and "other 1 are read from the web" in line
+                            for line in logs.output), logs.output)
+        (handler, _), = client.handlers
+        message = SimpleNamespace(id=901, date=datetime.now(timezone.utc), message="Loot ₹99 https://amzn.to/x",
+                                  entities=[], peer_id=SimpleNamespace(channel_id=556))
+        asyncio.run_coroutine_threadsafe(handler(SimpleNamespace(message=message)), reader._loop).result(5)
+        self.assertTrue(done.wait(5))
+        self.assertEqual(got, [("@lootersindia", "https://t.me/lootersindia/901")])
+
     def test_without_listen_no_handler_is_added(self):
         client = FakeClient(messages=[])
         self.reader(client).read("uV5wcTkUWJEwM2Y1")
@@ -191,6 +237,7 @@ class Reader(unittest.TestCase):
         client = FakeClient(error=error)
         reader = self.reader(client)
         self.assertIn("asked to wait 120s", reader.read("abcdefgh123")[1])
+        self.assertGreater(reader.quiet_for(), 100)
         client.error = None
         page, why = reader.read("abcdefgh123")
         self.assertIsNone(page)
@@ -229,12 +276,18 @@ class FakeAccount:
         self.errors = {}
         self.closed = False
         self.on_post = None
+        self.public = None
+        self.reads = []
         self.titles = {"7rHGiXC8TnsxN2I9": "Offerzone"}
 
-    def listen(self, on_post):
-        self.on_post = on_post
+    def listen(self, on_post, public=()):
+        self.on_post, self.public = on_post, list(public)
 
-    def read(self, code):
+    def quiet_for(self):
+        return 0.0
+
+    def read(self, code, newer_only=False):
+        self.reads.append(newer_only)
         if code in self.errors:
             return None, self.errors[code]
         return self.pages.get(code, ChannelPage("empty", title="Offerzone")), ""
@@ -362,6 +415,73 @@ class InTheMonitor(unittest.TestCase):
         monitor.cycle()  # the scheduled reading finds the same post: it was handled already
         self.account.on_post("7rHGiXC8TnsxN2I9", fresh)  # and Telegram sending it twice changes nothing
         self.assertEqual(len(self.web.pushes), 1)
+
+    def run_in_background(self, monitor):
+        import threading
+
+        runner = threading.Thread(target=monitor.run, daemon=True)
+        runner.start()
+
+        def stop():
+            monitor._stop.set()
+            runner.join(30)
+            return runner
+
+        self.addCleanup(stop)
+        return stop
+
+    def wait_for(self, condition, seconds=10.0):
+        deadline = time.time() + seconds
+        while time.time() < deadline and not condition():
+            time.sleep(0.02)
+        return condition()
+
+    def test_the_invite_only_channels_are_read_every_few_seconds(self):
+        self.settings.tg_fast_seconds = 0.2
+        self.web.redirects["/r/1"] = "https://www.amazon.in/dp/B0SONYXM51"
+        welcome = TgPost("c/1357275556", 1, time.time() - 7200, "Welcome", "Welcome")
+        self.page(welcome)
+        monitor = self.monitor()
+        stop = self.run_in_background(monitor)
+        self.assertTrue(self.wait_for(lambda: len(self.account.reads) >= 3))
+        self.assertTrue(all(self.account.reads), "only the fast reading reads them, asking for newer posts only")
+        text = "Price Error 😱 Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)"
+        posted = time.time()
+        self.page(welcome, TgPost("c/1357275556", 2, posted, text, text, links=[self.web.base + "/r/1"]))
+        self.assertTrue(self.wait_for(lambda: self.web.pushes))
+        self.assertLess(time.time() - posted, 5, "the alert goes out within seconds, not at the next scan")
+        self.assertFalse(stop().is_alive())
+        self.assertEqual(len(self.web.pushes), 1)
+        self.assertTrue(self.account.closed)
+        row = next(r for r in monitor.db.health_rows() if r[0] == "tg:+7rHGiXC8TnsxN2I9")
+        self.assertEqual(row[1], 1, "its health is recorded once a minute, like any source's")
+
+    def test_the_fast_reading_slows_down_when_telegram_asks(self):
+        self.settings.tg_fast_seconds = 0.1
+        self.account.errors["7rHGiXC8TnsxN2I9"] = "Telegram asked to wait 30s before asking again"
+        monitor = self.monitor()
+        with self.assertLogs("lootwatch", level="WARNING") as logs:
+            stop = self.run_in_background(monitor)
+            time.sleep(1.0)
+            stop()
+        self.assertTrue(any("asked the login to slow down" in line for line in logs.output), logs.output)
+        self.assertLessEqual(len(self.account.reads), 5, "each refusal doubles the wait")
+        row = next(r for r in monitor.db.health_rows() if r[0] == "tg:+7rHGiXC8TnsxN2I9")
+        self.assertEqual(row[3], 1, "a refusal counts once a minute, not at every try")
+
+    def test_a_post_pushed_from_a_joined_public_channel_rings_once(self):
+        self.settings.channels = ["epicdeals_in"]
+        self.web.redirects["/r/1"] = "https://www.amazon.in/dp/B0SONYXM51"
+        monitor = self.monitor()
+        monitor.db.set("boot:tg:epicdeals_in", 1)  # the channel has been read from the web before
+        text = "Price Error 😱 Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)"
+        monitor._live_post("@epicdeals_in", TgPost("epicdeals_in", 777, time.time() - 1, text, text,
+                                                   links=[self.web.base + "/r/1"]))
+        (push,) = self.web.pushes
+        self.assertEqual(push["priority"], 5)
+        self.assertEqual(push["actions"][1]["url"], "https://t.me/epicdeals_in/777")
+        self.assertEqual(monitor._claim("tg:epicdeals_in", ["777"]), set(), "the web reading will find it handled")
+        self.assertIn("pushed 1 post(s)", monitor._push_summary())
 
     def test_a_live_post_waits_for_the_first_reading_and_old_ones_are_dropped(self):
         monitor = self.monitor()

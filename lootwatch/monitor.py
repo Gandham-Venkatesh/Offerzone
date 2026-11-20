@@ -105,6 +105,9 @@ class Monitor:
         self._stats_lock = threading.Lock()
         self._emit_lock = threading.Lock()
         self._claim_lock = threading.Lock()
+        self._fast_stop = threading.Event()
+        self._fast_thread: Optional[threading.Thread] = None
+        self._push_lags: List[float] = []  # how late Telegram pushed posts, since the last scan line
         self._watch_checked: Dict[str, float] = {}
         self._ntfy_pause_until = 0.0
         self._last_ping = 0.0
@@ -182,29 +185,69 @@ class Monitor:
         page = parse_channel_page(result.text, channel, result.final_url)
         self._take_channel_page(source, f"@{channel}", page)
 
-    def _scan_private(self, code: str, deadline: float) -> None:
-        """An invite-only channel, read through the Telegram account."""
-        source = f"tg:+{code}"
-        page, error = self.account.read(code)
-        if page is None:
-            self.db.health_fail(source, error)
-            self._count("source_failures")
-            return
-        self._names[source] = f"{page.title} (invite-only)"
-        self._take_channel_page(source, page.title, page)
+    def _scan_private(self, code: str, deadline: float, newer_only: bool = False, record: bool = True) -> str:
+        """An invite-only channel, read through the Telegram account. Returns what went wrong, if anything.
 
-    def _take_channel_page(self, source: str, label: str, page) -> None:
+        ``newer_only``: ask only for messages newer than those read before. ``record``: count the
+        reading in the source's health (the fast reading does so once a minute, like a scan).
+        """
+        source = f"tg:+{code}"
+        page, error = self.account.read(code, newer_only=True) if newer_only else self.account.read(code)
+        if page is None:
+            if record:
+                self.db.health_fail(source, error)
+                self._count("source_failures")
+            return error
+        self._names[source] = f"{page.title} (invite-only)"
+        self._take_channel_page(source, page.title, page, record=record)
+        return ""
+
+    def _read_private_often(self) -> None:
+        """The invite-only channels, read every TG_FAST_SECONDS through the Telegram account.
+
+        Telegram's own push of a new post (AccountReader.listen) came half a minute late on a
+        channel with millions of members, so asking is faster: each reading asks only for the
+        messages newer than the newest one seen, next to nothing for Telegram. If Telegram asks
+        the account to slow down, it does.
+        """
+        gap = self.s.tg_fast_seconds
+        recorded: Dict[str, float] = {}
+        while not self._fast_stop.is_set():
+            started = time.time()
+            for code in self._private:
+                if self._fast_stop.is_set():
+                    break
+                record = started - recorded.get(code, 0.0) >= 60
+                try:
+                    error = self._scan_private(code, started + 30, newer_only=True, record=record)
+                except Exception:
+                    log.exception("could not read the invite-only channel %s", code)
+                    error = ""
+                if record:
+                    recorded[code] = started
+                if "before asking again" in error and gap < 60:
+                    gap = min(60.0, gap * 2)
+                    log.warning("Telegram asked the login to slow down: the invite-only channels are read every %.0fs "
+                                "from now on", gap)
+            self._fast_stop.wait(max(0.5, started + gap - time.time()))
+
+    def _fast_reading(self) -> bool:
+        return self._fast_thread is not None and self._fast_thread.is_alive()
+
+    def _take_channel_page(self, source: str, label: str, page, record: bool = True) -> None:
         if page.status != "ok":
             reason = {
                 "no_preview": "no public preview (private, renamed or deleted channel)",
                 "empty": "page loaded but shows no posts",
             }.get(page.status, "page layout not recognised")
-            self.db.health_fail(source, reason)
-            self._count("source_failures")
+            if record:
+                self.db.health_fail(source, reason)
+                self._count("source_failures")
             return
         previous_ok = self.db.last_ok(source)
-        self.db.health_ok(source, len(page.posts))
-        self._deal_source_read()
+        if record:
+            self.db.health_ok(source, len(page.posts))
+            self._deal_source_read()
         first_contact = self.db.get(f"boot:{source}") == ""
         fresh = self._claim(source, [str(p.post_id) for p in page.posts])
         if first_contact:
@@ -227,6 +270,14 @@ class Monitor:
             except Exception:
                 log.exception("failed to process %s", post.url)
 
+    def _push_summary(self) -> str:
+        """How late Telegram pushed posts since the last scan line, to see what the push is worth."""
+        with self._stats_lock:
+            lags, self._push_lags = sorted(self._push_lags), []
+        if not lags:
+            return ""
+        return f" | Telegram pushed {len(lags)} post(s) {lags[0]:.0f}-{lags[-1]:.0f}s after they were published"
+
     def _claim(self, source: str, ids: List[str]) -> Set[str]:
         """The ids not seen before, now marked seen: a post read two ways is handled only once."""
         with self._claim_lock:
@@ -236,20 +287,26 @@ class Monitor:
         return fresh
 
     def _live_post(self, code: str, post) -> None:
-        """A post Telegram sent the moment it was published in an invite-only channel."""
-        source = f"tg:+{code}"
+        """A post Telegram pushed as it was published: ``code`` is an invite code, or "@username"
+        for a public channel the account has joined."""
+        if code.startswith("@"):
+            source, label = f"tg:{code[1:]}", code
+        else:
+            source = f"tg:+{code}"
+            label = (getattr(self.account, "titles", None) or {}).get(code) or self._display(source)
         if self.db.get(f"boot:{source}") == "":
             return  # not read once yet: that first reading decides what is old news
+        age = max(0.0, time.time() - post.ts) if post.ts is not None else 0.0
+        with self._stats_lock:
+            self._push_lags.append(age)
         if not self._claim(source, [str(post.post_id)]):
-            return  # the reading on a schedule got there first
+            return  # a reading got there first
         self._count("posts")
         self._count("live")
-        age = time.time() - post.ts if post.ts is not None else 0.0
         if age > self.s.max_post_age_min * 60:
             self._count("stale")
             return
-        label = (getattr(self.account, "titles", None) or {}).get(code) or self._display(source)
-        log.info("live post in %s, %.0fs after it was published: %s", label, max(age, 0.0), post.url)
+        log.info("live post in %s, %.0fs after it was published: %s", label, age, post.url)
         self._handle_post(source, label, post.text, post.analysis_text, post.links, post.url, post.ts)
 
     def _scan_feed(self, url: str, deadline: float) -> None:
@@ -645,7 +702,8 @@ class Monitor:
         # quick request to a site of its own.
         jobs = [(self._scan_feed, url) for url in self.s.feeds]
         jobs += [(self._scan_channel, channel) for channel in channels]
-        jobs += [(self._scan_private, code) for code in self._private]
+        if not self._fast_reading():  # otherwise they are read every few seconds already
+            jobs += [(self._scan_private, code) for code in self._private]
         jobs += [(self._scan_watch, item) for item in self._watch_batch()]
         # One thread per job (they mostly wait their turn for their site): a site that hangs then
         # holds up only its own pages, never another site's, and nothing queues behind a store
@@ -872,7 +930,11 @@ class Monitor:
             " | DRY RUN" if self.s.dry_run else "",
         )
         if self._private and hasattr(self.account, "listen"):
-            self.account.listen(self._live_post)  # Offerzone's posts as they come, not a minute later
+            self.account.listen(self._live_post, public=list(self.s.channels))  # posts as Telegram pushes them
+        if self._private and self.s.tg_fast_seconds > 0 and not once:
+            self._fast_thread = threading.Thread(target=self._read_private_often, name="telegram-fast", daemon=True)
+            self._fast_thread.start()
+            log.info("the invite-only channels are read every %gs through the Telegram login", self.s.tg_fast_seconds)
         started = time.time()
         number = 0
         last_duration = 0.0
@@ -889,7 +951,7 @@ class Monitor:
                 f", {stats['live']} sent live by Telegram" if stats.get("live") else "", stats.get("prices", 0),
                 stats.get("sent_urgent", 0), stats.get("sent_high", 0), stats.get("sent_normal", 0),
                 stats.get("duplicates", 0), stats.get("source_failures", 0),
-                f" | {stats['unreached']} not reached in time" if stats.get("unreached") else "",
+                (f" | {stats['unreached']} not reached in time" if stats.get("unreached") else "") + self._push_summary(),
             )
             self._startup_note(stats)
             if once:
@@ -913,6 +975,9 @@ class Monitor:
                     break
                 continue
             self._stop.wait(pause)
+        self._fast_stop.set()
+        if self._fast_thread is not None:
+            self._fast_thread.join(timeout=30)
         self.flush_outbox()
         if self.account is not None:
             self.account.close()

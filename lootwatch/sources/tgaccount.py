@@ -6,9 +6,11 @@ the Telethon library, with an api_id and api_hash from my.telegram.org and a log
 "session string" (tools/telegram_login.py makes one). Without those three, or without Telethon,
 invite links in channels.txt are simply skipped.
 
-Only reading is done: one request per channel per scan, and while the scan runs Telegram also
-sends each new post of those channels the moment it is published (AccountReader.listen), so an
-alert does not wait for the next scan. The session string is a full login to
+Only reading is done. The monitor asks every few seconds for messages newer than the last one
+it saw (next to nothing for Telegram), since Telegram's own push of a new post can lag half a
+minute behind on a channel with millions of members; the push is taken as well, whichever comes
+first. Public channels in channels.txt that the account has joined are pushed the same way. The
+session string is a full login to
 that account, so it is kept as a secret, and a separate account that has only joined deal
 channels is the safer choice. Telegram ends a session that is used from two places at the same
 moment, which is why only the scan runs use it, never the doctor or a test.
@@ -73,8 +75,12 @@ def _mark_struck(text: str, spans: Sequence[Tuple[int, int]]) -> str:
     return "".join(out)
 
 
-def message_post(message: object, chat_id: int) -> Optional[TgPost]:
-    """One channel message as a post; None for one without text (a bare picture, a service note)."""
+def message_post(message: object, chat_id: int, channel: Optional[str] = None) -> Optional[TgPost]:
+    """One channel message as a post; None for one without text (a bare picture, a service note).
+
+    ``channel`` is a public channel's username, for links like t.me/<username>/<id>; without it
+    the link is the members' kind, t.me/c/<chat id>/<id>.
+    """
     text = getattr(message, "message", None) or ""
     if not text.strip():
         return None
@@ -99,7 +105,7 @@ def message_post(message: object, chat_id: int) -> Optional[TgPost]:
     links += [found.rstrip(".,;:!?") for found in re.findall(r"https?://[^\s<>\"'()\[\]]+", text)]
     links = [link if re.match(r"^https?://", link, re.I) else "https://" + link for link in links if link]
     date = getattr(message, "date", None)
-    return TgPost(channel=f"c/{chat_id}", post_id=int(getattr(message, "id")), ts=date.timestamp() if date else None,
+    return TgPost(channel=channel or f"c/{chat_id}", post_id=int(getattr(message, "id")), ts=date.timestamp() if date else None,
                   text=text, analysis_text=_mark_struck(text, struck), links=list(dict.fromkeys(links)))
 
 
@@ -123,7 +129,10 @@ class AccountReader:
         self.titles: Dict[str, str] = {}
         self._dead = ""  # why the login no longer works, once that is known
         self._quiet_until = 0.0  # Telegram asked us to wait (FloodWait)
-        self._chat_codes: Dict[int, str] = {}  # channel id -> invite code: which live posts are ours
+        self._chat_codes: Dict[int, str] = {}  # channel id -> invite code, or "@username": which live posts are ours
+        self._newest: Dict[str, int] = {}  # invite code -> newest message id read
+        self._public: Dict[str, str] = {}  # public channels to take pushed posts from: lower-case name -> name
+        self._public_checked = False
         self._on_post: Optional[Callable[[str, TgPost], None]] = None
         self._listening = False
         self._live: Optional[concurrent.futures.ThreadPoolExecutor] = None
@@ -136,14 +145,25 @@ class AccountReader:
     def _call(self, coroutine, timeout: Optional[float] = None):
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(timeout or self.timeout)
 
-    def listen(self, on_post: Callable[[str, TgPost], None]) -> None:
+    @property
+    def dead(self) -> str:
+        return self._dead
+
+    def quiet_for(self) -> float:
+        """Seconds Telegram still wants the account to wait before asking again."""
+        return max(0.0, self._quiet_until - time.time())
+
+    def listen(self, on_post: Callable[[str, TgPost], None], public: Sequence[str] = ()) -> None:
         """Also hand on each new post the moment Telegram sends it, as ``on_post(code, post)``.
 
-        Only for channels read at least once (a reading tells which chat an invite code stands
-        for), and only while connected: the reading on a schedule goes on as before and catches
-        whatever arrives in between. ``on_post`` runs on a worker thread, never on the event
-        loop, since what it does with a post (following its links, pushing the alert) takes time.
+        For the invite-only channels read at least once (a reading tells which chat an invite
+        code stands for), and for those of the ``public`` channels the account has joined (their
+        ``code`` is "@username"); only while connected. The reading on a schedule goes on as
+        before and catches whatever arrives in between. ``on_post`` runs on a worker thread,
+        never on the event loop, since what it does with a post (following its links, pushing
+        the alert) takes time.
         """
+        self._public = {name.lower(): name for name in public}
         self._live = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="telegram-live")
         self._on_post = on_post
 
@@ -155,7 +175,7 @@ class AccountReader:
             code = self._chat_codes.get(chat_id) if chat_id is not None else None
             if code is None or self._on_post is None or self._live is None:
                 return  # the account's other chats are none of our business
-            post = message_post(message, chat_id)
+            post = message_post(message, chat_id, channel=code[1:] if code.startswith("@") else None)
             if post is not None:
                 self._live.submit(self._hand_on, code, post)
         except Exception:  # one odd message must not stop the rest
@@ -193,9 +213,43 @@ class AccountReader:
         if self._on_post is not None and not self._listening:
             self._client.add_event_handler(self._new_message, events.NewMessage() if HAS_TELETHON else None)
             self._listening = True
+        if self._public and self._on_post is not None and not self._public_checked:
+            await self._find_public()
         return self._client
 
-    async def _fetch(self, code: str, limit: int):
+    async def _find_public(self) -> None:
+        """Which public channels the account has joined: Telegram pushes their posts too.
+
+        Found in the account's own chat list, once a run: looking the names up one by one is
+        something Telegram allows only a few hundred times a day.
+        """
+        self._public_checked = True
+        joined: List[str] = []
+        try:
+            async for dialog in self._client.iter_dialogs():
+                entity = getattr(dialog, "entity", None)
+                names = [getattr(entity, "username", None)]
+                names += [getattr(extra, "username", None) for extra in getattr(entity, "usernames", None) or []]
+                for name in names:
+                    wanted = self._public.get((name or "").lower())
+                    if wanted and wanted not in joined:
+                        self._chat_codes[int(getattr(entity, "id", 0))] = "@" + wanted
+                        joined.append(wanted)
+                        break
+        except Exception as exc:  # the reading from the web goes on regardless
+            log.warning("could not list the Telegram account's chats (%s): public channels are read from "
+                        "the web only", type(exc).__name__)
+            return
+        others = len(self._public) - len(joined)
+        if not joined:
+            log.info("the Telegram login has joined none of the %d public channels, so they are read from the web "
+                     "once a minute (join them with it to get their posts within seconds)", len(self._public))
+            return
+        log.info("Telegram pushes the posts of %d of the %d public channels as they appear (the login has joined "
+                 "them)%s", len(joined), len(self._public),
+                 f"; the other {others} are read from the web once a minute" if others else "")
+
+    async def _fetch(self, code: str, limit: int, min_id: int = 0):
         client = await self._connected()
         chat = self._chats.get(code)
         if chat is None:
@@ -206,17 +260,24 @@ class AccountReader:
             self._chats[code] = chat
             self.titles[code] = getattr(chat, "title", "") or code
             self._chat_codes[int(getattr(chat, "id", 0))] = code
+        if min_id:
+            return chat, await client.get_messages(chat, limit=limit, min_id=min_id)
         return chat, await client.get_messages(chat, limit=limit)
 
-    def read(self, code: str, limit: int = 20) -> Tuple[Optional[ChannelPage], str]:
-        """(page, "") or (None, why it could not be read)."""
+    def read(self, code: str, limit: int = 20, newer_only: bool = False) -> Tuple[Optional[ChannelPage], str]:
+        """(page, "") or (None, why it could not be read).
+
+        ``newer_only``: only the messages newer than the newest one read before (none, most of the
+        time: the page is then "ok" with no posts).
+        """
         with self._lock:  # one request at a time on this login
             if self._dead:
                 return None, self._dead
             if time.time() < self._quiet_until:
                 return None, f"Telegram asked to wait {int(self._quiet_until - time.time())}s more"
             try:
-                chat, messages = self._call(self._fetch(code, limit))
+                min_id = self._newest.get(code, 0) if newer_only else 0
+                chat, messages = self._call(self._fetch(code, limit, min_id))
             except AccountError as exc:
                 if "login" in str(exc):
                     self._dead = str(exc)
@@ -236,9 +297,13 @@ class AccountReader:
                     return None, f"the invite link no longer works ({name}): ask the channel for a new one"
                 return None, f"could not read the channel through the Telegram account ({name}: {str(exc)[:80]})"
         chat_id = int(getattr(chat, "id", 0))
+        newest = max((int(getattr(m, "id", 0) or 0) for m in messages or []), default=0)
+        if newest > self._newest.get(code, 0):
+            self._newest[code] = newest
         posts = [post for post in (message_post(m, chat_id) for m in messages or []) if post]
         posts.sort(key=lambda post: post.post_id)
-        return ChannelPage("ok" if posts else "empty", title=self.titles.get(code, code), posts=posts), ""
+        status = "ok" if posts or min_id else "empty"
+        return ChannelPage(status, title=self.titles.get(code, code), posts=posts), ""
 
     def close(self) -> None:
         if self._closed:
@@ -256,3 +321,6 @@ class AccountReader:
         except Exception:  # the run is ending anyway
             pass
         self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=5)
+        if not self._thread.is_alive():
+            self._loop.close()
