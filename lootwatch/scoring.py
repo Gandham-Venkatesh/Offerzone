@@ -404,6 +404,8 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
         return None
     if any(amount.kind == "mrp" for amount in parsed.amounts):
         return None  # it states its list price: the ordinary rules have judged it by that
+    if _FROM_PRICE.search(parsed.text):
+        return None  # "Polo T-shirts start @199": a sale, not one loot
     price = next((amount.value for amount in parsed.amounts if amount.kind in ("sell", "plain")), None)
     app = _app_named(parsed.text, hosts, quick_only=False)
     if price is not None and 0 < price <= _TINY_PRICE:

@@ -716,6 +716,11 @@ class QuickCommerce(unittest.TestCase):
         ajio = evaluate_text("Ajio Loot @ ₹199", self.s, links=["https://ajiio.in/xyz"])
         self.assertEqual((ajio.tier, ajio.label, ajio.price), (TIER_NORMAL, "Quick loot", 199))
         self.assertIsNone(evaluate_text("Loot @ ₹100\nhttps://amzn.to/x", self.s, links=["https://amzn.to/x"]))
+        # Seen on 20 Nov 2026 in two channels: a sale, not one loot.
+        banner = "Ajio Loot : Men Polo T-Shirts Starts @199\n🔗 https://ajiio.co/OjVxz6\nOversized T-Shirts Starts @60."
+        self.assertIsNone(evaluate_text(banner, self.s, links=["https://ajiio.co/OjVxz6"]))
+        self.assertIsNone(evaluate_text("Myntra Loot : Men's Casual Shirt Starts Rs.179\nhttps://myntr.it/hFx4RH0", self.s,
+                                        links=["https://myntr.it/hFx4RH0"]))
         self.assertIsNone(evaluate_text("Boat Earbuds @ ₹1 https://amzn.to/x", self.s, links=["https://amzn.to/x"]),
                           "a price alone, without the channel calling it a loot, is not enough")
         stated = evaluate_text("Loot ₹1 Maggi (MRP ₹14) https://blinkit.com/prn/x", self.s, links=["https://blinkit.com/prn/x"])
