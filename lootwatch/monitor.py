@@ -567,7 +567,7 @@ class Monitor:
         product = fingerprint if fingerprint.startswith(("amazon:", "flipkart:")) else ""
         to_check = bool(product and verdict.label in ("Loot", "Quick loot") and verdict.mrp is None and verdict.price)
         if to_check:
-            checked = self._tracker_says(product, verdict.price, subject)
+            checked = self._records_say(product, verdict.price, subject)
             if checked is not None and checked.tier > verdict.tier:
                 verdict.tier = verdict.max_tier = checked.tier
                 verdict.was, verdict.discount, verdict.label = checked.was, checked.discount, checked.label
@@ -598,16 +598,25 @@ class Monitor:
         if sent and to_check:
             self.db.add_loot_check(product, fingerprint, verdict.price, subject, source, best_link, post_url, text)
 
-    def _tracker_says(self, product: str, price: float, name: str) -> Optional[Verdict]:
-        """The price tracker's record of a product, as a check of a loot's price: a verdict when it
-        shows the price far below what the product usually costs."""
+    def _records_say(self, product: str, price: float, name: str) -> Optional[Verdict]:
+        """What is known of a product's usual price, as a check of a loot's price: the price tracker's
+        list (Amazon, Flipkart), then the bot's own readings of the store's pages (Flipkart). A
+        verdict when the price stands far below what the product usually costs."""
         seen = self.db.tracker_item(product, time.time() - TRACKER_MEMORY)
-        if not seen:
-            return None
-        title, tracked_price, usual, low, _high, mrp, new_low, in_stock, _url, _seen_at = seen
-        if not in_stock or (tracked_price is not None and tracked_price > price * 1.15 + 1):
-            return None  # out of stock there, or its own reading does not bear the loot price out
-        return confirm_loot(name or title or "", price, usual, self.s, low=low, new_low=bool(new_low), mrp=mrp)
+        if seen:
+            title, tracked_price, usual, low, _high, mrp, new_low, in_stock, _url, _seen_at = seen
+            # Out of stock there, or a reading of its own above the loot price: not borne out by it.
+            if in_stock and (tracked_price is None or tracked_price <= price * 1.15 + 1):
+                verdict = confirm_loot(name or title or "", price, usual, self.s, low=low, new_low=bool(new_low),
+                                       mrp=mrp)
+                if verdict is not None:
+                    return verdict
+        record = self.db.product_record(product) if product.startswith("flipkart:") else None
+        if record is not None:
+            title, mrp, _last_price, _last_seen, usual, _readings = record
+            return confirm_loot(name or title or "", price, usual, self.s, mrp=mrp,
+                                where="against its Flipkart page as the monitor has read it")
+        return None
 
     def _verify_loots(self, products: List[str]) -> None:
         """Loots pushed without a list price whose products the tracker has just listed: a big loot
@@ -620,7 +629,7 @@ class Monitor:
                 if not seen or (seen[1] is not None and seen[1] > price * 1.15 + 1):
                     continue  # not borne out yet: a later reading may still
                 self.db.close_loot_check(product)  # one answer per loot
-                verdict = self._tracker_says(product, price, name)
+                verdict = self._records_say(product, price, name)
                 if verdict is None:
                     log.info("checked on the price tracker, not a big loot: %s", name or product)
                     continue

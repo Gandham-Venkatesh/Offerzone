@@ -508,6 +508,24 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual((push["priority"], push["title"][:40]), (4, "Checked loot: 95% off · ₹99 (was ₹1,999)"),
                          "one push, already checked")
 
+    def test_a_flipkart_loot_is_checked_against_the_monitors_own_readings(self):
+        self.check_setup()
+        self.web.redirects["/r/fk"] = "https://www.flipkart.com/boat-airdopes-141/p/itm0123456789ab?pid=ACCGBOAT1234ABCD"
+        reader, label = self.patched_tracker()
+        with reader, label:
+            monitor = self.monitor()
+            for day in range(1, 6):  # its store page showed it at its usual price for days
+                monitor.db.record_price("flipkart:ACCGBOAT1234ABCD", "flipkart.com", "boAt Airdopes 141",
+                                        "https://www.flipkart.com/x", 1499, 4490, now=time.time() - day * 86400)
+            monitor.cycle()
+            self.web.post("alpha", 1, f'Airdopes Loot @ ₹149 <a href="{self.web.base}/r/fk">{self.web.base}/r/fk</a>',
+                          time.time() - 20)
+            monitor.cycle()
+        (push,) = self.deals()
+        self.assertEqual(push["priority"], 4, "one push, already checked")
+        self.assertTrue(push["title"].startswith("Checked loot: 90% off · ₹149 (was ₹1,499)"), push["title"])
+        self.assertIn("against its Flipkart page as the monitor has read it", push["message"])
+
     def test_a_loot_the_tracker_does_not_bear_out_stays_as_it_was(self):
         self.check_setup()
         reader, label = self.patched_tracker()

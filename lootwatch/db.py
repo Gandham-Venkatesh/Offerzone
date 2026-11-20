@@ -242,6 +242,20 @@ class DB:
             )
         return info
 
+    def product_record(self, key: str) -> Optional[Tuple[str, Optional[float], Optional[float], Optional[int],
+                                                          Optional[float], int]]:
+        """(title, MRP, last price, last seen, usual price, readings) of a product the store pages have
+        shown; the usual price is the median of its readings, as record_price takes it."""
+        with self._lock:
+            product = self._conn.execute(
+                "SELECT title, mrp, last_price, last_seen FROM products WHERE key = ?", (key,)).fetchone()
+            if product is None:
+                return None
+            history = [r[0] for r in self._conn.execute(
+                "SELECT price FROM price_obs WHERE key = ? ORDER BY ts DESC LIMIT 48", (key,)).fetchall()]
+        usual = statistics.median(history) if history else product[2]
+        return product[0], product[1], product[2], product[3], usual, len(history)
+
     def mark_quiet(self, key: str, price: float, alerted: bool) -> None:
         """Remember that this product at this price has been reported (``alerted``), or was there
         when its page was first read and so is normal for it."""
