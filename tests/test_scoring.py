@@ -688,7 +688,19 @@ class QuickCommerce(unittest.TestCase):
         self.assertIn("Instamart loot post", instamart.reason)
         self.assertIsNone(self.verdict("[ OVER ] Big Loot ₹100\nhttps://instamart.in/item/IU2N2FNXT6"), "announced as over")
         self.assertIsNone(self.verdict("⚡️Swiggy Dineout Loot Starting at ₹11"), "a range, not a price")
-        self.assertIsNone(self.verdict("Bigbasket : Karwa Chauth Sargi Box at ₹19"), "nobody called it a loot")
+        # A quick-delivery app's product at a give-away price is a loot even when nobody says so
+        # (seen on 20 Nov 2026: "Flipkart Minutes: Cat & Dog Food @ 1/-" was missed for want of the word).
+        for text in ("Bigbasket : Karwa Chauth Sargi Box at ₹19", "Flipkart Minutes: Cat & Dog Food @ 1/-\nhttps://fkrt.cc/zI0fKTk",
+                     "JioMart: 26kg Rice @ 98/-\nhttps://bitli.in/CTI1CTI\nLocation specific"):
+            with self.subTest(text=text):
+                self.assertEqual(self.verdict(text).tier, TIER_HIGH)
+        self.assertIsNone(self.verdict("Zepto: Amul Butter 500g @ 249"), "a dearer one is an ordinary listing")
+        self.assertIsNone(self.verdict("Digihaat: Wired In-Ear Earphones @ 51/-"), "not one of the quick-delivery apps")
+        nameless = evaluate_text("Jiomart Loot :\nhttps://bitli.in/0a3ld3J", self.s, links=["https://bitli.in/0a3ld3J"])
+        self.assertEqual((nameless.tier, nameless.needs_store_link), (TIER_HIGH, True), "the price is in the app")
+        coupon = evaluate_text("Loot : Apply ₹8500 Off Coupon\nhttps://fkrt.cc/z10CXg1", self.s, links=["https://fkrt.cc/z10CXg1"])
+        self.assertEqual((coupon.tier, coupon.reason), (TIER_NORMAL, "loot with a ₹8,500 coupon, no price given"))
+        self.assertIsNone(evaluate_text("Loot : Apply ₹100 Off Coupon\nhttps://fkrt.cc/x", self.s, links=["https://fkrt.cc/x"]))
         self.assertIsNone(self.verdict("Loot @ 24\nhttps://amzn.to/x"), "not one of these apps")
 
     def test_the_ordinary_rules_still_come_first(self):

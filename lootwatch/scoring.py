@@ -417,6 +417,12 @@ _TINY_PRICE = 10.0
 # The quick-delivery apps: their loots ("Zepto loot ₹49", "Instamart: search NOICE, sort by
 # discount") last minutes and are what the owner wants to see first, so they ring loudly.
 _INSTANT_APPS = frozenset({"Instamart", "Flipkart Minutes", "Zepto", "Blinkit", "BigBasket", "JioMart", "Swiggy"})
+# Under this, a deal channel's post of a quick-delivery app's product is a loot even when nobody
+# writes the word ("Flipkart Minutes: Cat & Dog Food @ 1/-", "JioMart: 26kg Rice @ 98/-").
+_INSTANT_LOOT_PRICE = 99.0
+# "Loot : Apply ₹8500 Off Coupon": a coupon this large, on a loot, is worth a look without a price.
+_BIG_COUPON = re.compile(r"₹\s?(\d[\d,]*)\s*(?:off\s+)?(?:coupon|voucher)", re.I)
+_BIG_COUPON_MIN = 1000.0
 # Gold, silver and jewellery sell at the day's metal price: a "loot" on them without a list price is
 # a card offer, never a loot (seen on 20 Nov 2026: a 24KT gold coin at ₹10,901, a 4 g gold ring at
 # ₹51,105, both pushed).
@@ -437,7 +443,7 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
     the post must lead into a shop: named, linked or reached through its link (adverts for other
     channels and card promotions call themselves "big loot" too).
     """
-    if not settings.quick_loots or not _LOOT_WORD.search(parsed.text):
+    if not settings.quick_loots:
         return None
     if any(amount.kind == "mrp" for amount in parsed.amounts):
         return None  # it states its list price: the ordinary rules have judged it by that
@@ -446,6 +452,13 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
     price = next((amount.value for amount in parsed.amounts if amount.kind in ("sell", "plain")), None)
     app = _app_named(parsed.text, hosts, quick_only=False)
     big = bool(_BIG_LOOT.search(parsed.text))
+    if not _LOOT_WORD.search(parsed.text):
+        # Nobody called it a loot: only a quick-delivery app's product at a give-away price counts.
+        if app in _INSTANT_APPS and price is not None and 0 < price <= _INSTANT_LOOT_PRICE \
+                and not _BULLION.search(parsed.text):
+            return Verdict(TIER_HIGH, f"{app} at {fmt_inr(price)}, no list price to check it against", price, None, 0.0,
+                           label="Quick loot", max_tier=TIER_HIGH)
+        return None
     if app is None and not _shop_hosts(hosts):
         return None  # a link to another channel, a folder of channels, a betting site: an advert
     if price is not None and 0 < price <= _TINY_PRICE:
@@ -464,6 +477,15 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
         tier = TIER_HIGH if app in _INSTANT_APPS else TIER_NORMAL
         return Verdict(tier, f"{app + ' ' if app else ''}big loot, no price given", None, None, 0.0,
                        label="Loot", max_tier=tier, needs_store_link=True)
+    if app in _INSTANT_APPS and (_app_named("", hosts, quick_only=False) or _shop_hosts(hosts)):
+        # "Jiomart Loot :" and a link: the app's loots last minutes, the price is in the app.
+        return Verdict(TIER_HIGH, f"{app} loot, no price given", None, None, 0.0, label="Quick loot",
+                       max_tier=TIER_HIGH, needs_store_link=True)
+    coupon = _BIG_COUPON.search(parsed.text)
+    if coupon and float(coupon.group(1).replace(",", "")) >= _BIG_COUPON_MIN and _shop_hosts(hosts):
+        amount = float(coupon.group(1).replace(",", ""))
+        return Verdict(TIER_NORMAL, f"loot with a {fmt_inr(amount)} coupon, no price given", None, None, 0.0,
+                       label="Loot", max_tier=TIER_NORMAL, needs_store_link=True)
     return None
 
 
