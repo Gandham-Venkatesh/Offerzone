@@ -740,6 +740,14 @@ class QuickCommerce(unittest.TestCase):
                                         links=["https://myntr.it/hFx4RH0"]))
         self.assertIsNone(evaluate_text("Boat Earbuds @ ₹1 https://amzn.to/x", self.s, links=["https://amzn.to/x"]),
                           "a price alone, without the channel calling it a loot, is not enough")
+        # Pushed on 20 Nov 2026: gold sells at the day's metal price, so its "loot" is a card offer.
+        for text in ("Loot : 24KT Gold Coin (1 Gram) @10901 https://amzn.to/x", "Loot @ ₹51,105 : BHIMA JEWELS 4 GM GOLD RING https://amzn.to/x",
+                     "Silver Coin 10g loot ₹1,099 https://amzn.to/x"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://amzn.to/x"]))
+        self.assertEqual(evaluate_text("Gold Coin loot @ ₹1 https://amzn.to/x", self.s, links=["https://amzn.to/x"]).tier,
+                         TIER_HIGH, "a gold coin at one rupee is a price error all the same")
+        self.assertIsNotNone(evaluate_text("Dabur Honey Gold Loot @ ₹99 https://amzn.to/x", self.s, links=["https://amzn.to/x"]))
         stated = evaluate_text("Loot ₹1 Maggi (MRP ₹14) https://blinkit.com/prn/x", self.s, links=["https://blinkit.com/prn/x"])
         self.assertTrue(stated is None or stated.label != "Loot", "with a list price the ordinary rules decide")
 

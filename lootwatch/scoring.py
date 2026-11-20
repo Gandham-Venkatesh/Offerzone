@@ -398,6 +398,14 @@ def _quick_commerce(parsed: ParsedText, settings: Settings, hosts: Sequence[str]
 
 # A loot at a few rupees is one wherever it leads.
 _TINY_PRICE = 10.0
+# Gold, silver and jewellery sell at the day's metal price: a "loot" on them without a list price is
+# a card offer, never a loot (seen on 20 Nov 2026: a 24KT gold coin at ₹10,901, a 4 g gold ring at
+# ₹51,105, both pushed).
+_METAL = r"(?:gold|silver|platinum)"
+_JEWEL = r"(?:coins?|bars?|biscuits?|rings?|chains?|bangles?|earrings?|pendants?|necklaces?|bracelets?|jewell?e?ry|jewels?)"
+_BULLION = re.compile(
+    rf"\b{_METAL}\b[^\n]{{0,30}}\b{_JEWEL}\b|\b{_JEWEL}\b[^\n]{{0,30}}\b{_METAL}\b"
+    r"|\b(?:24|22|18|14)\s*(?:k|kt|karat|carat)\b", re.I)
 
 
 def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) -> Optional[Verdict]:
@@ -424,6 +432,8 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
     if price is not None and 0 < price <= _TINY_PRICE:
         return Verdict(TIER_HIGH, f"{app + ' ' if app else ''}loot at {fmt_inr(price)}", price, None, 0.0,
                        label="Loot", max_tier=TIER_HIGH, needs_store_link=app is None)
+    if _BULLION.search(parsed.text):
+        return None
     if price is not None:
         if app is not None:
             return Verdict(TIER_NORMAL, f"{app} loot post, no list price to check it against", price, None, 0.0,
