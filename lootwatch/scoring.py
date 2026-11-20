@@ -264,9 +264,12 @@ def loot_channel_verdict(parsed: ParsedText, verdict: Optional[Verdict], hosts: 
     if verdict is not None:
         if tier > verdict.tier:
             verdict.tier = tier
-            verdict.reason = why if verdict.label == "Quick loot" else f"{why} · {verdict.reason}"
+            if verdict.label in ("Quick loot", "Loot"):  # the same claim, now believed: say it once
+                verdict.reason = why + (f", at {fmt_inr(verdict.price)}" if verdict.price is not None else "")
+            else:
+                verdict.reason = f"{why} · {verdict.reason}"
         verdict.max_tier = max(verdict.max_tier, tier)
-        if big and not verdict.label:
+        if big and verdict.label in ("", "Loot"):
             verdict.label = "Big loot"
         return verdict
     price = priced[0] if priced else None
@@ -378,13 +381,46 @@ def _quick_commerce(parsed: ParsedText, settings: Settings, hosts: Sequence[str]
     text = parsed.text
     brand = _app_named(text, hosts, quick_only=True)
     if brand is not None:
-        verdict = _coupon_or_loot(parsed, settings, brand)
+        verdict = _coupon(parsed, settings, brand)
         if verdict:
             return verdict
-    return _app_hint(parsed, settings, hosts)
+    return _price_loot(parsed, settings, hosts) or _app_hint(parsed, settings, hosts)
 
 
-def _coupon_or_loot(parsed: ParsedText, settings: Settings, brand: str) -> Optional[Verdict]:
+# A loot at a few rupees is one wherever it leads.
+_TINY_PRICE = 10.0
+
+
+def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) -> Optional[Verdict]:
+    """Loots posted with a price and nothing to measure it against: "Blinkit loot ₹1", "Ajio loot
+    @199", "Loot @ ₹1 https://fkrt.cc/...".
+
+    A price of a few rupees is a loot on any store, so it rings loudly once its link is seen to
+    lead into a shop. A higher price counts only in the apps such posts mostly name (quick
+    commerce, food, fashion), and quietly: without the list price nobody can tell how good it is.
+    So does a "big loot" that links into one of those apps without stating a price.
+    """
+    if not settings.quick_loots or not _LOOT_WORD.search(parsed.text):
+        return None
+    if any(amount.kind == "mrp" for amount in parsed.amounts):
+        return None  # it states its list price: the ordinary rules have judged it by that
+    price = next((amount.value for amount in parsed.amounts if amount.kind in ("sell", "plain")), None)
+    app = _app_named(parsed.text, hosts, quick_only=False)
+    if price is not None and 0 < price <= _TINY_PRICE:
+        return Verdict(TIER_HIGH, f"{app + ' ' if app else ''}loot at {fmt_inr(price)}", price, None, 0.0,
+                       label="Loot", max_tier=TIER_HIGH, needs_store_link=app is None)
+    if app is None:
+        return None
+    if price is not None:
+        return Verdict(TIER_NORMAL, f"{app} loot post, no list price to check it against", price, None, 0.0,
+                       label="Quick loot", max_tier=TIER_NORMAL)
+    if _BIG_LOOT.search(parsed.text) and _app_named("", hosts, quick_only=False):
+        return Verdict(TIER_NORMAL, f"{app} big loot, no price given", None, None, 0.0, label="Loot",
+                       max_tier=TIER_NORMAL, needs_store_link=True)
+    return None
+
+
+def _coupon(parsed: ParsedText, settings: Settings, brand: str) -> Optional[Verdict]:
     text = parsed.text
     lines = text.split("\n")
     best = None  # (effective percent, wording)
@@ -420,11 +456,6 @@ def _coupon_or_loot(parsed: ParsedText, settings: Settings, brand: str) -> Optio
         return Verdict(tier, f"{brand} coupon: {best[1]}" + (f", code {code.group(1)}" if code else ""), None, None,
                        best[0], label="Coupon", max_tier=tier,
                        key=f"coupon:{brand.lower()}:{code.group(1) if code else int(best[0])}")
-    if settings.quick_loots and _LOOT_WORD.search(text):
-        price = next((amount.value for amount in parsed.amounts if amount.kind in ("sell", "plain")), None)
-        if price is not None:
-            return Verdict(TIER_NORMAL, f"{brand} loot post, no list price to check it against", price, None, 0.0,
-                           label="Quick loot", max_tier=TIER_NORMAL)
     return None
 
 

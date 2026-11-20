@@ -689,13 +689,37 @@ class QuickCommerce(unittest.TestCase):
                 self.assertIsNone(self.verdict(text))
 
     def test_big_loots_are_believed_only_from_marked_channels(self):
-        # An ordinary channel's "big loot" is mostly an advert (see LootChannels for the marked ones).
-        self.assertIsNone(evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"]))
+        # An ordinary channel's "big loot" is mostly an advert (see LootChannels for the marked ones):
+        # it is pushed only when it links into one of the apps, and then quietly.
+        self.assertIsNone(evaluate_text("BIG LOOT 😱🔥", self.s, links=["https://amzn.to/4xyz"]))
+        quiet = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"])
+        self.assertEqual((quiet.tier, quiet.reason, quiet.needs_store_link), (TIER_NORMAL, "Zepto big loot, no price given", True))
+        self.assertIsNone(evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://t.me/+9MtPJAnaAnBkMmU1"]),
+                          "naming the app is not enough without a link into it")
         marked = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"], loot_channel=True)
         self.assertEqual((marked.tier, marked.label), (TIER_URGENT, "Big loot"))
         self.assertIsNone(evaluate_text("BIG LOOT : Swiggy Instamart", self.s, links=["https://t.me/+9MtPJAnaAnBkMmU1"],
                                         loot_channel=True), "a link to another channel is an advert for that channel")
         self.assertIsNone(evaluate_text("Big loot on Zepto", self.s, loot_channel=True), "no link at all")
+
+    def test_loots_stated_as_a_bare_price(self):
+        # "Loot @ ₹1": a few rupees is a loot on any store, once the link is seen to lead into one.
+        for text, link in (("Blinkit Loot ₹1 🔥", "https://blinkit.com/prn/x/prid/123"),
+                           ("Swiggy Instamart Loot @ ₹1", "https://www.swiggy.com/instamart/item/ABC123"),
+                           ("Nykaa loot ₹9 lipstick", "https://www.nykaa.com/x")):
+            with self.subTest(text=text):
+                verdict = evaluate_text(text, self.s, links=[link])
+                self.assertEqual((verdict.tier, verdict.label, verdict.needs_store_link), (TIER_HIGH, "Loot", False))
+        anywhere = evaluate_text("Loot @ ₹1\nhttps://fkrt.cc/xyz", self.s, links=["https://fkrt.cc/xyz"])
+        self.assertEqual((anywhere.tier, anywhere.reason, anywhere.needs_store_link), (TIER_HIGH, "loot at ₹1", True))
+        # A higher price counts in the apps such posts name, quietly: nothing tells how good it is.
+        ajio = evaluate_text("Ajio Loot @ ₹199", self.s, links=["https://ajiio.in/xyz"])
+        self.assertEqual((ajio.tier, ajio.label, ajio.price), (TIER_NORMAL, "Quick loot", 199))
+        self.assertIsNone(evaluate_text("Loot @ ₹100\nhttps://amzn.to/x", self.s, links=["https://amzn.to/x"]))
+        self.assertIsNone(evaluate_text("Boat Earbuds @ ₹1 https://amzn.to/x", self.s, links=["https://amzn.to/x"]),
+                          "a price alone, without the channel calling it a loot, is not enough")
+        stated = evaluate_text("Loot ₹1 Maggi (MRP ₹14) https://blinkit.com/prn/x", self.s, links=["https://blinkit.com/prn/x"])
+        self.assertTrue(stated is None or stated.label != "Loot", "with a list price the ordinary rules decide")
 
     def test_both_can_be_switched_off(self):
         self.s.quick_coupon_pct = 0
@@ -764,7 +788,9 @@ class LootChannels(unittest.TestCase):
             with self.subTest(text=text):
                 verdict = self.judge(text)
                 self.assertEqual((verdict.tier, verdict.max_tier), (TIER_URGENT, TIER_URGENT))
-                self.assertIsNone(self.judge(text, marked=False) if "Zepto" not in text else None)
+                unmarked = self.judge(text, marked=False)
+                self.assertTrue(unmarked is None or unmarked.tier == TIER_NORMAL,
+                                "from any other channel, at most a quiet note (an app's own loot)")
         self.assertTrue(self.judge("BIG LOOT 😱🔥\nhttps://amzn.to/4xyz").needs_store_link, "the link must lead into a shop")
         self.assertEqual(self.judge("Big Loot 🔥 Loot ₹16 https://myntr.it/x").price, 16)
 
