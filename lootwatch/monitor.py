@@ -107,6 +107,8 @@ class Monitor:
         self._claim_lock = threading.Lock()
         self._fast_stop = threading.Event()
         self._fast_thread: Optional[threading.Thread] = None
+        self._feed_thread: Optional[threading.Thread] = None
+        self._fast_feeds = [url for url in settings.fast_feeds if url in settings.feeds]
         self._push_lags: List[float] = []  # how late Telegram pushed posts, since the last scan line
         self._watch_checked: Dict[str, float] = {}
         self._ntfy_pause_until = 0.0
@@ -234,6 +236,36 @@ class Monitor:
     def _fast_reading(self) -> bool:
         return self._fast_thread is not None and self._fast_thread.is_alive()
 
+    def _read_feeds_often(self) -> None:
+        """Feeds marked "!" in feeds.txt (the price tracker), read every FAST_FEED_SECONDS.
+
+        A site that refuses is left alone by the fetcher for a while, and from then on read half
+        as often each time it refuses again, so that it never has a reason to shut us out for good.
+        """
+        gap = self.s.fast_feed_seconds
+        recorded: Dict[str, float] = {}
+        while not self._fast_stop.is_set():
+            started = time.time()
+            for url in self._fast_feeds:
+                if self._fast_stop.is_set():
+                    break
+                record = started - recorded.get(url, 0.0) >= 60
+                try:
+                    outcome = self._scan_feed(url, started + max(gap, 15.0), record=record)
+                except Exception:
+                    log.exception("could not read %s", short_url(url))
+                    outcome = ""
+                if record:
+                    recorded[url] = started
+                if outcome == "refused" and gap < 60:
+                    gap = min(60.0, gap * 2)
+                    log.warning("%s refused a reading: read every %.0fs from now on", short_url(url), gap)
+            self._fast_stop.wait(max(0.5, started + gap - time.time()))
+
+    def _feeds_read_often(self) -> List[str]:
+        alive = self._feed_thread is not None and self._feed_thread.is_alive()
+        return self._fast_feeds if alive else []
+
     def _take_channel_page(self, source: str, label: str, page, record: bool = True) -> None:
         if page.status != "ok":
             reason = {
@@ -309,40 +341,50 @@ class Monitor:
         log.info("live post in %s, %.0fs after it was published: %s", label, age, post.url)
         self._handle_post(source, label, post.text, post.analysis_text, post.links, post.url, post.ts)
 
-    def _scan_feed(self, url: str, deadline: float) -> None:
-        """One line of feeds.txt: an RSS/Atom feed, or the new-deals page of a deal site."""
+    def _scan_feed(self, url: str, deadline: float, record: bool = True) -> str:
+        """One line of feeds.txt: an RSS/Atom feed, or the new-deals page of a deal site.
+
+        Returns "refused" when the site refused the request, what else went wrong, or "".
+        ``record``: count the reading in the source's health (a feed read every few seconds does
+        so once a minute, like a scan).
+        """
         source = source_key("feed", url)
         reader = site_reader(url)
         headers = None if reader else {"Accept": "application/atom+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.5"}
         result = self.fetcher.get(url, headers=headers, deadline=deadline)
         if result.skipped and not result.error.startswith("cooldown"):
-            self._count("unreached")
-            return
+            if record:
+                self._count("unreached")
+            return result.error
         if not result.ok:
-            self.db.health_fail(source, result.problem)
-            self._count("source_failures")
-            return
+            if record:
+                self.db.health_fail(source, result.problem)
+                self._count("source_failures")
+            return "refused" if result.blocked else result.problem
+
+        def failed(why: str) -> str:
+            if record:
+                self.db.health_fail(source, why)
+                self._count("source_failures")
+            return why
+
         try:
             items = reader(result.text, url, time.time()) if reader else parse_feed(result.text)
         except (FeedError, SiteError) as exc:
-            self.db.health_fail(source, str(exc))
-            self._count("source_failures")
-            return
+            return failed(str(exc))
         except Exception as exc:  # a page nobody foresaw: say so through the health record
             log.exception("could not read %s", short_url(url))
-            self.db.health_fail(source, f"the page could not be read ({type(exc).__name__}); has its layout changed?")
-            self._count("source_failures")
-            return
+            return failed(f"the page could not be read ({type(exc).__name__}); has its layout changed?")
         previous_ok = self.db.last_ok(source)
-        self.db.health_ok(source, len(items))
-        self._deal_source_read()
+        if record:
+            self.db.health_ok(source, len(items))
+            self._deal_source_read()
         first_contact = self.db.get(f"boot:{source}") == ""
-        fresh = self.db.unseen(source, [i.item_id for i in items])
+        fresh = self._claim(source, [i.item_id for i in items])
         if first_contact:
             self.db.set(f"boot:{source}", int(time.time()))
         if not fresh:
-            return
-        self.db.mark_seen(source, fresh)
+            return ""
         now = time.time()
         max_age = self._max_post_age(previous_ok, now)
         label = site_label(url) if reader else host_of(url)
@@ -370,6 +412,7 @@ class Monitor:
                     self._announce(verdict, source, label, item.text, item.links, item.url, item.ts)
             except Exception:
                 log.exception("failed to process feed item %s", item.url)
+        return ""
 
     def _scan_watch(self, item: WatchItem, deadline: float) -> None:
         source = source_key("watch", item.url)
@@ -700,7 +743,8 @@ class Monitor:
             channels = channels[shift:] + channels[:shift]
         # Deal sites first: a deal is on their page before it is anywhere else, and each is one
         # quick request to a site of its own.
-        jobs = [(self._scan_feed, url) for url in self.s.feeds]
+        often = self._feeds_read_often()  # those are read every few seconds already
+        jobs = [(self._scan_feed, url) for url in self.s.feeds if url not in often]
         jobs += [(self._scan_channel, channel) for channel in channels]
         if not self._fast_reading():  # otherwise they are read every few seconds already
             jobs += [(self._scan_private, code) for code in self._private]
@@ -935,6 +979,10 @@ class Monitor:
             self._fast_thread = threading.Thread(target=self._read_private_often, name="telegram-fast", daemon=True)
             self._fast_thread.start()
             log.info("the invite-only channels are read every %gs through the Telegram login", self.s.tg_fast_seconds)
+        if self._fast_feeds and self.s.fast_feed_seconds > 0 and not once:
+            self._feed_thread = threading.Thread(target=self._read_feeds_often, name="fast-feeds", daemon=True)
+            self._feed_thread.start()
+            log.info("read every %gs: %s", self.s.fast_feed_seconds, ", ".join(short_url(u) for u in self._fast_feeds))
         started = time.time()
         number = 0
         last_duration = 0.0
@@ -976,8 +1024,9 @@ class Monitor:
                 continue
             self._stop.wait(pause)
         self._fast_stop.set()
-        if self._fast_thread is not None:
-            self._fast_thread.join(timeout=30)
+        for thread in (self._fast_thread, self._feed_thread):
+            if thread is not None:
+                thread.join(timeout=30)
         self.flush_outbox()
         if self.account is not None:
             self.account.close()

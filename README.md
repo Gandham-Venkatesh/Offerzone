@@ -28,7 +28,8 @@ Each scan (default: every 60 seconds) it looks in four places:
 4. **Deal sites and public deal channels** (`feeds.txt`, `channels.txt`). DealsMagnet's
    new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
-   list of drops covers Amazon; and 27 public Telegram channels are read as a safety net. Posts are parsed for price, MRP and discount, de-duplicated across
+   list of drops covers Amazon and is read every 20 seconds (a line marked `!` in `feeds.txt`);
+   and 27 public Telegram channels are read as a safety net. Posts are parsed for price, MRP and discount, de-duplicated across
    all of these, and filtered hard.
 
 ## What it cannot do
@@ -423,6 +424,7 @@ python -m lootwatch               # scan forever
 | `HEALTHCHECK_URL` | – | A [healthchecks.io](https://healthchecks.io) ping URL; it alerts you if scans stop |
 | `TG_API_ID` / `TG_API_HASH` / `TG_SESSION` | – | Secrets: the Telegram login for invite-only channels (see "Invite-only channels") |
 | `TG_FAST_SECONDS` | 5 | Seconds between two readings of the invite-only channels through that login (0: once a scan) |
+| `FAST_FEED_SECONDS` | 20 | Seconds between two readings of a `feeds.txt` line marked `!` (0: once a scan); a site that refuses is read half as often from then on |
 | `EXTRA_STORE_DOMAINS` | – | Extra shop domains to treat as trusted, comma separated |
 | `DENY_WORDS` | see `.env.example` | Posts containing these are ignored |
 | `CURL_IMPERSONATE` | `chrome124` | Browser profile presented to stores when `curl_cffi` is installed |

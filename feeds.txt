@@ -12,8 +12,12 @@
 #                             price stands below the product's usual price: quietly from 60%,
 #                             loudly from 70%, at max priority from 80% (TRACKER_DROP_PCT,
 #                             URGENT_DROP_PCT), and only when at least Rs 2,000 is saved.
+#
+# A line that starts with "!" is read every 20 seconds (FAST_FEED_SECONDS) instead of once a
+# minute. The price tracker is: its drops sell out fast. If a site starts refusing, it is read
+# less often on its own, so it never has a reason to shut the monitor out for good.
 https://www.dealsmagnet.com/new
-https://pricehistory.app/price-drop
+! https://pricehistory.app/price-drop
 # DesiDime's page was read here until 18 Nov 2026, when desidime.com began refusing GitHub's
 # servers (HTTP 403). A site that refuses is left alone; DesiDime's deals still arrive through
 # its Telegram channels (desidime, DesidimeHot in channels.txt), about twenty minutes later.

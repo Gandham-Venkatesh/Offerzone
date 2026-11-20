@@ -215,6 +215,20 @@ def _get(name: str, default: str) -> str:
     return default if value is None or value.strip() == "" else value.strip()
 
 
+def load_feeds(path: Path) -> Tuple[List[str], List[str]]:
+    """(every feed, those marked "!" to be read every FAST_FEED_SECONDS) from feeds.txt."""
+    feeds: List[str] = []
+    fast: List[str] = []
+    for line in read_lines(path):
+        url = line.lstrip("!").strip()
+        if not re.match(r"^https?://", url, re.I):
+            continue
+        feeds.append(url)
+        if line.startswith("!"):
+            fast.append(url)
+    return feeds, fast
+
+
 def _num(name: str, default: float) -> float:
     try:
         return float(_get(name, str(default)))
@@ -281,6 +295,7 @@ class Settings:
     # Seconds between two readings of the invite-only channels through that account (0: once a
     # scan, like the rest). Telegram's own push of a new post can lag half a minute behind it.
     tg_fast_seconds: float = 5.0
+    fast_feed_seconds: float = 20.0  # seconds between two readings of a feed marked "!" (0: once a scan)
 
     db_path: str = "lootwatch.db"
     channels_file: str = "channels.txt"
@@ -296,6 +311,7 @@ class Settings:
     watchlist: List[WatchItem] = field(default_factory=list)
     traps: List[Trap] = field(default_factory=list)
     feeds: List[str] = field(default_factory=list)
+    fast_feeds: List[str] = field(default_factory=list)  # feeds.txt lines marked "!": read every FAST_FEED_SECONDS
 
     @classmethod
     def from_env(cls, overrides: Optional[Dict[str, object]] = None) -> "Settings":
@@ -344,6 +360,7 @@ class Settings:
             tg_api_hash=_get("TG_API_HASH", ""),
             tg_session=_get("TG_SESSION", ""),
             tg_fast_seconds=max(0.0, _num("TG_FAST_SECONDS", 5.0)),
+            fast_feed_seconds=max(0.0, _num("FAST_FEED_SECONDS", 20.0)),
             db_path=_get("DB_PATH", "lootwatch.db"),
             channels_file=_get("CHANNELS_FILE", "channels.txt"),
             watchlist_file=_get("WATCHLIST_FILE", "watchlist.txt"),
@@ -361,11 +378,12 @@ class Settings:
         """Read the list files. A half that is switched off on this machine is left empty."""
         self.traps = load_traps(Path(self.traps_file))
         self.channels, self.private_channels, self.loot_channels, self.feeds, self.watchlist = [], [], [], [], []
+        self.fast_feeds = []
         if self.use_channels:
             self.channels = load_channels(Path(self.channels_file))
             self.private_channels = load_private_channels(Path(self.channels_file))
             self.loot_channels = load_loot_channels(Path(self.channels_file))
-            self.feeds = [u for u in read_lines(Path(self.feeds_file)) if re.match(r"^https?://", u, re.I)]
+            self.feeds, self.fast_feeds = load_feeds(Path(self.feeds_file))
         if self.use_store_pages:
             self.watchlist = load_watchlist(Path(self.watchlist_file))
 

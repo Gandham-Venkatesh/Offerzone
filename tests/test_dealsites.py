@@ -14,7 +14,7 @@ from lootwatch.config import Settings, load_traps
 from lootwatch.db import DB
 from lootwatch.fetch import Fetcher
 from lootwatch.links import LinkResolver, classify_host
-from lootwatch.monitor import Monitor
+from lootwatch.monitor import Monitor, source_key
 from lootwatch.notify import Notifier
 from lootwatch.scoring import TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_stated, evaluate_tracked
 from lootwatch.sources.dealsites import (SiteError, age_seconds, parse_dealsmagnet, parse_desidime,
@@ -361,6 +361,62 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual([(a["label"], a["url"]) for a in push["actions"]],
                          [("Open deal", "https://www.amazon.in/dp/B09G28SW8W?tag=desidime01-21"),
                           ("Open post", "https://www.desidime.com/deals/some-deal-8")])
+
+    def run_in_background(self, monitor):
+        import threading
+
+        runner = threading.Thread(target=monitor.run, daemon=True)
+        runner.start()
+
+        def stop():
+            monitor._stop.set()
+            runner.join(30)
+            return runner
+
+        self.addCleanup(stop)
+        return stop
+
+    def wait_for(self, condition, seconds=10.0):
+        deadline = time.time() + seconds
+        while time.time() < deadline and not condition():
+            time.sleep(0.02)
+        return condition()
+
+    def test_a_feed_marked_to_be_read_often_is_read_every_few_seconds(self):
+        self.web.redirects["/visit/1"] = "https://www.amazon.in/dp/B09G28SW8W?tag=desidime01-21"
+        old = desidime_card(7, "Old deal", ago="3 hours ago", price="₹ 99", mrp="₹ 9,999")
+        self.web.pages["/new"] = desidime_page(old)
+        self.settings.fast_feeds = [self.url]
+        self.settings.fast_feed_seconds = 0.2
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_desidime), \
+                mock.patch("lootwatch.monitor.site_label", return_value="DesiDime"):
+            monitor = self.monitor()
+            stop = self.run_in_background(monitor)
+            self.assertTrue(self.wait_for(lambda: self.web.hits["/new"] >= 3), "read again and again")
+            posted = time.time()
+            self.web.pages["/new"] = desidime_page(
+                desidime_card(8, "Sony Bravia 55 inch 4K TV", price="₹ 2,499", mrp="₹ 79,990", buy=self.web.base + "/visit/1"),
+                old)
+            self.assertTrue(self.wait_for(lambda: self.deals()))
+            self.assertLess(time.time() - posted, 5, "a new card rings within seconds, not at the next scan")
+            stop()
+        self.assertEqual(len(self.deals()), 1)
+        row = next(r for r in monitor.db.health_rows() if r[0] == source_key("feed", self.url))
+        self.assertEqual(row[1], 1, "its health is recorded once a minute, like any source's")
+
+    def test_a_feed_read_often_backs_off_when_the_site_refuses(self):
+        self.web.pages["/new"] = desidime_page(desidime_card(7, "Old deal", ago="3 hours ago"))
+        self.web.status_for["/new"] = 429
+        self.settings.fast_feeds = [self.url]
+        self.settings.fast_feed_seconds = 0.1
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_desidime):
+            monitor = self.monitor()
+            with self.assertLogs("lootwatch", level="WARNING") as logs:
+                stop = self.run_in_background(monitor)
+                self.assertTrue(self.wait_for(lambda: any("refused a reading" in line for line in logs.output), 5))
+                stop()
+        hits = self.web.hits["/new"]
+        self.assertLessEqual(hits, 3, "a refusal is followed by a pause, then by readings half as often")
 
     def test_the_same_deal_from_a_channel_later_is_not_pushed_again(self):
         self.settings.channels = ["alpha"]
