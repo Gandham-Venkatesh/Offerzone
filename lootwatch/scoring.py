@@ -586,17 +586,31 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
         return None
     drop = (reference - price) / reference * 100
     saving = reference - price
-    if drop < settings.tracker_drop_pct or saving < settings.urgent_min_saving:
-        return None
-    middle = (settings.tracker_drop_pct + settings.urgent_drop_pct) / 2
-    tier = TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle else TIER_NORMAL
-    reason = (f"{drop:.0f}% below the {fmt_inr(reference)} it usually costs" if called == "it usually costs"
-              else f"{drop:.0f}% below its list price of about {fmt_inr(reference)}")
     at_low = new_low or low is None or price <= low * 1.03
     if not at_low and reference >= 20 * price:
         # It has sold for less than this before, yet "usually" costs twenty times as much: the
         # average holds a seller's placeholder price (diapers at ₹255 that "usually cost" ₹21 lakh).
         return None
+    if saving < TRACKED_MIN_SAVING:
+        return None
+    off_list = (mrp - price) / mrp * 100 if mrp and mrp > price else 0.0
+    # The lowest price the tracker has seen, about half the usual price, and far under the list
+    # price, all at once: none of 108 drops on its list one morning, and the loot the owner
+    # missed on 20 Nov 2026 (a gas stove at ₹609 that usually costs ₹1,229, list price ₹8,000).
+    record_low = bool(new_low) or (low is not None and price <= low * 1.03)
+    lowest_yet = record_low and drop >= LOWEST_YET_DROP_PCT and off_list >= settings.min_discount
+    if drop < settings.tracker_drop_pct and not lowest_yet:
+        return None
+    middle = (settings.tracker_drop_pct + settings.urgent_drop_pct) / 2
+    tier = TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle else TIER_NORMAL
+    if tier == TIER_URGENT and saving < settings.urgent_min_saving:
+        tier = TIER_HIGH  # a big share of a small price: loud, but not max priority
+    if lowest_yet:
+        tier = max(tier, TIER_HIGH)
+    reason = (f"{drop:.0f}% below the {fmt_inr(reference)} it usually costs" if called == "it usually costs"
+              else f"{drop:.0f}% below its list price of about {fmt_inr(reference)}")
+    if lowest_yet and called == "it usually costs":
+        reason += f" and {off_list:.0f}% off its list price of about {fmt_inr(mrp)}"
     if at_low:
         reason += ", its lowest price so far"
     else:
@@ -606,6 +620,12 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
             return None
     return Verdict(tier, reason, price, None, drop, label="Price drop", was=reference, max_tier=tier)
 
+
+# Price tracker drops: the least a drop must save to be pushed at all (max priority still takes
+# URGENT_MIN_SAVING), and how far below its usual price a product at its lowest price yet, and far
+# under its list price, must stand.
+TRACKED_MIN_SAVING = 500.0
+LOWEST_YET_DROP_PCT = 45.0
 
 # A loot posted without a list price, found again on the price tracker's list: how far below the
 # product's own usual price it must stand to count as a big loot, and the least it must save.

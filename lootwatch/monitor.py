@@ -391,7 +391,6 @@ class Monitor:
         now = time.time()
         max_age = self._max_post_age(previous_ok, now)
         label = site_label(url) if reader else host_of(url)
-        noted: List[str] = []
         for item in items:
             if item.item_id not in fresh:
                 continue
@@ -400,7 +399,9 @@ class Monitor:
                 if product:  # remembered even when too old to alert: it tells what the product usually costs
                     self.db.note_tracker(product, item.title, item.price, item.usual, item.low, item.high, item.mrp,
                                          item.new_low, item.in_stock, item.links[0], now)
-                    noted.append(product)
+                    # A loot a channel posted for it goes first, as "Checked loot" with the post's
+                    # words; the tracker's own alert about the same product is then a repeat.
+                    self._verify_loots([product])
             self._count("posts")
             if item.ts is None and first_contact:
                 continue
@@ -422,8 +423,6 @@ class Monitor:
                     self._announce(verdict, source, label, item.text, item.links, item.url, item.ts)
             except Exception:
                 log.exception("failed to process feed item %s", item.url)
-        if noted:
-            self._verify_loots(noted)
         return ""
 
     def _scan_watch(self, item: WatchItem, deadline: float) -> None:

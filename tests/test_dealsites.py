@@ -285,6 +285,21 @@ class Judging(unittest.TestCase):
         self.assertIsNone(evaluate_tracked("Adidas Predator", 3400, 8765, self.s, low=2999))
         self.assertIsNone(evaluate_tracked("No average known", 500, None, self.s))
 
+    def test_the_lowest_price_yet_far_under_the_list_price(self):
+        # Missed on 20 Nov 2026 (the owner's screenshot): ₹609, usually ₹1,229, list price ₹8,000,
+        # the lowest in three years. Only half its usual price, but all three at once are rare.
+        stove = evaluate_tracked("Sunflare Cute 2B Toughened Glass Tornado Burner Gas Stove (2 Burners)", 609, 1229,
+                                 self.s, low=609, new_low=True, mrp=8000)
+        self.assertEqual((stove.tier, stove.headline), (TIER_HIGH, "Price drop: 50% off · ₹609 (was ₹1,229)"))
+        self.assertIn("92% off its list price of about ₹8,000, its lowest price so far", stove.reason)
+        self.assertIsNone(evaluate_tracked("Stove", 609, 1229, self.s, low=550, mrp=8000), "it has been cheaper")
+        self.assertIsNone(evaluate_tracked("Stove", 609, 1229, self.s, low=609, new_low=True, mrp=1500),
+                          "not far under its list price")
+        # Seen the same morning: 87% off a list price, but only 37% under its usual price.
+        self.assertIsNone(evaluate_tracked("RED TAPE Walking Shoes For Men", 619, 982, self.s, low=500, mrp=4762))
+        # A big share of a small price is loud, not max priority.
+        self.assertEqual(evaluate_tracked("boAt Airdopes 141", 99, 1999, self.s, low=99, new_low=True).tier, TIER_HIGH)
+
     def test_a_loot_checked_against_the_tracker(self):
         from lootwatch.scoring import confirm_loot
 
@@ -497,7 +512,9 @@ class SitePagesInTheMonitor(unittest.TestCase):
 
     def test_a_loot_the_tracker_has_listed_already_goes_out_checked(self):
         self.check_setup()
-        self.web.pages["/new"] = tracker_page(self.boat_card, self.old_card)
+        # Too small a saving (₹350) for the tracker's own alert, enough to bear out a channel's loot.
+        quiet = self.boat_card.replace("₹1,900 below its average", "₹350 below its average")
+        self.web.pages["/new"] = tracker_page(quiet, self.old_card)
         reader, label = self.patched_tracker()
         with reader, label:
             monitor = self.monitor()
@@ -505,7 +522,7 @@ class SitePagesInTheMonitor(unittest.TestCase):
             self.web.post("alpha", 1, self.loot_post, time.time() - 20)
             monitor.cycle()
         (push,) = self.deals()
-        self.assertEqual((push["priority"], push["title"][:40]), (4, "Checked loot: 95% off · ₹99 (was ₹1,999)"),
+        self.assertEqual((push["priority"], push["title"][:38]), (4, "Checked loot: 78% off · ₹99 (was ₹449)"),
                          "one push, already checked")
 
     def test_a_flipkart_loot_is_checked_against_the_monitors_own_readings(self):
