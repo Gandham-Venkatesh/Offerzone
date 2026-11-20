@@ -1,0 +1,24 @@
+# Things you want. A deal on any of these rings one step louder (high priority), and one judged
+# by its list price alone counts from 70% off (FAVOURITE_MIN_DISCOUNT) instead of 85%
+# (MRP_MIN_DISCOUNT). One word or phrase per line, any case; a plural is matched too.
+#
+# Protein and supplements
+protein
+whey
+creatine
+mass gainer
+peanut butter
+# Gym and fitness equipment
+gym
+dumbbell
+kettlebell
+barbell
+weight plate
+resistance band
+yoga mat
+treadmill
+exercise bike
+exercise cycle
+skipping rope
+pull up bar
+fitness band

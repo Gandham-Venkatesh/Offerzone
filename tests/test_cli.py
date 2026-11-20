@@ -94,10 +94,13 @@ class CommandLine(CleanEnv):
     def test_shipped_list_files_parse_cleanly(self):
         root = Path(__file__).resolve().parent.parent
         settings = Settings(channels_file=str(root / "channels.txt"), watchlist_file=str(root / "watchlist.txt"),
-                            traps_file=str(root / "traps.txt"), feeds_file=str(root / "feeds.txt"))
+                            traps_file=str(root / "traps.txt"), feeds_file=str(root / "feeds.txt"),
+                            favourites_file=str(root / "favourites.txt"))
         with self.assertNoLogs("lootwatch", level="WARNING"):
             settings.load_lists()
         self.assertEqual(len(settings.channels), 27)
+        self.assertTrue({"protein", "whey", "dumbbell", "gym"} <= set(settings.favourites))
+        self.assertTrue(settings.favourite_pattern.search("MuscleBlaze Raw Whey Protein 1kg"))
         self.assertNotIn("freekaamaalindia", settings.channels, "dropped for inflated list prices")
         self.assertIn("desidime", settings.channels)
         self.assertEqual(len(settings.channels), len({c.lower() for c in settings.channels}))

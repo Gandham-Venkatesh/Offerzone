@@ -204,8 +204,10 @@ class Judging(unittest.TestCase):
         self.s.traps = load_traps(traps)
 
     def test_a_card_is_judged_by_its_own_price_fields(self):
-        quiet = evaluate_stated("CableCreation 5-in-1 USB C Hub", "", 1530, 9999, self.s)
-        self.assertEqual((quiet.tier, quiet.price, quiet.mrp), (TIER_NORMAL, 1530, 9999))
+        quiet = evaluate_stated("CableCreation 5-in-1 USB C Hub", "", 1330, 9999, self.s)
+        self.assertEqual((quiet.tier, quiet.price, quiet.mrp), (TIER_NORMAL, 1330, 9999))
+        self.assertIsNone(evaluate_stated("CableCreation 5-in-1 USB C Hub", "", 1530, 9999, self.s),
+                          "85% off a list price is the bar: under it, inflated list prices are everyday")
         high = evaluate_stated("Liora Wet Wipes - Pack of 500", "", 600, 7500, self.s)
         self.assertEqual(high.tier, TIER_HIGH)
         urgent = evaluate_stated("Sony Bravia 55 inch TV", "", 2499, 79990, self.s)
@@ -215,8 +217,8 @@ class Judging(unittest.TestCase):
         self.assertIsNone(evaluate_stated("Gift card", "", 29500, None, self.s), "nothing to compare the price with")
 
     def test_numbers_in_the_title_do_not_disturb_the_stated_prices(self):
-        verdict = evaluate_stated("Trial pack 3 for ₹29,500 - was Rs 99 last week", "", 450, 2999, self.s)
-        self.assertEqual((verdict.price, verdict.mrp), (450, 2999))
+        verdict = evaluate_stated("Trial pack 3 for ₹29,500 - was Rs 99 last week", "", 450, 3999, self.s)
+        self.assertEqual((verdict.price, verdict.mrp), (450, 3999))
 
     def test_card_wording_still_counts(self):
         self.assertIsNone(evaluate_stated("Sony TV 97% off", "Sold out", 2499, 79990, self.s))

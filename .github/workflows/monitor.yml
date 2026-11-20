@@ -74,6 +74,8 @@ jobs:
       # Optional tuning (same page -> Variables). Anything left unset uses the built-in default.
       NTFY_SERVER: ${{ vars.NTFY_SERVER }}
       MIN_DISCOUNT: ${{ vars.MIN_DISCOUNT }}
+      MRP_MIN_DISCOUNT: ${{ vars.MRP_MIN_DISCOUNT }}
+      FAVOURITE_MIN_DISCOUNT: ${{ vars.FAVOURITE_MIN_DISCOUNT }}
       HIGH_DISCOUNT: ${{ vars.HIGH_DISCOUNT }}
       URGENT_DISCOUNT: ${{ vars.URGENT_DISCOUNT }}
       MIN_SAVING: ${{ vars.MIN_SAVING }}

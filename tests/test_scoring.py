@@ -4,7 +4,7 @@ from pathlib import Path
 
 from lootwatch.config import Settings, load_traps
 from lootwatch.db import PriceInfo
-from lootwatch.scoring import (TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_offer, evaluate_stated, evaluate_text,
+from lootwatch.scoring import (TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_offer, evaluate_stated, evaluate_text, evaluate_tracked,
                               is_accessory, is_finance_promo, is_side_product)
 
 
@@ -44,23 +44,36 @@ class TextVerdicts(unittest.TestCase):
             ("Sounce cleaning kit\nDeal Price: ₹79 (MRP ₹999)", None),
             ("Fire-Boltt watch @ ₹1,099 (MRP ₹14,999)", TIER_HIGH),
             ("iPhone 16 (128 GB)\nDeal Price: ₹6,999 (MRP ₹79,900)", TIER_URGENT),
-            # 80-90% : a quiet alert, only when it saves ₹2,000+
+            # 85-90% : a quiet alert, only when it saves ₹2,000+
             ("wipro 9W LED Bulb\nDeal Price: ₹46 (MRP ₹240)", None),
-            ("Beetel Power Bank\nDeal Price: ₹890 (MRP ₹4999)", TIER_NORMAL),
+            ("Beetel Power Bank\nDeal Price: ₹690 (MRP ₹4999)", TIER_NORMAL),
             ("Symbol Jogger\nDeal Price: ₹349 (MRP ₹2599)", TIER_NORMAL),
-            # under 80%
+            # under 85%: list prices are often inflated, 80% off one is an ordinary day
+            ("Beetel Power Bank\nDeal Price: ₹890 (MRP ₹4999)", None),
+            ("Lifelong LED Desk Lamp with Wireless Charging\nDeal Price: ₹698 (MRP ₹3,999)", None),
             ("boAt Rockerz 450 @ ₹1,499 (MRP ₹3,990)", None),
         ]
         for text, expected in cases:
             with self.subTest(text=text):
                 self.assertEqual(self.tier(text), expected)
 
+    def test_favourites_ring_louder_and_count_from_70_percent(self):
+        self.s.favourites = ["protein", "whey", "dumbbell"]
+        whey = evaluate_text("ON Whey Protein 1kg\nDeal Price: ₹999 (MRP ₹3,999)", self.s)
+        self.assertEqual((whey.tier, whey.notes), (TIER_HIGH, ["on your favourites list"]), "75% off, but a favourite")
+        self.assertIsNone(evaluate_text("ON Whey Protein 1kg\nDeal Price: ₹1,499 (MRP ₹3,999)", self.s), "62% off")
+        self.assertIsNone(evaluate_text("Lifelong Desk Lamp\nDeal Price: ₹999 (MRP ₹3,999)", self.s), "not a favourite")
+        self.assertEqual(evaluate_text("Dumbbells 10 kg pair loot @ ₹499 https://amzn.to/x", self.s,
+                                       links=["https://amzn.to/x"]).tier, TIER_HIGH, "a loot on a favourite rings")
+        self.assertEqual(evaluate_tracked("Whey Protein 2kg", 1999, 5499, self.s, low=1999).tier, TIER_HIGH)
+
     def test_price_with_a_stated_percentage(self):
         # DesiDime's format: a price and a percentage, no MRP. The saving follows from the two.
         verdict = evaluate_text("🔥 Nothing Earbuds Pro\n💰 ₹400 / 99% off\n🔗 On Flipkart", make_settings())
         self.assertEqual((verdict.tier, verdict.price, verdict.mrp), (TIER_URGENT, 400, None))
         self.assertIn("about ₹39,600 saved", verdict.reason)
-        self.assertEqual(self.tier("🧹 MILAGROW Robotic Vacuum Cleaner\n💰 ₹6,294 / 80% off"), TIER_NORMAL)
+        self.assertEqual(self.tier("🧹 MILAGROW Robotic Vacuum Cleaner\n💰 ₹4,294 / 86% off"), TIER_NORMAL)
+        self.assertIsNone(self.tier("🧹 MILAGROW Robotic Vacuum Cleaner\n💰 ₹6,294 / 80% off"))
         self.assertIsNone(self.tier("🌿 Plant Stand\n💰 ₹290 / 82% off"))
         self.assertEqual(self.tier("Jiomart 99% off - Rs. 1\nRead More - https://ddime.in/h6UM"), TIER_HIGH)
         self.assertIsNone(self.tier("77% off on - Samsung 24-Inch Curved Monitor - Rs. 3735"))
@@ -665,9 +678,12 @@ class QuickCommerce(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(self.verdict(text))
 
-    def test_loot_posts_alert_quietly_without_a_list_price(self):
+    def test_loot_posts_without_a_list_price(self):
+        # The quick-delivery apps' loots last minutes and are what the owner wants first: they ring.
         zepto = self.verdict("Zepto Loot\n@ 24\nhttps://www.zepto.com/pn/mccain-chilli-garlic-potato-bites/pvid/bfec78f0")
-        self.assertEqual((zepto.tier, zepto.max_tier, zepto.label, zepto.price), (TIER_NORMAL, TIER_NORMAL, "Quick loot", 24.0))
+        self.assertEqual((zepto.tier, zepto.max_tier, zepto.label, zepto.price), (TIER_HIGH, TIER_HIGH, "Quick loot", 24.0))
+        ajio = evaluate_text("Ajio Loot @ ₹199", self.s, links=["https://ajiio.in/xyz"])
+        self.assertEqual(ajio.tier, TIER_NORMAL, "a fashion app's loot comes at the ordinary priority")
         instamart = self.verdict("Swiggy Instamart Loot\nPigeon Air Fryer Large 5.5L @2999\nhttps://instamart.in/item/N67PETRK4E\nAvailable in Hyderabad")
         self.assertIn("Instamart loot post", instamart.reason)
         self.assertIsNone(self.verdict("[ OVER ] Big Loot ₹100\nhttps://instamart.in/item/IU2N2FNXT6"), "announced as over")
@@ -681,7 +697,7 @@ class QuickCommerce(unittest.TestCase):
 
     def test_search_hints_for_shopping_apps(self):
         shampoo = self.verdict("Swiggy Instamart Loot\nSearch : Shampoo\n*Sort by Discount High to Low\n*Check In Your Location")
-        self.assertEqual((shampoo.tier, shampoo.label, shampoo.max_tier), (TIER_NORMAL, "App loot", TIER_NORMAL))
+        self.assertEqual((shampoo.tier, shampoo.label, shampoo.max_tier), (TIER_HIGH, "App loot", TIER_HIGH))
         self.assertEqual(shampoo.reason, "Instamart: search “Shampoo” and sort by discount in the app")
         self.assertEqual(shampoo.key, "apploot:instamart:shampoo", "the same hint from many channels is one alert")
         fruits = self.verdict("Swiggy Instamart\nSearch : Fruits and vegetables")
@@ -705,7 +721,7 @@ class QuickCommerce(unittest.TestCase):
         self.assertIsNone(evaluate_text("BIGGEST LOOT : BUY NOW 👇", self.s, links=["https://t.me/addlist/VETj13smDQVmMWE1"]),
                           "a folder of other channels is an advert")
         quiet = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"])
-        self.assertEqual((quiet.tier, quiet.reason, quiet.needs_store_link), (TIER_NORMAL, "Zepto big loot, no price given", True))
+        self.assertEqual((quiet.tier, quiet.reason, quiet.needs_store_link), (TIER_HIGH, "Zepto big loot, no price given", True))
         self.assertIsNone(evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://t.me/+9MtPJAnaAnBkMmU1"]),
                           "naming the app is not enough without a link into it")
         marked = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"], loot_channel=True)
@@ -819,8 +835,8 @@ class LootChannels(unittest.TestCase):
                 verdict = self.judge(text)
                 self.assertEqual((verdict.tier, verdict.max_tier), (TIER_URGENT, TIER_URGENT))
                 unmarked = self.judge(text, marked=False)
-                self.assertTrue(unmarked is None or unmarked.tier == TIER_NORMAL,
-                                "from any other channel, at most a quiet note (an app's own loot)")
+                self.assertTrue(unmarked is None or unmarked.tier < TIER_URGENT,
+                                "from any other channel never max priority (a quick-delivery app's loot rings high)")
         self.assertTrue(self.judge("BIG LOOT 😱🔥\nhttps://amzn.to/4xyz").needs_store_link, "the link must lead into a shop")
         self.assertEqual(self.judge("Big Loot 🔥 Loot ₹16 https://myntr.it/x").price, 16)
 

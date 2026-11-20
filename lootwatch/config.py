@@ -250,6 +250,10 @@ class Settings:
 
     # The priority ladder for a stated discount (see scoring.py):
     min_discount: float = 80.0  # from here: a quiet alert, if it saves urgent_min_saving or more
+    # A deal judged by nothing but its list price (MRP) counts from this discount: list prices are
+    # often inflated, so 80% off one is common. Favourites (favourites.txt) count from the second.
+    mrp_min_discount: float = 85.0
+    favourite_min_discount: float = 70.0
     high_discount: float = 90.0  # from here: a high-priority alert, if it saves min_saving or more
     urgent_discount: float = 95.0  # from here: max priority, if it saves urgent_min_saving or more
     min_saving: float = 1000.0
@@ -301,6 +305,7 @@ class Settings:
     channels_file: str = "channels.txt"
     watchlist_file: str = "watchlist.txt"
     traps_file: str = "traps.txt"
+    favourites_file: str = "favourites.txt"
     feeds_file: str = "feeds.txt"
 
     dry_run: bool = False
@@ -310,6 +315,7 @@ class Settings:
     loot_channels: List[str] = field(default_factory=list)  # marked "!": lowercase names and invite codes
     watchlist: List[WatchItem] = field(default_factory=list)
     traps: List[Trap] = field(default_factory=list)
+    favourites: List[str] = field(default_factory=list)
     feeds: List[str] = field(default_factory=list)
     fast_feeds: List[str] = field(default_factory=list)  # feeds.txt lines marked "!": read every FAST_FEED_SECONDS
 
@@ -321,6 +327,8 @@ class Settings:
             ntfy_token=_get("NTFY_TOKEN", ""),
             ntfy_health_topic=_get("NTFY_HEALTH_TOPIC", ""),
             min_discount=_num("MIN_DISCOUNT", 80.0),
+            mrp_min_discount=_num("MRP_MIN_DISCOUNT", 85.0),
+            favourite_min_discount=_num("FAVOURITE_MIN_DISCOUNT", 70.0),
             high_discount=_num("HIGH_DISCOUNT", 90.0),
             urgent_discount=_num("URGENT_DISCOUNT", 95.0),
             min_saving=_num("MIN_SAVING", 1000.0),
@@ -365,6 +373,7 @@ class Settings:
             channels_file=_get("CHANNELS_FILE", "channels.txt"),
             watchlist_file=_get("WATCHLIST_FILE", "watchlist.txt"),
             traps_file=_get("TRAPS_FILE", "traps.txt"),
+            favourites_file=_get("FAVOURITES_FILE", "favourites.txt"),
             feeds_file=_get("FEEDS_FILE", "feeds.txt"),
         )
         for key, value in (overrides or {}).items():
@@ -377,6 +386,7 @@ class Settings:
     def load_lists(self) -> None:
         """Read the list files. A half that is switched off on this machine is left empty."""
         self.traps = load_traps(Path(self.traps_file))
+        self.favourites = [line.lower() for line in read_lines(Path(self.favourites_file))]
         self.channels, self.private_channels, self.loot_channels, self.feeds, self.watchlist = [], [], [], [], []
         self.fast_feeds = []
         if self.use_channels:
@@ -391,6 +401,14 @@ class Settings:
     def telegram_account(self) -> bool:
         """Is there a Telegram login to read the invite-only channels with?"""
         return bool(self.tg_api_id and self.tg_api_hash and self.tg_session)
+
+    @property
+    def favourite_pattern(self) -> Optional["re.Pattern[str]"]:
+        """Things the owner wants (favourites.txt): "protein", "dumbbell", "yoga mat"."""
+        words = [w.strip() for w in self.favourites if w.strip()]
+        if not words:
+            return None
+        return re.compile(r"(?<![a-z0-9])(?:" + "|".join(re.escape(w) for w in words) + r")(?:s|es)?(?![a-z0-9])", re.I)
 
     @property
     def deny_pattern(self) -> Optional["re.Pattern[str]"]:

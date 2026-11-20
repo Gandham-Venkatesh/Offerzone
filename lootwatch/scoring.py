@@ -226,7 +226,7 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     verdict = _judge(parsed, settings) or _quick_commerce(parsed, settings, hosts)
     if loot_channel:
         verdict = loot_channel_verdict(parsed, verdict, hosts)
-    return _hedge(verdict, parsed)
+    return _hedge(_favoured(verdict, parsed.text, settings), parsed)
 
 
 # ---- channels marked "!" in channels.txt ------------------------------------------------------
@@ -398,6 +398,9 @@ def _quick_commerce(parsed: ParsedText, settings: Settings, hosts: Sequence[str]
 
 # A loot at a few rupees is one wherever it leads.
 _TINY_PRICE = 10.0
+# The quick-delivery apps: their loots ("Zepto loot ₹49", "Instamart: search NOICE, sort by
+# discount") last minutes and are what the owner wants to see first, so they ring loudly.
+_INSTANT_APPS = frozenset({"Instamart", "Flipkart Minutes", "Zepto", "Blinkit", "BigBasket", "JioMart", "Swiggy"})
 # Gold, silver and jewellery sell at the day's metal price: a "loot" on them without a list price is
 # a card offer, never a loot (seen on 20 Nov 2026: a 24KT gold coin at ₹10,901, a 4 g gold ring at
 # ₹51,105, both pushed).
@@ -436,13 +439,15 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
         return None
     if price is not None:
         if app is not None:
-            return Verdict(TIER_NORMAL, f"{app} loot post, no list price to check it against", price, None, 0.0,
-                           label="Quick loot", max_tier=TIER_NORMAL)
+            tier = TIER_HIGH if app in _INSTANT_APPS else TIER_NORMAL
+            return Verdict(tier, f"{app} loot post, no list price to check it against", price, None, 0.0,
+                           label="Quick loot", max_tier=tier)
         return Verdict(TIER_NORMAL, f"{'big loot' if big else 'loot'} at {fmt_inr(price)}, no list price to check "
                        "it against", price, None, 0.0, label="Loot", max_tier=TIER_NORMAL, needs_store_link=True)
     if big and (app is None or _app_named("", hosts, quick_only=False)):
-        return Verdict(TIER_NORMAL, f"{app + ' ' if app else ''}big loot, no price given", None, None, 0.0,
-                       label="Loot", max_tier=TIER_NORMAL, needs_store_link=True)
+        tier = TIER_HIGH if app in _INSTANT_APPS else TIER_NORMAL
+        return Verdict(tier, f"{app + ' ' if app else ''}big loot, no price given", None, None, 0.0,
+                       label="Loot", max_tier=tier, needs_store_link=True)
     return None
 
 
@@ -499,8 +504,9 @@ def _app_hint(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) -> O
         if hinted and 2 <= len(term) <= 40 and re.search(r"[a-z]{2}", term, re.I):
             hint = _SORT_HINT.search(text)
             sort = "" if not hint else " and sort by price" if "discount" not in hint.group(0).lower() else " and sort by discount"
-            return Verdict(TIER_NORMAL, f"{app}: search “{term}”{sort} in the app", None, None, 0.0,
-                           label="App loot", max_tier=TIER_NORMAL, key=f"apploot:{app.lower()}:{term.lower()}")
+            tier = TIER_HIGH if app in _INSTANT_APPS else TIER_NORMAL
+            return Verdict(tier, f"{app}: search “{term}”{sort} in the app", None, None, 0.0,
+                           label="App loot", max_tier=tier, key=f"apploot:{app.lower()}:{term.lower()}")
     return None
 
 
@@ -562,7 +568,7 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
         verdict = evaluate_text(f"{title}\nDeal price: {fmt_inr(price)}" + ("\n" + body if body else ""), settings)
         return None if verdict is not None and verdict.needs_trusted_link else verdict
     saving = mrp - price
-    tier = _ladder(discount, saving, price, settings)
+    tier = _ladder(discount, saving, price, settings, is_favourite(text, settings))
     if not tier:
         return None
     reason = f"{discount:.0f}% off, saves {fmt_inr(saving)}"
@@ -570,7 +576,7 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
     # The price stands in a field, not on a line of the text, so a condition can be anywhere in it.
     if parsed.conditional or states_condition(parsed.text):
         cap, reason = TIER_HIGH, reason + " (needs a qualifying purchase)"
-    return _hedge(Verdict(min(tier, cap), reason, price, mrp, discount, max_tier=cap), parsed)
+    return _hedge(_favoured(Verdict(min(tier, cap), reason, price, mrp, discount, max_tier=cap), text, settings), parsed)
 
 
 def evaluate_tracked(title: str, price: float, usual: Optional[float], settings: Settings,
@@ -639,7 +645,8 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
         reason += f" (it has been as low as {fmt_inr(low)})"
         if tier < TIER_NORMAL:
             return None
-    return Verdict(tier, reason, price, None, drop, label="Price drop", was=reference, max_tier=tier)
+    return _favoured(Verdict(tier, reason, price, None, drop, label="Price drop", was=reference, max_tier=tier),
+                     title, settings)
 
 
 # Price tracker drops: the least a drop must save to be pushed at all (max priority still takes
@@ -680,6 +687,7 @@ def confirm_loot(title: str, price: float, usual: Optional[float], settings: Set
 
 
 def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
+    favourite = is_favourite(parsed.text, settings)
     hit = match_trap(parsed, settings.traps)
     if hit:
         trap, price = hit
@@ -701,7 +709,7 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
     if parsed.pair_conf and (parsed.pair_conf != "inferred" or not stated):
         confident = parsed.pair_conf in ("labelled", "arrow")
         discount = parsed.calc_discount
-        tier = _ladder(discount, parsed.saving, parsed.price, settings)
+        tier = _ladder(discount, parsed.saving, parsed.price, settings, favourite)
         if not tier:
             return None
         reason = f"{discount:.0f}% off, saves {fmt_inr(parsed.saving)}"
@@ -719,7 +727,7 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
     if stated:
         rate = min(claim, 99.5)  # "100% off" beside a price is a rounded 99.5% or more
         saving = lone * rate / (100.0 - rate)
-        tier = _ladder(rate, saving, lone, settings)
+        tier = _ladder(rate, saving, lone, settings, favourite)
         if not tier:
             return None
         cap = TIER_HIGH if parsed.conditional else TIER_URGENT
@@ -738,9 +746,15 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
     return None
 
 
-def _ladder(discount: float, saving: float, price: Optional[float], settings: Settings) -> Optional[int]:
+def _ladder(discount: float, saving: float, price: Optional[float], settings: Settings,
+            favourite: bool = False) -> Optional[int]:
     """Priority for a stated discount. Percent-off alone is cheap talk in India (a ₹79 gadget with a
-    ₹999 "MRP" is "92% off" every day), so each rung also needs real rupees saved, or a give-away price."""
+    ₹999 "MRP" is "92% off" every day), so each rung also needs real rupees saved, or a give-away price.
+
+    The lowest rung starts at MRP_MIN_DISCOUNT (or MIN_DISCOUNT, if higher): at 80% off a list
+    price, desk lamps and flower pots with inflated ones came every day. Things on the owner's
+    favourites list start at FAVOURITE_MIN_DISCOUNT and need MIN_SAVING saved.
+    """
     loot = price is not None and price <= settings.loot_price
     if discount >= settings.urgent_discount:
         if saving >= settings.urgent_min_saving:
@@ -750,9 +764,26 @@ def _ladder(discount: float, saving: float, price: Optional[float], settings: Se
         if saving >= settings.big_saving:
             return TIER_URGENT  # an iPhone at ₹6,999: "only" 91% off, but ₹72,000 is not a rounding error
         return TIER_HIGH if (saving >= settings.min_saving or loot) else None
-    if discount >= settings.min_discount:
+    if favourite and discount >= settings.favourite_min_discount:
+        return TIER_NORMAL if saving >= settings.min_saving else None
+    if discount >= max(settings.min_discount, settings.mrp_min_discount):
         return TIER_NORMAL if saving >= settings.urgent_min_saving else None
     return None
+
+
+def is_favourite(text: str, settings: Settings) -> bool:
+    pattern = settings.favourite_pattern
+    return bool(pattern and pattern.search(text))
+
+
+def _favoured(verdict: Optional[Verdict], text: str, settings: Settings) -> Optional[Verdict]:
+    """A deal on something on the owner's favourites list (favourites.txt) rings one step louder."""
+    if verdict is None or verdict.label == "Trap match?" or verdict.tier >= TIER_HIGH or not is_favourite(text, settings):
+        return verdict
+    verdict.tier = TIER_HIGH
+    verdict.max_tier = max(verdict.max_tier, TIER_HIGH)
+    verdict.notes.append("on your favourites list")
+    return verdict
 
 
 def is_side_product(title: str, strong_mrp: bool = False) -> bool:

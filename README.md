@@ -34,7 +34,12 @@ Each scan (default: every 60 seconds) it looks in four places:
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
    far below its usual price, a second push says "Checked loot" at high or max priority. A
    Flipkart product the monitor's own store pages have shown is checked against those readings
-   at once. Posts are parsed for price, MRP and discount, de-duplicated across
+   at once. Loots in the quick-delivery apps (Instamart, Zepto, Blinkit, BigBasket, Swiggy,
+   Flipkart Minutes, JioMart), and their "search X, sort by discount" hints, ring at high priority.
+5. **Your favourites** (`favourites.txt`: protein, whey, gym equipment, ... edit it freely). A deal
+   on one of them rings one step louder, and one judged by its list price alone counts from 70% off.
+   Every other deal judged only by its list price needs 85% (`MRP_MIN_DISCOUNT`), since inflated
+   list prices make 80% off an everyday sight. Posts are parsed for price, MRP and discount, de-duplicated across
    all of these, and filtered hard.
 
 ## What it cannot do
@@ -429,6 +434,8 @@ python -m lootwatch               # scan forever
 | `HEALTHCHECK_URL` | – | A [healthchecks.io](https://healthchecks.io) ping URL; it alerts you if scans stop |
 | `TG_API_ID` / `TG_API_HASH` / `TG_SESSION` | – | Secrets: the Telegram login for invite-only channels (see "Invite-only channels") |
 | `TG_FAST_SECONDS` | 5 | Seconds between two readings of the invite-only channels through that login (0: once a scan) |
+| `MRP_MIN_DISCOUNT` | 85 | A deal judged only by its list price alerts from this % off (or `MIN_DISCOUNT`, if higher) |
+| `FAVOURITE_MIN_DISCOUNT` | 70 | The same for things on `favourites.txt`, which also ring one step louder |
 | `FAST_FEED_SECONDS` | 20 | Seconds between two readings of a `feeds.txt` line marked `!` (0: once a scan); a site that refuses is read half as often from then on |
 | `EXTRA_STORE_DOMAINS` | – | Extra shop domains to treat as trusted, comma separated |
 | `DENY_WORDS` | see `.env.example` | Posts containing these are ignored |

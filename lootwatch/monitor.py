@@ -989,7 +989,8 @@ class Monitor:
             "Loot monitor started",
             f"First scan done: {working} of {len(feeds)} deal sources readable, "
             f"{len(self.s.watchlist)} watchlist pages, {len(self.s.traps)} traps.\n"
-            f"Deal posts alert from {self.s.min_discount:.0f}% off, louder as the discount grows; a price error "
+            f"Deal posts alert from {max(self.s.min_discount, self.s.mrp_min_discount):.0f}% off their list price "
+            f"(favourites from {self.s.favourite_min_discount:.0f}%), louder as the discount grows; a price error "
             f"on a watched store page arrives as urgent.",
             priority=3, tags=("rocket",),
         )
@@ -1038,8 +1039,11 @@ class Monitor:
             log.info("%d invite-only channel(s) in %s are skipped: no Telegram account is set up (README: "
                      "\"Invite-only channels\")", len(self.s.private_channels), self.s.channels_file)
         log.info(
-            "watching %d Telegram channels, %d feeds, %d watchlist pages | deal posts from %.0f%% off | every %ds%s",
-            len(self.s.channels) + len(self._private), len(self.s.feeds), len(self.s.watchlist), self.s.min_discount, self.s.interval,
+            "watching %d Telegram channels, %d feeds, %d watchlist pages | deal posts from %.0f%% off (%d favourites from "
+            "%.0f%%) | every %ds%s",
+            len(self.s.channels) + len(self._private), len(self.s.feeds), len(self.s.watchlist),
+            max(self.s.min_discount, self.s.mrp_min_discount), len(self.s.favourites), self.s.favourite_min_discount,
+            self.s.interval,
             " | DRY RUN" if self.s.dry_run else "",
         )
         if self._private and hasattr(self.account, "listen"):
