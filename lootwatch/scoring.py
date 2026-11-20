@@ -80,7 +80,10 @@ _DEVICE_BRAND = re.compile(
 )
 _PHRASE_END = re.compile(r"[^\w\s+'&.]|\.\s")  # punctuation, symbols and emoji end a phrase; "v2.0" does not
 # "... with free case", "charger not included": the accessory word is a side note, the product is the real thing.
-_SIDE_NOTE = re.compile(r"\b(?:with|without|free|includes?|including|plus|in\s*box|inbox)\b|[+&]", re.I)
+# "iPhone 16 plus a free case": what comes with it. Not the "Plus" of a model's name ("iPhone 15
+# Plus Case", "Galaxy S24 Plus Cover", "Note 13 Pro Plus"), which only names the phone the case fits.
+_SIDE_NOTE = re.compile(
+    r"\b(?:with|without|free|includes?|including|in\s*box|inbox)\b|(?<!\d)(?<!\d\s)(?<!pro\s)\bplus\b|[+&]", re.I)
 _NOT_PART = re.compile(r"^[^,|]{0,12}\b(?:not\s+included|sold\s+separately|not\s+in\s*(?:the\s+)?box|excluded)\b", re.I)
 _NOT_NEW = re.compile(
     r"\b(?:refurbished|renewed|pre-?owned|second\s*hand|open\s*box|unboxed|rental|rent)\b|\(\s*used\s*\)", re.I
@@ -166,7 +169,13 @@ def is_accessory(text: str, keyword_start: int, keyword_end: Optional[int] = Non
     after = _PRICE_MARK.split(text[keyword_end:seg_end][:60], 1)[0]
     after = _FOR_WHAT.split(after, 1)[0]
     hit = _ACCESSORY.search(after)
-    return bool(hit and not _SIDE_NOTE.search(after[:hit.start()]) and not _NOT_PART.match(after[hit.end():]))
+    if not hit:
+        return False
+    # The name itself is kept in front, so that "Plus" right after its model number reads as the name.
+    name = text[keyword_start:keyword_end]
+    between = name + after[:hit.start()]
+    side_note = any(match.start() >= len(name) for match in _SIDE_NOTE.finditer(between))
+    return not side_note and not _NOT_PART.match(after[hit.end():])
 
 
 def _mentions(parsed: ParsedText, traps: Sequence[Trap], in_post: bool):
@@ -579,9 +588,11 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
         if reference and reference >= trap.max_price * 2:
             return Verdict(TIER_URGENT, f"trap '{trap.name}' at or under {fmt_inr(trap.max_price)}", price, None,
                            _pct(reference, price), label="Trap hit", was=reference)
-        return Verdict(TIER_NORMAL, f"named like trap '{trap.name}' at {fmt_inr(price)}, but its usual price does "
-                       "not show it is the device itself", price, None, _pct(reference, price), label="Trap match?",
-                       max_tier=TIER_NORMAL, was=reference)
+        if not reference:
+            return Verdict(TIER_NORMAL, f"named like trap '{trap.name}' at {fmt_inr(price)}, with no usual price to "
+                           "show it is the device itself", price, None, 0.0, label="Trap match?", max_tier=TIER_NORMAL)
+        # Its usual price is measured, and far under the device's: something named after it (a
+        # "Spigen ... iPhone 15 Plus Case" that usually costs ₹1,344). Judged as any other drop.
     if not reference or reference <= price:
         return None
     drop = (reference - price) / reference * 100

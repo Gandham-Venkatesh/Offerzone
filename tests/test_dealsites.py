@@ -333,8 +333,10 @@ class Judging(unittest.TestCase):
     def test_tracker_trap(self):
         hit = evaluate_tracked("Nothing Phone (3a) Pro 5G (Black, 256 GB)", 4999, 29500, self.s)
         self.assertEqual((hit.tier, hit.label), (TIER_URGENT, "Trap hit"))
-        doubt = evaluate_tracked("Nothing Phone (3a) Display Combo", 1999, 2400, self.s)
-        self.assertEqual((doubt.tier, doubt.label), (TIER_NORMAL, "Trap match?"))
+        # Its usual price is measured, and far under the phone's: a spare part named after it.
+        self.assertIsNone(evaluate_tracked("Nothing Phone (3a) Display Combo", 1999, 2400, self.s))
+        doubt = evaluate_tracked("Nothing Phone (3a) Display Combo", 1999, None, self.s)
+        self.assertEqual((doubt.tier, doubt.label), (TIER_NORMAL, "Trap match?"), "no usual price to tell")
 
 
 class SitePagesInTheMonitor(unittest.TestCase):

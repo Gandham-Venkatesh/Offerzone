@@ -329,6 +329,14 @@ class TextVerdicts(unittest.TestCase):
                      "Best cover for iPhone 16 @ 99", "Game for iPhone 16 @ 99"):
             with self.subTest(text=text):
                 self.assertTrue(check(text))
+        # Pushed on 19 Nov 2026 as a trap match: "Plus" is the model's name, not "and also".
+        for text, keyword in (("iPhone 15 Plus Case @ ₹99", "iPhone 15"), ("Galaxy S24 Plus Back Cover @ ₹199", "Galaxy S24"),
+                              ("Spigen Cyrill UltraSheer Mag | iPhone 15 Plus Case @ ₹999", "iPhone 15"),
+                              ("Redmi Note 13 Pro Plus Case @ ₹149", "Redmi Note 13")):
+            with self.subTest(text=text):
+                self.assertTrue(check(text, keyword))
+        self.assertFalse(check("iPhone 15 Plus @ ₹9,999", "iPhone 15"))
+        self.assertFalse(check("iPhone 16 plus a free case @ ₹9,999"))
         for text in ("iPhone 16 with free case @ ₹9,999", "iPhone 16 (charger not included) ₹9,999",
                      "iPhone 16 Pro Max 256 GB Natural Titanium", "Apple iPhone 16 @ ₹400 + free cover",
                      "iPhone 16 128GB @ ₹9,999 | case sold separately",
