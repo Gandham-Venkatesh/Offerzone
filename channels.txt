@@ -32,7 +32,6 @@ PowerLoot                     # PowerLoot (69K) - a price-drop robot, about 13 p
 techglaredeals                # Techglare Deals (67K)
 flipshope                     # Flipshope (58K)
 epicdeals_in                  # Epic Deals (41K) - about 19 posts an hour
-GrabOnIndiaOfficial           # GrabOn India (27K) - says it posts price errors
 bigtricksin                   # Bigtricks Official (24K)
 lootalerts                    # LootAlerts (21K) - about 11 posts an hour
 IHDBroadcast                  # IHD Deals Broadcast (20K)
@@ -56,3 +55,5 @@ swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots (6K)
 #     mostly referral and loan adverts: TrickXpert, realearnkaro
 #     inflated list prices ("99% off" shoes still at Rs 1,700, "MRP" ten times the real one): freekaamaalindia
 #     the website behind it is read directly instead: dealsmagnet
+#     removed on 20 Nov 2026 at the owner's request, its "loots" being sale collections and ordinary
+#       fashion (a sari): GrabOnIndiaOfficial

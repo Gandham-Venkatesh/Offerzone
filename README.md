@@ -29,7 +29,7 @@ Each scan (default: every 60 seconds) it looks in four places:
    new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
    list of drops covers Amazon and is read every 20 seconds (a line marked `!` in `feeds.txt`);
-   and 27 public Telegram channels are read as a safety net. A loot a channel posts without a
+   and 26 public Telegram channels are read as a safety net. A loot a channel posts without a
    list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
    far below its usual price, a second push says "Checked loot" at high or max priority. A
@@ -363,7 +363,7 @@ Offerzone channels this way. They are skipped until you set up an account:
    `TG_API_ID`, `TG_API_HASH`, `TG_SESSION` (the session string). Never paste the session string
    anywhere else.
 
-From the next run on, the scan log says `watching 29 Telegram channels`, and the daily note lists
+From the next run on, the scan log says `watching 28 Telegram channels`, and the daily note lists
 the two channels with the others. What to know:
 
 - Only the scan runs on main use the login, never a check or a test. Telegram ends a login that is
@@ -379,7 +379,7 @@ the two channels with the others. What to know:
   however it arrives.
 - **Public channels can be just as fast:** join them with the same Telegram account (mute and
   archive them there, so your phone stays quiet). Telegram then pushes their posts to the login as
-  they appear, and the scan log says `Telegram pushes the posts of N of the 27 public channels`.
+  they appear, and the scan log says `Telegram pushes the posts of N of the 26 public channels`.
   Channels it has not joined are read from their web page once a minute, as before.
 - The monitor only reads. Telegram's terms allow that for your own account, but it is your account
   that does it; if Telegram ever asks it to slow down, it reads less often on its own.
