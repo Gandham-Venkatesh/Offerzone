@@ -22,8 +22,8 @@ from .fetch import Fetcher, policy_for
 from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host_of, product_key, same_product_name,
                     text_fingerprint)
 from .notify import Notifier, build_payload
-from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, evaluate_offer, evaluate_stated,
-                      evaluate_text, evaluate_tracked)
+from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, confirm_loot, evaluate_offer,
+                      evaluate_stated, evaluate_text, evaluate_tracked)
 from .sources.dealsites import SiteError, site_label, site_reader
 from .sources.feeds import FeedError, parse_feed
 from .sources.stores import extract_page, request_headers
@@ -32,6 +32,8 @@ from .sources.telegram import parse_channel_page
 log = logging.getLogger("lootwatch")
 
 OUTBOX_MAX_AGE = 30 * 60  # a loot alert delivered later than this is only noise
+LOOT_CHECK_WINDOW = 3600  # how long a loot pushed without a list price waits for the price tracker to list it
+TRACKER_MEMORY = 6 * 3600  # how long what the tracker said about a product counts
 FAIL_STREAK_NOTE = 10  # scans in a row before a source is reported as broken
 BLIND_STREAK = 3  # scans in a row without reading a single deal source before the "blind" alarm
 SITE_FAIL_STREAK = 10  # scans in a row without reading any watched page of a store before saying so
@@ -105,6 +107,7 @@ class Monitor:
         self._stats_lock = threading.Lock()
         self._emit_lock = threading.Lock()
         self._claim_lock = threading.Lock()
+        self._verify_lock = threading.Lock()
         self._fast_stop = threading.Event()
         self._fast_thread: Optional[threading.Thread] = None
         self._feed_thread: Optional[threading.Thread] = None
@@ -388,9 +391,16 @@ class Monitor:
         now = time.time()
         max_age = self._max_post_age(previous_ok, now)
         label = site_label(url) if reader else host_of(url)
+        noted: List[str] = []
         for item in items:
             if item.item_id not in fresh:
                 continue
+            if getattr(item, "tracked", False) and item.links:  # an RSS item is never a tracker's
+                product = product_key(item.links[0])
+                if product:  # remembered even when too old to alert: it tells what the product usually costs
+                    self.db.note_tracker(product, item.title, item.price, item.usual, item.low, item.high, item.mrp,
+                                         item.new_low, item.in_stock, item.links[0], now)
+                    noted.append(product)
             self._count("posts")
             if item.ts is None and first_contact:
                 continue
@@ -412,6 +422,8 @@ class Monitor:
                     self._announce(verdict, source, label, item.text, item.links, item.url, item.ts)
             except Exception:
                 log.exception("failed to process feed item %s", item.url)
+        if noted:
+            self._verify_loots(noted)
         return ""
 
     def _scan_watch(self, item: WatchItem, deadline: float) -> None:
@@ -549,6 +561,18 @@ class Monitor:
             return
         # A coupon is the same coupon whatever link a channel puts under it.
         fingerprint = verdict.key or fingerprint or text_fingerprint(text, verdict.price)
+        subject = _first_line(text)
+        # A loot posted without a list price is checked against the price tracker (Amazon and
+        # Flipkart): at once if it has listed the product lately, otherwise for the next hour.
+        product = fingerprint if fingerprint.startswith(("amazon:", "flipkart:")) else ""
+        to_check = bool(product and verdict.label in ("Loot", "Quick loot") and verdict.mrp is None and verdict.price)
+        if to_check:
+            checked = self._tracker_says(product, verdict.price, subject)
+            if checked is not None and checked.tier > verdict.tier:
+                verdict.tier = verdict.max_tier = checked.tier
+                verdict.was, verdict.discount, verdict.label = checked.was, checked.discount, checked.label
+                verdict.reason = f"{verdict.reason}; {checked.reason}"
+                to_check = False
 
         lines = [text[:600].strip(), ""]
         lines.extend("⚠ " + flag for flag in verdict.flags)
@@ -559,7 +583,6 @@ class Monitor:
         if best_link:
             footer.append("→ " + host_of(best_link))
         lines.append(" · ".join(footer))
-        subject = _first_line(text)
         actions = []
         if best_link:
             actions.append({"label": "Open deal", "url": best_link})
@@ -571,7 +594,45 @@ class Monitor:
             tags=["warning"] if verdict.flags else _TAGS[verdict.tier],
             click=best_link or post_url, actions=actions,
         )
-        self._emit(fingerprint, verdict, payload, source, posted=ts, name=subject)
+        sent = self._emit(fingerprint, verdict, payload, source, posted=ts, name=subject)
+        if sent and to_check:
+            self.db.add_loot_check(product, fingerprint, verdict.price, subject, source, best_link, post_url, text)
+
+    def _tracker_says(self, product: str, price: float, name: str) -> Optional[Verdict]:
+        """The price tracker's record of a product, as a check of a loot's price: a verdict when it
+        shows the price far below what the product usually costs."""
+        seen = self.db.tracker_item(product, time.time() - TRACKER_MEMORY)
+        if not seen:
+            return None
+        title, tracked_price, usual, low, _high, mrp, new_low, in_stock, _url, _seen_at = seen
+        if not in_stock or (tracked_price is not None and tracked_price > price * 1.15 + 1):
+            return None  # out of stock there, or its own reading does not bear the loot price out
+        return confirm_loot(name or title or "", price, usual, self.s, low=low, new_low=bool(new_low), mrp=mrp)
+
+    def _verify_loots(self, products: List[str]) -> None:
+        """Loots pushed without a list price whose products the tracker has just listed: a big loot
+        gets a second, louder push. Runs with the tracker's reading, never holding up a scan."""
+        with self._verify_lock:
+            now = time.time()
+            for product, fingerprint, price, name, source, link, post_url, text, created in \
+                    self.db.open_loot_checks(products, now - LOOT_CHECK_WINDOW):
+                seen = self.db.tracker_item(product, now - TRACKER_MEMORY)
+                if not seen or (seen[1] is not None and seen[1] > price * 1.15 + 1):
+                    continue  # not borne out yet: a later reading may still
+                self.db.close_loot_check(product)  # one answer per loot
+                verdict = self._tracker_says(product, price, name)
+                if verdict is None:
+                    log.info("checked on the price tracker, not a big loot: %s", name or product)
+                    continue
+                lines = [f"Pushed earlier without a list price; {verdict.reason}.", "", (text or "")[:400].strip(), "",
+                         " · ".join([self._display(source)] + ([f"→ {host_of(link)}"] if link else []))]
+                actions = ([{"label": "Open deal", "url": link}] if link else []) + (
+                    [{"label": "Open post", "url": post_url}] if post_url else [])
+                payload = build_payload(
+                    title=verdict.headline + (f" — {name}" if name else ""), message="\n".join(lines),
+                    priority=verdict.tier, tags=_TAGS[verdict.tier], click=link or post_url, actions=actions,
+                )
+                self._emit(fingerprint, verdict, payload, source, posted=created)
 
     def _twin(self, name: str, price: float, since: float) -> Optional[tuple]:
         """An alert already raised for the same product at the same price, found by its name.

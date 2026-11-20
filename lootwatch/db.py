@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS health (
     streak INTEGER NOT NULL DEFAULT 0, last_ok INTEGER, last_fail INTEGER, last_error TEXT, last_items INTEGER
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS tracker_items (
+    product TEXT PRIMARY KEY, title TEXT, price REAL, usual REAL, low REAL, high REAL, mrp REAL,
+    new_low INTEGER NOT NULL DEFAULT 0, in_stock INTEGER NOT NULL DEFAULT 1, url TEXT, seen_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS loot_checks (
+    product TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, price REAL NOT NULL, name TEXT, source TEXT,
+    link TEXT, post_url TEXT, text TEXT, created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -318,6 +326,52 @@ class DB:
             )
             return int(self._conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()[0])
 
+    # ---- the price tracker's products, and loots waiting to be checked against them -----------
+    def note_tracker(self, product: str, title: str, price: float, usual: Optional[float], low: Optional[float],
+                     high: Optional[float], mrp: Optional[float], new_low: bool, in_stock: bool, url: str,
+                     now: Optional[float] = None) -> None:
+        """What the price tracker last said about a product (its newest reading wins)."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO tracker_items (product, title, price, usual, low, high, mrp, new_low, in_stock, "
+                "url, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (product, title, price, usual, low, high, mrp, int(bool(new_low)), int(bool(in_stock)), url,
+                 int(now or time.time())),
+            )
+
+    def tracker_item(self, product: str, since: float) -> Optional[Tuple]:
+        """(title, price, usual, low, high, mrp, new_low, in_stock, url, seen_at), if seen since ``since``."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT title, price, usual, low, high, mrp, new_low, in_stock, url, seen_at FROM tracker_items "
+                "WHERE product = ? AND seen_at >= ?", (product, int(since))).fetchone()
+
+    def add_loot_check(self, product: str, fingerprint: str, price: float, name: str, source: str, link: str,
+                       post_url: str, text: str, now: Optional[float] = None) -> bool:
+        """Remember a loot pushed without a list price, to be checked against the tracker (once per product)."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "INSERT OR IGNORE INTO loot_checks (product, fingerprint, price, name, source, link, post_url, text, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (product, fingerprint, price, name, source, link, post_url, text[:600], int(now or time.time())),
+            )
+            return cursor.rowcount > 0
+
+    def open_loot_checks(self, products: Iterable[str], since: float) -> List[Tuple]:
+        """(product, fingerprint, price, name, source, link, post_url, text, created_at) still open."""
+        keys = list(dict.fromkeys(products))
+        if not keys:
+            return []
+        with self._lock:
+            marks = ",".join("?" * len(keys))
+            return list(self._conn.execute(
+                f"SELECT product, fingerprint, price, name, source, link, post_url, text, created_at FROM loot_checks "
+                f"WHERE done = 0 AND created_at >= ? AND product IN ({marks})", [int(since)] + keys).fetchall())
+
+    def close_loot_check(self, product: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE loot_checks SET done = 1 WHERE product = ?", (product,))
+
     # ---- housekeeping ----------------------------------------------------
     def prune(self, now: Optional[float] = None) -> None:
         now = int(now or time.time())
@@ -329,5 +383,7 @@ class DB:
             self._conn.execute("DELETE FROM alerts WHERE created_at < ?", (now - 30 * 86400,))
             self._conn.execute("DELETE FROM price_obs WHERE ts < ?", (now - 21 * 86400,))
             self._conn.execute("DELETE FROM products WHERE last_seen < ?", (now - 45 * 86400,))
+            self._conn.execute("DELETE FROM tracker_items WHERE seen_at < ?", (now - 2 * 86400,))
+            self._conn.execute("DELETE FROM loot_checks WHERE created_at < ?", (now - 86400,))
             self._conn.execute("DELETE FROM kv WHERE key LIKE 'day:%' AND key < ?",
                                ("day:" + time.strftime("%Y-%m-%d", time.gmtime(now - 10 * 86400)),))

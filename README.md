@@ -29,7 +29,10 @@ Each scan (default: every 60 seconds) it looks in four places:
    new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
    list of drops covers Amazon and is read every 20 seconds (a line marked `!` in `feeds.txt`);
-   and 27 public Telegram channels are read as a safety net. Posts are parsed for price, MRP and discount, de-duplicated across
+   and 27 public Telegram channels are read as a safety net. A loot a channel posts without a
+   list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
+   less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
+   far below its usual price, a second push says "Checked loot" at high or max priority. Posts are parsed for price, MRP and discount, de-duplicated across
    all of these, and filtered hard.
 
 ## What it cannot do

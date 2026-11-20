@@ -607,6 +607,36 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     return Verdict(tier, reason, price, None, drop, label="Price drop", was=reference, max_tier=tier)
 
 
+# A loot posted without a list price, found again on the price tracker's list: how far below the
+# product's own usual price it must stand to count as a big loot, and the least it must save.
+CONFIRM_MIN_SAVING = 300.0
+
+
+def confirm_loot(title: str, price: float, usual: Optional[float], settings: Settings, low: Optional[float] = None,
+                 new_low: bool = False, mrp: Optional[float] = None) -> Optional[Verdict]:
+    """A channel's loot (posted without a list price) checked against the price tracker's record of
+    the same product: a big loot when the price stands far below what the product usually costs.
+
+    The bar is TRACKER_DROP_PCT below the usual price; from URGENT_DROP_PCT and a saving of
+    URGENT_MIN_SAVING it rings at max priority. An average held up by a seller's placeholder price,
+    or above the list price, is not believed (see evaluate_tracked).
+    """
+    reference, called = usual, "usual price"
+    if usual and mrp and mrp < usual:
+        reference, called = mrp, "list price"
+    if not reference or not price or reference <= price:
+        return None
+    if low and price > low * 1.03 and not new_low and reference >= 20 * price:
+        return None  # it has sold for less, yet "usually" costs twenty times as much: a placeholder average
+    drop = (reference - price) / reference * 100
+    saving = reference - price
+    if drop < settings.tracker_drop_pct or saving < CONFIRM_MIN_SAVING:
+        return None
+    tier = TIER_URGENT if drop >= settings.urgent_drop_pct and saving >= settings.urgent_min_saving else TIER_HIGH
+    return Verdict(tier, f"checked on the price tracker: {drop:.0f}% below its {called} of {fmt_inr(reference)}",
+                   price, None, drop, label="Checked loot", was=reference, max_tier=tier)
+
+
 def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
     hit = match_trap(parsed, settings.traps)
     if hit:

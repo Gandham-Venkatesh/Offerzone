@@ -285,6 +285,18 @@ class Judging(unittest.TestCase):
         self.assertIsNone(evaluate_tracked("Adidas Predator", 3400, 8765, self.s, low=2999))
         self.assertIsNone(evaluate_tracked("No average known", 500, None, self.s))
 
+    def test_a_loot_checked_against_the_tracker(self):
+        from lootwatch.scoring import confirm_loot
+
+        titan = confirm_loot("Titan Neo Gents Analog Watch", 638, 4325, self.s)
+        self.assertEqual((titan.tier, titan.headline), (TIER_URGENT, "Checked loot: 85% off · ₹638 (was ₹4,325)"))
+        self.assertEqual(confirm_loot("boAt Airdopes", 99, 1999, self.s).tier, TIER_HIGH, "big, but saves under ₹2,000")
+        self.assertIsNone(confirm_loot("Body wash", 149, 299, self.s), "half price is no big loot")
+        self.assertIsNone(confirm_loot("Diapers", 255, 2124855, self.s, low=239), "a placeholder average")
+        listed = confirm_loot("Body wash", 400, 2966, self.s, mrp=1208)
+        self.assertEqual((listed.tier, listed.was), (TIER_HIGH, 1208), "measured against the list price when lower")
+        self.assertIsNone(confirm_loot("Pen", 99, 120, self.s))
+
     def test_tracker_item_out_of_stock_is_not_announced(self):
         self.assertIsNone(evaluate_tracked("Lenovo IdeaPad Slim 3", 5990, 52000, self.s, in_stock=False))
 
@@ -435,6 +447,80 @@ class SitePagesInTheMonitor(unittest.TestCase):
                           time.time() - 5)
             monitor.cycle()
         self.assertEqual(len(self.deals()), 1)
+
+    def check_setup(self):
+        from datetime import datetime, timezone
+
+        from lootwatch import links as links_module
+
+        # The stand-in server plays a short-link service (like bit.ly), followed to see where it ends.
+        patcher = mock.patch.object(links_module, "GENERIC_SHORTENERS", links_module.GENERIC_SHORTENERS + ("127.0.0.1",))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.settings.channels = ["alpha"]
+        self.web.channels["alpha"] = [{"id": 0, "html": "Welcome", "ts": time.time() - 86400, "buttons": []}]
+        self.web.redirects["/r/boat"] = "https://www.amazon.in/dp/B0BOATEAR1"
+        self.old_card = tracker_card("old-thing-AB1", "Old thing", 500, '<p class="phd-save">₹100 below its average</p>',
+                                     product="B000000001")
+        self.web.pages["/new"] = tracker_page(self.old_card)
+        now = datetime.now(timezone.utc).isoformat()
+        self.boat_card = tracker_card(
+            "boat-airdopes-XY1", "boAt Airdopes 141", 99,
+            '<p class="phd-range"><span>Low ₹99</span> <span>High ₹2,499</span></p><p class="phd-save">₹1,900 below its average</p>',
+            product="B0BOATEAR1", stamp=now, low="1")
+        self.loot_post = f'Boat Earbuds Loot @ ₹99 <a href="{self.web.base}/r/boat">{self.web.base}/r/boat</a>'
+
+    def patched_tracker(self):
+        return mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+            mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker")
+
+    def test_a_loot_without_list_price_is_checked_against_the_tracker(self):
+        self.check_setup()
+        reader, label = self.patched_tracker()
+        with reader, label:
+            monitor = self.monitor()
+            monitor.cycle()  # first look at the channel and the tracker
+            self.web.post("alpha", 1, self.loot_post, time.time() - 20)
+            monitor.cycle()
+            (first,) = self.deals()
+            self.assertEqual(first["priority"], 3, "the loot goes out at once, at the ordinary priority")
+            self.web.pages["/new"] = tracker_page(self.boat_card, self.old_card)  # minutes later the tracker lists it
+            monitor.cycle()
+            monitor.cycle()
+        pushes = self.deals()
+        self.assertEqual(len(pushes), 2, [p["title"] for p in pushes])
+        follow = pushes[1]
+        self.assertEqual(follow["priority"], 4)
+        self.assertEqual(follow["title"], "Checked loot: 95% off · ₹99 (was ₹1,999) — Boat Earbuds Loot")
+        self.assertIn("checked on the price tracker: 95% below its usual price of ₹1,999", follow["message"])
+        self.assertEqual(follow["click"], "https://www.amazon.in/dp/B0BOATEAR1")
+
+    def test_a_loot_the_tracker_has_listed_already_goes_out_checked(self):
+        self.check_setup()
+        self.web.pages["/new"] = tracker_page(self.boat_card, self.old_card)
+        reader, label = self.patched_tracker()
+        with reader, label:
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.post("alpha", 1, self.loot_post, time.time() - 20)
+            monitor.cycle()
+        (push,) = self.deals()
+        self.assertEqual((push["priority"], push["title"][:40]), (4, "Checked loot: 95% off · ₹99 (was ₹1,999)"),
+                         "one push, already checked")
+
+    def test_a_loot_the_tracker_does_not_bear_out_stays_as_it_was(self):
+        self.check_setup()
+        reader, label = self.patched_tracker()
+        with reader, label:
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.post("alpha", 1, self.loot_post, time.time() - 20)
+            monitor.cycle()
+            ordinary = self.boat_card.replace("₹1,900 below its average", "₹40 below its average")
+            self.web.pages["/new"] = tracker_page(ordinary, self.old_card)
+            monitor.cycle()
+        self.assertEqual([p["priority"] for p in self.deals()], [3], "its usual price is ₹139: no second push")
+        self.assertEqual(monitor.db.open_loot_checks(["amazon:B0BOATEAR1"], 0), [], "answered once, then closed")
 
     def run_card(self, card_html):
         self.web.pages["/new"] = desidime_page(desidime_card(7, "Old deal", ago="3 hours ago"))
