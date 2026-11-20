@@ -844,8 +844,9 @@ class LootChannels(unittest.TestCase):
         self.assertEqual(self.judge("Instamart Loot ₹99\nhttps://instamart.in/item/ABC123").tier, TIER_HIGH)
         self.assertEqual(self.judge("Ajio loot: Puma shoes @ 599\nhttps://ajiio.in/xyz").tier, TIER_HIGH)
         self.assertEqual(self.judge("Swiggy Instamart Loot\nSearch : Shampoo\n*Sort by Discount High to Low").tier, TIER_HIGH)
+        # Whatever else a marked channel posts into a shop is loud as well (the owner's choice).
         plain = self.judge("Milton Casserole Set @450\nhttps://amzn.to/4AxwlmB")
-        self.assertEqual((plain.tier, plain.needs_store_link), (TIER_NORMAL, True))
+        self.assertEqual((plain.tier, plain.needs_store_link), (TIER_HIGH, True))
         self.assertIsNone(self.judge("Milton Casserole Set @450\nhttps://amzn.to/4AxwlmB", marked=False))
         stronger = self.judge("Sony WH-1000XM5 @ ₹499 (MRP ₹34,990) price error\nhttps://amzn.to/x")
         self.assertEqual(stronger.tier, TIER_URGENT, "the ordinary rules still count, and the louder wins")
@@ -866,7 +867,7 @@ class LootChannels(unittest.TestCase):
 
     def test_a_sale_banner_is_not_a_big_loot(self):
         banner = self.judge("Big Loot: Mobile Accessories Start @29\nhttps://bitli.in/gxyBp6n")
-        self.assertEqual(banner.tier, TIER_NORMAL)
+        self.assertEqual(banner.tier, TIER_HIGH, "loud, as everything from a marked channel, but no max-priority big loot")
 
     def test_posts_from_the_owners_screenshots(self):
         """The Offerzone and Offerzone Tricks posts the owner showed, as they were posted."""

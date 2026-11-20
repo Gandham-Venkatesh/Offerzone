@@ -23,7 +23,7 @@ from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host
                     text_fingerprint)
 from .notify import Notifier, build_payload
 from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, confirm_loot, evaluate_offer,
-                      evaluate_stated, evaluate_text, evaluate_tracked)
+                      evaluate_stated, evaluate_text, evaluate_tracked, why_skipped)
 from .sources.dealsites import SiteError, site_label, site_reader
 from .sources.feeds import FeedError, parse_feed
 from .sources.stores import extract_page, request_headers
@@ -496,7 +496,13 @@ class Monitor:
     # ----------------------------------------------------- alert pipeline ---
     def _handle_post(self, source: str, label: str, text: str, analysis_text: str, links: List[str],
                      post_url: str, ts: Optional[float]) -> None:
-        verdict = evaluate_text(analysis_text, self.s, links=links, loot_channel=self._is_loot_channel(source))
+        marked = self._is_loot_channel(source)
+        verdict = evaluate_text(analysis_text, self.s, links=links, loot_channel=marked)
+        if marked:
+            # Every post of the channels the owner marked is accounted for, pushed or not.
+            log.info("%s post %s: %s | %s", label, post_url,
+                     f"judged {TIER_NAMES.get(verdict.tier, verdict.tier)} ({verdict.reason})" if verdict
+                     else "not pushed: " + why_skipped(analysis_text, links), _first_line(text)[:70])
         if verdict is not None:
             self._announce(verdict, source, label, text, links, post_url, ts)
 
@@ -536,6 +542,9 @@ class Monitor:
                     fingerprint = product_key(final)
                     break
         if verdict.needs_store_link and not shop_link and (strange_host or not candidates or trusted):
+            if self._is_loot_channel(source):
+                log.info("%s post %s: not pushed: its link does not lead into a shop (%s)", label, post_url,
+                         strange_host or (host_of(candidates[0]) if candidates else "no link"))
             return  # the post was only worth a push for a link into a shop, and it leads elsewhere
         if links and not candidates and any(classify_host(host_of(link)) == "telegram" for link in links):
             # "BIGGEST LOOT: iPhone at ₹2,952" with nothing but a link to a Telegram folder is an

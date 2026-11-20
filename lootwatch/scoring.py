@@ -229,11 +229,25 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     return _hedge(_favoured(verdict, parsed.text, settings), parsed)
 
 
+def why_skipped(text: str, links: Sequence[str] = ()) -> str:
+    """In a few words, why a post was not taken for a deal (for the log of the marked channels)."""
+    parsed = parse_text(text)
+    hosts = _hosts(links)
+    if parsed.expired == "over":
+        return "the post says it is over"
+    if is_finance_promo(parsed.text, hosts):
+        return "a card, loan or referral offer"
+    if links and not _shop_hosts(hosts):
+        return "its links lead to other channels or sites, not to a shop"
+    if not links:
+        return "no link and no price to go by"
+    return "nothing in it reads as a deal"
+
+
 # ---- channels marked "!" in channels.txt ------------------------------------------------------
 # Some channels are worth everything they post (the owner named the two big Offerzone ones). There
-# a post is believed on the channel's own word: every deal that links into a shop is pushed, a
-# loot in a quick-commerce or fashion app is pushed loudly, and a "big loot" that links into a shop
-# rings at max priority. Card, loan and referral promotions have been dropped before this, and a
+# a post is believed on the channel's own word: every deal that links into a shop is pushed loudly,
+# and a "big loot" that links into a shop rings at max priority. Card, loan and referral promotions have been dropped before this, and a
 # post that only links to other Telegram channels is an advert and is not pushed at all.
 _BIG_LOOT = re.compile(
     r"\b(?:big+|mega|biggest|massive|huge|super|crazy|bumper|insane)\s*loot\b|\bloot\s*(?:alert|loot)\b", re.I)
@@ -267,7 +281,9 @@ def loot_channel_verdict(parsed: ParsedText, verdict: Optional[Verdict], hosts: 
     elif app and (_LOOT_WORD.search(text) or big):
         tier, why = TIER_HIGH, f"{app} loot from a channel you marked"
     else:
-        tier, why = TIER_NORMAL, "a deal from a channel you marked"
+        # The owner marked these channels for their loots: whatever else they post that leads into
+        # a shop is worth a loud push too (card promotions and adverts never get this far).
+        tier, why = TIER_HIGH, "a deal from a channel you marked"
     if parsed.conditional and tier > TIER_HIGH:
         tier, why = TIER_HIGH, why + " (needs a qualifying purchase)"
     if verdict is not None:
