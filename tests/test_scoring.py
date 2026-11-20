@@ -57,6 +57,23 @@ class TextVerdicts(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(self.tier(text), expected)
 
+    def test_phone_cases_are_never_pushed(self):
+        # Pushed on 20 Nov 2026 from the price tracker: the owner wants no phone cases at all.
+        self.assertIsNone(evaluate_tracked("Samsung Galaxy S23 FE Clear Gadget Phone Case, Protective Cover with Strap",
+                                           440, 2355, self.s, low=440))
+        for text in ("iPhone 15 Plus Case @ ₹99 (MRP ₹1,999)", "Back cover for Redmi Note 13 @ 9 (MRP ₹999)",
+                     "Tempered glass for iPhone 16 Loot @ ₹1 https://amzn.to/x", "Spigen Cyrill | iPhone 16 Case @ ₹99 (MRP ₹2,499)",
+                     "BIG LOOT : OnePlus Nord CE4 Silicone Case https://amzn.to/x"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://amzn.to/x"]))
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://amzn.to/x"], loot_channel=True))
+        self.assertIsNone(evaluate_stated("Galaxy S24 Ultra Back Cover", "", 99, 1999, self.s))
+        # A phone sold with a free case, and earbuds in their charging case, are not phone cases.
+        self.assertEqual(evaluate_text("iPhone 16 with free case @ ₹4,999 (MRP ₹79,900)", self.s).tier, TIER_URGENT)
+        self.assertIsNotNone(evaluate_text("boAt Airdopes 141 with charging case @ ₹199 (MRP ₹4,490)", self.s))
+        # Seen on 20 Nov 2026: a case maker's earbuds are earbuds.
+        self.assertIsNotNone(evaluate_text("Spigen Audio True Wireless Earbuds @ ₹299 (MRP ₹4,999)", self.s))
+
     def test_favourites_ring_louder_and_count_from_70_percent(self):
         self.s.favourites = ["protein", "whey", "dumbbell"]
         whey = evaluate_text("ON Whey Protein 1kg\nDeal Price: ₹999 (MRP ₹3,999)", self.s)

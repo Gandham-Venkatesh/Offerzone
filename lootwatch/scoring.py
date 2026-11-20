@@ -207,6 +207,24 @@ def match_trap(parsed: ParsedText, traps: Sequence[Trap], price: Optional[float]
     return None
 
 
+# Phone cases, covers and screen guards: never wanted, however deep the drop (the owner, 20 Nov
+# 2026, after "Samsung Galaxy S23 FE Clear Gadget Phone Case" at 81% under its usual price). A
+# phone sold with a free case, or earbuds in their charging case, are not one.
+_PHONES = (r"(?:iphone|galaxy|redmi|oneplus|one\s+plus|pixel|vivo|oppo|realme|poco|motorola|moto|iqoo|nord|nothing\s+phone"
+           r"|cmf\s+phone|infinix|tecno|lava|honor|xiaomi|mi\s+\d|samsung\s+[ams]\d)")
+_PHONE_CASE = re.compile(
+    r"\b(?:phone|mobile|back|flip|bumper|silicone|silicon|clear|transparent|protective|rugged|armou?r|shockproof|hybrid"
+    r"|leather\s+wallet|wallet)\s+(?:case|cover)s?\b"
+    r"|\b(?:case|cover)s?\s+(?:(?:for|compatible\s+with)\s+)?(?:the\s+)?(?:apple\s+|samsung\s+)?" + _PHONES +
+    r"|\b" + _PHONES + r"\b[^\n|,]{0,40}?(?<!free\s)(?<!with\s)(?<!charging\s)(?<!\+\s)\b(?:case|cover|bumper)s?\b"
+    r"|\bscreen\s*(?:guard|protector)s?\b|\btempered\s+glass\b|\bcamera\s+lens\s+protector\b",
+    re.I)
+
+
+def is_phone_case(text: str) -> bool:
+    return bool(_PHONE_CASE.search(text))
+
+
 def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
                   loot_channel: bool = False) -> Optional[Verdict]:
     """Judge a free-text deal post (Telegram message, feed entry). ``links`` are the post's links.
@@ -221,7 +239,7 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     if deny and deny.search(parsed.text):
         return None
     hosts = _hosts(links)
-    if is_finance_promo(parsed.text, hosts):
+    if is_finance_promo(parsed.text, hosts) or is_phone_case(parsed.text):
         return None
     verdict = _judge(parsed, settings) or _quick_commerce(parsed, settings, hosts)
     if loot_channel:
@@ -567,7 +585,7 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
     the card (trap names, "price error" wording, sold-out notes, conditions) is read as in a post.
     """
     text = title + ("\n" + body if body else "")
-    if is_finance_promo(text, _hosts(links)):
+    if is_finance_promo(text, _hosts(links)) or is_phone_case(text):
         return None
     if price is None:
         # The member left the price fields empty: this is an offer or a coupon ("Flat Rs 25 on
@@ -631,7 +649,7 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     product's list price; the price is then measured against the list price (``mrp``) instead.
     A product the tracker shows as out of stock is not announced at all.
     """
-    if not in_stock:
+    if not in_stock or is_phone_case(title):
         return None
     reference, called = usual, "it usually costs"
     if usual and mrp and mrp < usual:
@@ -873,7 +891,7 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
     search/category page ("nothing here should cost this little"). ``baseline`` marks the very
     first read of a listing, which only records what is normal there.
     """
-    if listing and baseline:
+    if (listing and baseline) or is_phone_case(title):
         return None
 
     if target is not None and _entered(price, target, info, settings):
