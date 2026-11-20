@@ -277,10 +277,12 @@ def parse_pricehistory(html: str, url: str, now: float) -> List[SiteItem]:
         title = _clean(name.get_text(" ", strip=True))
         page = urljoin(url, str(name["href"]))
         stamp = None
+        listed = ""  # when the tracker listed this drop, as it states it: one drop, read again and again
         time_el = card.find("time")
         if time_el is not None and time_el.get("datetime"):
             try:
                 stamp = datetime.fromisoformat(str(time_el["datetime"]).replace("Z", "+00:00")).timestamp()
+                listed = f":{int(stamp // 60)}"
             except ValueError:
                 stamp = None
         if stamp is None and time_el is not None:
@@ -307,7 +309,10 @@ def parse_pricehistory(html: str, url: str, now: float) -> List[SiteItem]:
             facts.append(f"seen between {fmt_inr(low_v)} and {fmt_inr(high_v)}")
         slug = urlsplit(page).path.rstrip("/").rsplit("/", 1)[-1]
         items.append(SiteItem(
-            item_id=f"ph{slug}:{int(price)}", ts=stamp, title=title,
+            # The same product can drop to the same price again a day later: a new listing, judged
+            # afresh (missed on 20 Nov 2026: a cookware set dropped to ₹1,179 once more, under rules
+            # that by then would push it). The alert itself is still not repeated within DEDUP_HOURS.
+            item_id=f"ph{slug}:{int(price)}{listed}", ts=stamp, title=title,
             text=title + "\n" + " · ".join(facts) + (f" · {store}" if store else ""), url=page,
             links=[link for link in (product_url, page) if link], price=price, mrp=list_price, store=store,
             tracked=True, usual=usual, high=high_v, low=low_v, new_low=str(card.get("data-low", "")) == "1",

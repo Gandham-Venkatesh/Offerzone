@@ -158,7 +158,7 @@ class Readers(unittest.TestCase):
         self.assertTrue(dove.tracked)
         self.assertEqual((dove.price, dove.usual, dove.low, dove.high, dove.new_low), (1984.0, 3073.0, 995.0, 6891.0, False))
         self.assertEqual(dove.links, ["https://www.amazon.in/dp/B06XZZWTL6", "https://pricehistory.app/p/dove-body-wash-TZ9"])
-        self.assertEqual(dove.item_id, "phdove-body-wash-TZ9:1984", "the same product at a new price is a new item")
+        self.assertEqual(dove.item_id, "phdove-body-wash-TZ9:1984:29907853", "the same product at a new price is a new item")
         self.assertAlmostEqual(dove.ts, 1794471213.0, delta=1)
         self.assertIsNone(pixel.usual, "'below its highest' is not an average")
         self.assertTrue(pixel.new_low)
@@ -546,6 +546,32 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual(push["priority"], 4, "one push, already checked")
         self.assertTrue(push["title"].startswith("Checked loot: 90% off · ₹149 (was ₹1,499)"), push["title"])
         self.assertIn("against its Flipkart page as the monitor has read it", push["message"])
+
+    def test_a_repeated_drop_to_the_same_price_is_judged_again(self):
+        # Missed on 20 Nov 2026: a cookware set dropped to ₹1,179 once more, hours after an earlier
+        # listing at that price, and was taken for the listing already seen.
+        from datetime import datetime, timedelta, timezone
+
+        def stove(when):
+            return tracker_card("sunflare-stove-AB2", "Sunflare Cute 2B Glass Gas Stove", 609,
+                                '<p class="phd-range"><span>Low ₹609</span> <span>High ₹2,359</span></p>'
+                                '<p class="phd-save">₹620 below its average</p> <p>MRP −92%</p>',
+                                store="flipkart", product="GSTFJ7GHZ4E", stamp=when.isoformat(), low="1")
+
+        earlier = stove(datetime.now(timezone.utc) - timedelta(hours=3))
+        self.web.pages["/new"] = tracker_page(earlier)
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"):
+            monitor = self.monitor()
+            monitor.cycle()
+            monitor.cycle()  # the listing of three hours ago: seen, too old to push
+            self.assertEqual(self.deals(), [])
+            self.web.pages["/new"] = tracker_page(stove(datetime.now(timezone.utc)), earlier)
+            monitor.cycle()
+            monitor.cycle()  # the new listing, read again: not a second push
+        (push,) = self.deals()
+        self.assertEqual(push["priority"], 4)
+        self.assertTrue(push["title"].startswith("Price drop: 50% off · ₹609 (was ₹1,229)"), push["title"])
 
     def test_a_loot_the_tracker_does_not_bear_out_stays_as_it_was(self):
         self.check_setup()
