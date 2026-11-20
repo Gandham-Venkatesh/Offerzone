@@ -23,11 +23,12 @@ from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host
                     text_fingerprint)
 from .notify import Notifier, build_payload
 from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, confirm_loot, evaluate_offer,
-                      evaluate_stated, evaluate_text, evaluate_tracked, why_skipped)
+                      evaluate_stated, evaluate_text, evaluate_tracked, looks_like_loot, tracker_near_miss, why_skipped)
 from .sources.dealsites import SiteError, site_label, site_reader
 from .sources.feeds import FeedError, parse_feed
 from .sources.stores import extract_page, request_headers
 from .sources.telegram import parse_channel_page
+from .textparse import fmt_inr
 
 log = logging.getLogger("lootwatch")
 
@@ -417,8 +418,15 @@ class Monitor:
                 if item.tracked:
                     verdict = evaluate_tracked(item.title, item.price, item.usual, self.s, low=item.low,
                                                new_low=item.new_low, mrp=item.mrp, in_stock=item.in_stock)
+                    near = "" if verdict else tracker_near_miss(item.price, item.usual, item.low, item.new_low,
+                                                                item.mrp)
                 else:
                     verdict = evaluate_stated(item.title, item.body, item.price, item.mrp, self.s, links=item.links)
+                    near = "" if verdict or not item.mrp or not item.price or item.price >= item.mrp * 0.25 else \
+                        f"{(item.mrp - item.price) / item.mrp * 100:.0f}% off a list price of {fmt_inr(item.mrp)}"
+                if near:
+                    # Close to a loot, left out: the day's log shows it.
+                    log.info("skipped %s %s: %s | %s", label, item.url, near, _first_line(item.title)[:80])
                 if verdict:
                     self._announce(verdict, source, label, item.text, item.links, item.url, item.ts)
             except Exception:
@@ -503,6 +511,10 @@ class Monitor:
             log.info("%s post %s: %s | %s", label, post_url,
                      f"judged {TIER_NAMES.get(verdict.tier, verdict.tier)} ({verdict.reason})" if verdict
                      else "not pushed: " + why_skipped(analysis_text, links), _first_line(text)[:70])
+        elif verdict is None and looks_like_loot(analysis_text):
+            # What a missed loot would look like, left out: the day's log shows it, and why.
+            log.info("skipped %s %s: %s | %s", label, post_url, why_skipped(analysis_text, links),
+                     _first_line(text)[:80])
         if verdict is not None:
             self._announce(verdict, source, label, text, links, post_url, ts)
 

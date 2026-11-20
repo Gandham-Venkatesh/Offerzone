@@ -547,6 +547,31 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertTrue(push["title"].startswith("Checked loot: 90% off · ₹149 (was ₹1,499)"), push["title"])
         self.assertIn("against its Flipkart page as the monitor has read it", push["message"])
 
+    def test_what_looks_like_a_loot_but_is_left_out_is_logged(self):
+        # So that a day's log shows the misses, and why (the owner checks them).
+        from datetime import datetime, timezone
+
+        self.check_setup()
+        bata = tracker_card("bata-sneakers-QW1", "Bata Sneakers For Men (Black, 7)", 235,
+                            '<p class="phd-range"><span>Low ₹235</span> <span>High ₹999</span></p>'
+                            '<p class="phd-save">₹374 below its average</p>', store="flipkart", product="SHOFZ9BATA1",
+                            stamp=datetime.now(timezone.utc).isoformat(), low="1")
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"):
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(bata, self.old_card)
+            self.web.post("alpha", 2, 'BIG LOOT : Credit card lifetime free, apply now <a href="https://t.me/x">here</a>',
+                          time.time() - 20)
+            with self.assertLogs("lootwatch", level="INFO") as logs:
+                monitor.cycle()
+        lines = "\n".join(logs.output)
+        self.assertIn("skipped @alpha", lines)
+        self.assertIn("a card, loan or referral offer", lines)
+        self.assertIn("skipped PriceHistory tracker", lines)
+        self.assertIn("61% below its usual ₹609, its lowest price", lines)
+        self.assertEqual(self.deals(), [])
+
     def test_a_repeated_drop_to_the_same_price_is_judged_again(self):
         # Missed on 20 Nov 2026: a cookware set dropped to ₹1,179 once more, hours after an earlier
         # listing at that price, and was taken for the listing already seen.

@@ -247,6 +247,31 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     return _hedge(_favoured(verdict, parsed.text, settings), parsed)
 
 
+# What a missed loot would look like: logged when such a post is not pushed, so that a day's log
+# shows what was left out and why (the owner checks the misses of each day).
+_LOOKS_LIKE_LOOT = re.compile(
+    r"\bloot\b|price\s*error|glitch|\b(?:8[0-9]|9[0-9])\s*%\s*off|[@₹]\s?[1-9](?![\d,])|\b(?:instamart|zepto|blinkit"
+    r"|big\s?basket|swiggy|jio\s?mart|flipkart\s+minutes)\b", re.I)
+
+
+def looks_like_loot(text: str) -> bool:
+    return bool(_LOOKS_LIKE_LOOT.search(text))
+
+
+def tracker_near_miss(price: float, usual: Optional[float], low: Optional[float], new_low: bool,
+                      mrp: Optional[float]) -> str:
+    """For the log: a tracker drop at its lowest price, 45% or more under its usual price, that was
+    not pushed (""  when it is no such drop)."""
+    if not usual or not price or usual <= price:
+        return ""
+    drop = (usual - price) / usual * 100
+    lowest = new_low or (low is not None and price <= low * 1.03)
+    if drop < LOWEST_YET_DROP_PCT or not lowest:
+        return ""
+    off_list = f", {(mrp - price) / mrp * 100:.0f}% off list" if mrp and mrp > price else ""
+    return f"{drop:.0f}% below its usual {fmt_inr(usual)}{off_list}, its lowest price"
+
+
 def why_skipped(text: str, links: Sequence[str] = ()) -> str:
     """In a few words, why a post was not taken for a deal (for the log of the marked channels)."""
     parsed = parse_text(text)
