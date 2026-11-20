@@ -689,9 +689,13 @@ class QuickCommerce(unittest.TestCase):
                 self.assertIsNone(self.verdict(text))
 
     def test_big_loots_are_believed_only_from_marked_channels(self):
-        # An ordinary channel's "big loot" is mostly an advert (see LootChannels for the marked ones):
-        # it is pushed only when it links into one of the apps, and then quietly.
-        self.assertIsNone(evaluate_text("BIG LOOT 😱🔥", self.s, links=["https://amzn.to/4xyz"]))
+        # From an ordinary channel a "big loot" comes at the ordinary priority, and only when its
+        # link can lead into a shop (see LootChannels for the marked ones, where it rings loudly).
+        plain = evaluate_text("BIG LOOT 😱🔥", self.s, links=["https://amzn.to/4xyz"])
+        self.assertEqual((plain.tier, plain.reason, plain.needs_store_link), (TIER_NORMAL, "big loot, no price given", True))
+        self.assertIsNone(evaluate_text("BIG LOOT 😱🔥", self.s), "no link at all")
+        self.assertIsNone(evaluate_text("BIGGEST LOOT : BUY NOW 👇", self.s, links=["https://t.me/addlist/VETj13smDQVmMWE1"]),
+                          "a folder of other channels is an advert")
         quiet = evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://www.zepto.com/pn/x/pvid/1"])
         self.assertEqual((quiet.tier, quiet.reason, quiet.needs_store_link), (TIER_NORMAL, "Zepto big loot, no price given", True))
         self.assertIsNone(evaluate_text("BIG LOOT on Zepto 🔥", self.s, links=["https://t.me/+9MtPJAnaAnBkMmU1"]),
@@ -715,7 +719,12 @@ class QuickCommerce(unittest.TestCase):
         # A higher price counts in the apps such posts name, quietly: nothing tells how good it is.
         ajio = evaluate_text("Ajio Loot @ ₹199", self.s, links=["https://ajiio.in/xyz"])
         self.assertEqual((ajio.tier, ajio.label, ajio.price), (TIER_NORMAL, "Quick loot", 199))
-        self.assertIsNone(evaluate_text("Loot @ ₹100\nhttps://amzn.to/x", self.s, links=["https://amzn.to/x"]))
+        # Any other price comes at the ordinary priority: the channel calls it a loot, the list price is unknown.
+        hundred = evaluate_text("Loot @ ₹100\nhttps://amzn.to/x", self.s, links=["https://amzn.to/x"])
+        self.assertEqual((hundred.tier, hundred.price, hundred.needs_store_link), (TIER_NORMAL, 100, True))
+        self.assertIn("no list price", hundred.reason)
+        self.assertIsNone(evaluate_text("Loot @ ₹100\nhttps://t.me/+S1zaVBoakn3KkBbY", self.s,
+                                        links=["https://t.me/+S1zaVBoakn3KkBbY"]), "an advert for another channel")
         # Seen on 20 Nov 2026 in two channels: a sale, not one loot.
         banner = "Ajio Loot : Men Polo T-Shirts Starts @199\n🔗 https://ajiio.co/OjVxz6\nOversized T-Shirts Starts @60."
         self.assertIsNone(evaluate_text(banner, self.s, links=["https://ajiio.co/OjVxz6"]))

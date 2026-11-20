@@ -392,13 +392,14 @@ _TINY_PRICE = 10.0
 
 
 def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) -> Optional[Verdict]:
-    """Loots posted with a price and nothing to measure it against: "Blinkit loot ₹1", "Ajio loot
-    @199", "Loot @ ₹1 https://fkrt.cc/...".
+    """Loots posted without a list price: "Blinkit loot ₹1", "Ajio loot @199", "Loot @ ₹100
+    https://amzn.to/...", "BIG LOOT 😱 https://fkrt.cc/...".
 
-    A price of a few rupees is a loot on any store, so it rings loudly once its link is seen to
-    lead into a shop. A higher price counts only in the apps such posts mostly name (quick
-    commerce, food, fashion), and quietly: without the list price nobody can tell how good it is.
-    So does a "big loot" that links into one of those apps without stating a price.
+    The channel's own word is all there is, so the price decides how loud: a few rupees is a loot
+    on any store and rings loudly; any other price, or a "big loot" with no price, comes at the
+    ordinary priority, since nobody can tell how good it is without the list price. Either way
+    the post must lead into a shop: named, linked or reached through its link (adverts for other
+    channels and card promotions call themselves "big loot" too).
     """
     if not settings.quick_loots or not _LOOT_WORD.search(parsed.text):
         return None
@@ -408,17 +409,21 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
         return None  # "Polo T-shirts start @199": a sale, not one loot
     price = next((amount.value for amount in parsed.amounts if amount.kind in ("sell", "plain")), None)
     app = _app_named(parsed.text, hosts, quick_only=False)
+    big = bool(_BIG_LOOT.search(parsed.text))
+    if app is None and not _shop_hosts(hosts):
+        return None  # a link to another channel, a folder of channels, a betting site: an advert
     if price is not None and 0 < price <= _TINY_PRICE:
         return Verdict(TIER_HIGH, f"{app + ' ' if app else ''}loot at {fmt_inr(price)}", price, None, 0.0,
                        label="Loot", max_tier=TIER_HIGH, needs_store_link=app is None)
-    if app is None:
-        return None
     if price is not None:
-        return Verdict(TIER_NORMAL, f"{app} loot post, no list price to check it against", price, None, 0.0,
-                       label="Quick loot", max_tier=TIER_NORMAL)
-    if _BIG_LOOT.search(parsed.text) and _app_named("", hosts, quick_only=False):
-        return Verdict(TIER_NORMAL, f"{app} big loot, no price given", None, None, 0.0, label="Loot",
-                       max_tier=TIER_NORMAL, needs_store_link=True)
+        if app is not None:
+            return Verdict(TIER_NORMAL, f"{app} loot post, no list price to check it against", price, None, 0.0,
+                           label="Quick loot", max_tier=TIER_NORMAL)
+        return Verdict(TIER_NORMAL, f"{'big loot' if big else 'loot'} at {fmt_inr(price)}, no list price to check "
+                       "it against", price, None, 0.0, label="Loot", max_tier=TIER_NORMAL, needs_store_link=True)
+    if big and (app is None or _app_named("", hosts, quick_only=False)):
+        return Verdict(TIER_NORMAL, f"{app + ' ' if app else ''}big loot, no price given", None, None, 0.0,
+                       label="Loot", max_tier=TIER_NORMAL, needs_store_link=True)
     return None
 
 
