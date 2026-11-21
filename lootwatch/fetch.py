@@ -167,6 +167,8 @@ class _Site:
         self.cooldown_until = 0.0
         self.strikes = 0
         self.last_refusal = ""
+        self.peek_lock = threading.Lock()  # quick checks (Fetcher.peek) have a session of their own
+        self.peek_session: Optional[object] = None
 
 
 def _retry_after(value: Optional[str]) -> float:
@@ -209,21 +211,24 @@ class Fetcher:
                 site = self._sites[host] = _Site(policy_for(host))
             return site
 
+    def _new_session(self, site: _Site):
+        if self.impersonation and site.policy.impersonate:
+            # curl_cffi sends that browser's own header set and TLS handshake; do not override them.
+            try:
+                session = cffi_requests.Session(impersonate=self.profile)
+            except Exception:  # a profile name this curl_cffi version does not know
+                log.warning("curl_cffi has no browser profile %r; using its default Chrome profile", self.profile)
+                self.profile = "chrome"
+                session = cffi_requests.Session(impersonate="chrome")
+            session.headers.update({"Accept-Language": "en-IN,en;q=0.9"})
+            return session
+        session = requests.Session()
+        session.headers.update(_BROWSER_HEADERS)
+        return session
+
     def _session(self, site: _Site):
         if site.session is None:
-            if self.impersonation and site.policy.impersonate:
-                # curl_cffi sends that browser's own header set and TLS handshake; do not override them.
-                try:
-                    site.session = cffi_requests.Session(impersonate=self.profile)
-                except Exception:  # a profile name this curl_cffi version does not know
-                    log.warning("curl_cffi has no browser profile %r; using its default Chrome profile", self.profile)
-                    self.profile = "chrome"
-                    site.session = cffi_requests.Session(impersonate="chrome")
-                site.session.headers.update({"Accept-Language": "en-IN,en;q=0.9"})
-            else:
-                session = requests.Session()
-                session.headers.update(_BROWSER_HEADERS)
-                site.session = session
+            site.session = self._new_session(site)
         return site.session
 
     def cooling_down(self, url: str) -> float:
@@ -265,15 +270,42 @@ class Fetcher:
                 site.strikes = 0
             return result
 
-    def _request(self, site: _Site, url: str, headers: Optional[Dict[str, str]]) -> FetchResult:
+    def peek(self, url: str, timeout: float = 8.0) -> FetchResult:
+        """One page read now, outside the site's queue of paced reads: for a check that cannot wait
+        its turn (is a product still in stock?), made a few times a day. A site that refuses is
+        left alone as with any read, and one still being left alone is not asked."""
+        host = (urlsplit(url).hostname or "").lower()
+        if not host:
+            return FetchResult(url, error="bad url")
+        site = self._site(host)
+        if time.time() < site.cooldown_until:
+            return FetchResult(url, skipped=True, error=f"cooldown after {site.last_refusal or 'a refusal'}")
+        with site.peek_lock:
+            if site.peek_session is None:
+                site.peek_session = self._new_session(site)  # a session of its own: the queue's is busy
+            result = self._request(site, url, None, session=site.peek_session, timeout=timeout)
+        if result.blocked or result.status in (403, 429, 503):
+            with site.lock:
+                site.strikes += 1
+                cooldown = min(site.policy.max_cooldown, site.policy.base_cooldown * 2 ** (site.strikes - 1))
+                site.cooldown_until = max(site.cooldown_until, time.time() + cooldown)
+                site.last_refusal = result.blocked or f"HTTP {result.status}"
+            result.blocked = result.blocked or f"HTTP {result.status}"
+            log.warning("%s refused a quick check (%s); leaving it alone for %ds", host, result.blocked, int(cooldown))
+        return result
+
+    def _request(self, site: _Site, url: str, headers: Optional[Dict[str, str]], session=None,
+                 timeout: Optional[float] = None) -> FetchResult:
         result = FetchResult(url)
+        timeout = timeout or self.timeout
         try:
-            session = self._session(site)
+            session = session or self._session(site)
             if self.impersonation and site.policy.impersonate:
-                resp = session.get(url, headers=headers, timeout=self.timeout, allow_redirects=True)
+                resp = session.get(url, headers=headers, timeout=timeout, allow_redirects=True)
                 content = resp.content[:MAX_BYTES]
             else:
-                resp = session.get(url, headers=headers, timeout=(6.0, self.timeout), allow_redirects=True, stream=True)
+                resp = session.get(url, headers=headers, timeout=(min(6.0, timeout), timeout), allow_redirects=True,
+                                   stream=True)
                 try:
                     content = resp.raw.read(MAX_BYTES, decode_content=True)
                 finally:

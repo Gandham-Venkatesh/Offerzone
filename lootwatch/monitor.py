@@ -38,6 +38,9 @@ LOOT_CHECK_WINDOW = 3600  # how long a loot pushed without a list price waits fo
 # A deal under the bar for list-price-only deals that this many channels post within the window is
 # pushed all the same (the crowd's pick: a Beardo perfume combo at 80% off, in nine channels in two
 # minutes on 20 Nov 2026). From CROWD_MIN_DISCOUNT off.
+# Before a price tracker's Flipkart drop is pushed, its Flipkart page is read once: the owner found
+# the tracker's Flipkart watches sold out every time, even opened the second they rang (20-21 Nov).
+STOCK_CHECK_SECONDS = 6.0
 CROWD_CHANNELS = 4
 CROWD_WINDOW = 3600
 CROWD_MIN_DISCOUNT = 75.0
@@ -313,6 +316,39 @@ class Monitor:
             except Exception:
                 log.exception("failed to process %s", post.url)
 
+    def _still_there(self, verdict: Verdict, item) -> Optional[Verdict]:
+        """A price tracker's Flipkart drop, checked on Flipkart itself before it is pushed: sold out
+        there, or back at its old price, it is not pushed (and the log says so). When the page
+        cannot be read, or does not say, it is pushed as it is: a check must never cost a loot."""
+        url = next((link for link in item.links if host_of(link).endswith("flipkart.com") and "/p/" in link), "")
+        if not url:
+            return verdict
+        result = self.fetcher.peek(url, timeout=STOCK_CHECK_SECONDS)
+        offer = None
+        if result.ok:
+            page = extract_page(url, result.text)
+            offer = page.offers[0] if page.kind == "product" and page.offers else None
+        name = _first_line(item.title)[:70]
+        if offer is not None and offer.in_stock is False:
+            self._count("stock_sold_out")
+            log.info("stock check: sold out on Flipkart already, not pushed (listed %s ago at %s) | %s",
+                     _age(time.time() - item.ts) if item.ts else "?", fmt_inr(item.price), name)
+            return None
+        if offer is not None and offer.price > item.price * 1.15 + 1:
+            self._count("stock_price_up")
+            log.info("stock check: back at %s on Flipkart, not pushed (listed at %s) | %s", fmt_inr(offer.price),
+                     fmt_inr(item.price), name)
+            return None
+        if offer is not None and offer.in_stock:
+            self._count("stock_in_stock")
+            verdict.notes.append(f"in stock on Flipkart just now, at {fmt_inr(offer.price)}")
+            log.info("stock check: in stock at %s | %s", fmt_inr(offer.price), name)
+        else:
+            self._count("stock_unknown")
+            log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
+                     f"could not read the page ({result.problem or 'no product data'})", name)
+        return verdict
+
     def _push_summary(self) -> str:
         """How late Telegram pushed posts since the last scan line, to see what the push is worth."""
         with self._stats_lock:
@@ -434,6 +470,8 @@ class Monitor:
                 if near:
                     # Close to a loot, left out: the day's log shows it.
                     log.info("skipped %s %s: %s | %s", label, item.url, near, _first_line(item.title)[:80])
+                if verdict and item.tracked:
+                    verdict = self._still_there(verdict, item)
                 if verdict:
                     self._announce(verdict, source, label, item.text, item.links, item.url, item.ts)
             except Exception:

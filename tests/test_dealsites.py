@@ -12,7 +12,7 @@ from unittest import mock
 
 from lootwatch.config import Settings, load_traps
 from lootwatch.db import DB
-from lootwatch.fetch import Fetcher
+from lootwatch.fetch import Fetcher, FetchResult
 from lootwatch.links import LinkResolver, classify_host
 from lootwatch.monitor import Monitor, source_key
 from lootwatch.notify import Notifier
@@ -370,6 +370,11 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.url = self.web.base + "/new"
         self.settings.feeds = [self.url]
         self.monitors = []
+        # Flipkart is never asked from a test: its quick stock check answers "could not read" unless a
+        # test says otherwise.
+        self.peek = mock.patch.object(Fetcher, "peek", return_value=FetchResult("", error="offline in tests"))
+        self.peek.start()
+        self.addCleanup(self.peek.stop)
 
     def tearDown(self):
         for monitor in self.monitors:
@@ -620,6 +625,67 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.web.post("c5", 5, post, time.time() - 10)
         monitor.cycle()
         self.assertEqual(len(self.deals()), 1, "pushed once")
+
+    def flipkart_page(self, price, availability):
+        offer = {"@type": "Offer", "price": str(price), "priceCurrency": "INR"}
+        if availability:
+            offer["availability"] = "http://schema.org/" + availability
+        import json
+        product = {"@context": "https://schema.org", "@type": "Product", "name": "Fastrack FK Exclusive Analog Watch",
+                   "sku": "WATFK123", "offers": offer}
+        return ('<html><head><script type="application/ld+json">' + json.dumps(product) +
+                "</script></head><body>Fastrack</body></html>")
+
+    def run_stock_check(self, answer):
+        from datetime import datetime, timezone
+
+        fastrack = tracker_card("fastrack-fk-WX1", "Fastrack FK Exclusive Analog Watch - For Men NT3274SL06", 188,
+                                '<p class="phd-range"><span>Low ₹188</span> <span>High ₹1,495</span></p>'
+                                '<p class="phd-save">₹727 below its average</p>', store="flipkart",
+                                product="WATGZFASTRK12345", stamp=datetime.now(timezone.utc).isoformat(), low="1")
+        self.web.pages["/new"] = tracker_page(tracker_card("old-thing-AB1", "Old thing", 500, ""))
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"), \
+                mock.patch.object(Fetcher, "peek", return_value=answer) as peek:
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(fastrack)
+            with self.assertLogs("lootwatch", level="INFO") as logs:
+                monitor.cycle()
+        return peek, "\n".join(logs.output)
+
+    def test_a_tracker_drop_sold_out_on_flipkart_is_not_pushed(self):
+        # Every Flipkart watch from the tracker was sold out when opened, even at once (20-21 Nov 2026).
+        url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
+        peek, lines = self.run_stock_check(FetchResult(url, status=200, text=self.flipkart_page(188, "OutOfStock")))
+        self.assertEqual(peek.call_args[0][0], url)
+        self.assertEqual(self.deals(), [])
+        self.assertIn("stock check: sold out on Flipkart already, not pushed", lines)
+
+    def test_a_tracker_drop_in_stock_on_flipkart_is_pushed_and_says_so(self):
+        url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
+        self.run_stock_check(FetchResult(url, status=200, text=self.flipkart_page(188, "InStock")))
+        (push,) = self.deals()
+        self.assertIn("in stock on Flipkart just now, at ₹188", push["message"])
+
+    def test_a_tracker_drop_already_over_on_flipkart_is_not_pushed(self):
+        url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
+        _, lines = self.run_stock_check(FetchResult(url, status=200, text=self.flipkart_page(915, "InStock")))
+        self.assertEqual(self.deals(), [])
+        self.assertIn("stock check: back at ₹915 on Flipkart, not pushed", lines)
+
+    def test_a_stock_check_that_fails_never_costs_the_loot(self):
+        url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
+        for answer in (FetchResult(url, status=403, blocked="HTTP 403"), FetchResult(url, status=200, text=self.flipkart_page(188, ""))):
+            with self.subTest(answer=answer.status):
+                for monitor in self.monitors:
+                    monitor.db.close()
+                self.monitors = []
+                self.folder = tempfile.mkdtemp()
+                self.settings.db_path = os.path.join(self.folder, "state.db")
+                self.web.pushes.clear()
+                self.run_stock_check(answer)
+                self.assertEqual(len(self.deals()), 1)
 
     def test_a_repeated_drop_to_the_same_price_is_judged_again(self):
         # Missed on 20 Nov 2026: a cookware set dropped to ₹1,179 once more, hours after an earlier

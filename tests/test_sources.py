@@ -313,6 +313,27 @@ class StorePages(unittest.TestCase):
         self.assertEqual(result.offers[0].url, "https://www.nykaa.com/faces-canada-comfy-matte/p/15684508")
 
 
+class StockOnProductPages(unittest.TestCase):
+    """A product page's own data says whether it can be bought (read before a tracker drop is pushed)."""
+
+    def page(self, availability):
+        import json
+
+        offer = {"@type": "Offer", "price": "188", "priceCurrency": "INR"}
+        if availability is not None:
+            offer["availability"] = availability
+        product = {"@context": "https://schema.org", "@type": "Product", "name": "Fastrack Watch", "offers": offer}
+        return '<html><script type="application/ld+json">' + json.dumps(product) + "</script></html>"
+
+    def test_availability(self):
+        url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
+        for availability, expected in (("http://schema.org/InStock", True), ("https://schema.org/OutOfStock", False),
+                                       ("SoldOut", False), ("http://schema.org/PreOrder", False), (None, None)):
+            with self.subTest(availability=availability):
+                (offer,) = extract_page(url, self.page(availability)).offers
+                self.assertEqual((offer.price, offer.in_stock), (188, expected))
+
+
 class StoreLists(unittest.TestCase):
     """Stores whose own website fetches a plain JSON list of products (shapes as on 12 Nov 2026)."""
 

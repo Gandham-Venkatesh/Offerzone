@@ -33,6 +33,7 @@ class Offer:
     price: float
     mrp: Optional[float]
     url: str
+    in_stock: Optional[bool] = None  # as the page's product data states it; None: it does not say
 
 
 @dataclass
@@ -295,6 +296,21 @@ def _ld_products(blob: Any) -> List[Dict[str, Any]]:
     return found
 
 
+_SOLD_OUT = re.compile(r"OutOfStock|SoldOut|Discontinued|PreOrder|BackOrder|PreSale", re.I)
+
+
+def _ld_stock(offers: Any) -> Optional[bool]:
+    """In stock, as a schema.org Offer's availability says (None when it says nothing)."""
+    entries = offers if isinstance(offers, list) else [offers]
+    states = [str(entry.get("availability", "")) for entry in entries if isinstance(entry, dict)]
+    states = [state for state in states if state]
+    if not states:
+        return None
+    if any(re.search(r"InStock|LimitedAvailability|OnlineOnly|InStoreOnly", state, re.I) for state in states):
+        return True
+    return False if any(_SOLD_OUT.search(state) for state in states) else None
+
+
 def _ld_price(offers: Any) -> tuple:
     """(price, list_price) from a schema.org Offer / AggregateOffer / list of offers."""
     if isinstance(offers, list):
@@ -419,7 +435,7 @@ def _generic(soup: BeautifulSoup, url: str, host: str, store_key: str = "") -> P
             products.append(Offer(
                 key=f"{host}:{ident or hashlib.sha1(name.encode('utf-8')).hexdigest()[:12]}",
                 store=host, title=name.strip(), price=price, mrp=_clean_mrp(price, mrp),
-                url=urljoin(url, link) if link else url,
+                url=urljoin(url, link) if link else url, in_stock=_ld_stock(node.get("offers")),
             ))
     if len(products) == 1:
         offer = products[0]
