@@ -715,6 +715,13 @@ class SitePagesInTheMonitor(unittest.TestCase):
         (push,) = self.deals()
         self.assertIn("in stock on Flipkart just now, at ₹188", push["message"])
 
+    def test_a_loot_post_that_names_nothing_takes_the_name_from_flipkart(self):
+        # "Loot at 398." and "278 : https://fkrt.to/..." were pushed under those words on 21 Nov 2026.
+        url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(188, "InStock")), "Loot at 188.")
+        (push,) = self.deals()
+        self.assertTrue(push["title"].endswith("— Fastrack FK Exclusive Analog Watch"), push["title"])
+
     def test_a_channel_loot_far_dearer_on_flipkart_is_over(self):
         url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
         _, lines = self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(499, "InStock")),

@@ -114,6 +114,7 @@ class Verdict:
     key: str = ""  # what makes this deal the same deal elsewhere, when its link does not (a coupon code)
     needs_store_link: bool = False  # only worth a push when a link really leads into a shop
     stock_checked: bool = False  # already looked at on the store's own page (sold out? still at that price?)
+    product_name: str = ""  # what the store's own page calls the product, when it was looked at
 
     @property
     def headline(self) -> str:

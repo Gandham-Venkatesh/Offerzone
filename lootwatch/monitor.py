@@ -98,6 +98,16 @@ _EFFECTIVE_PRICE = re.compile(
     r"|\bcart\b|\bbuy\s+\d|\bmin(?:imum)?\s+order|\bcombo\b|\bpack\s+of\b|\bper\s+(?:piece|unit|kg)\b", re.I)
 
 
+_FILLER = frozenset("loot loots deal deals price apply applt coupon code only just big mega super offer offers buy now "
+                    "link here at for the and get grab hurry fast flat off rs inr checkout".split())
+
+
+def _says_little(subject: str) -> bool:
+    """A post's first line that names no product: "Loot at 398.", "278 : https://fkrt.to/...", "Apply Coupon"."""
+    words = re.findall(r"[a-z]{3,}", re.sub(r"https?://\S+", " ", subject.lower()))
+    return not [word for word in words if word not in _FILLER]
+
+
 def _first_line(text: str, limit: int = 70) -> str:
     """The line of a post that names the product, without the hype and the prices around it."""
     fallback = ""
@@ -376,6 +386,8 @@ class Monitor:
         if result.ok:
             page = extract_page(url, result.text)
             offer = page.offers[0] if page.kind == "product" and page.offers else None
+        if offer is not None and offer.title:
+            verdict.product_name = offer.title
         if offer is None or offer.in_stock is None:
             self._count("stock_unknown")
             log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
@@ -730,6 +742,8 @@ class Monitor:
         # A coupon is the same coupon whatever link a channel puts under it.
         fingerprint = verdict.key or fingerprint or text_fingerprint(text, verdict.price)
         subject = _first_line(text)
+        if verdict.product_name and _says_little(subject):
+            subject = _first_line(verdict.product_name)  # "Loot at 398.": the store's page names the product
         # A loot posted without a list price is checked against the price tracker (Amazon and
         # Flipkart): at once if it has listed the product lately, otherwise for the next hour.
         product = fingerprint if fingerprint.startswith(("amazon:", "flipkart:")) else ""
