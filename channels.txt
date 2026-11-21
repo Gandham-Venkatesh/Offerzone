@@ -58,3 +58,9 @@ swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots (6K)
 #       fashion (a sari): GrabOnIndiaOfficial
 #     removed on 21 Nov 2026 at the owner's request, its picks not good enough (an unbranded projector
 #       at "88% off"); DesiDime's own channel and website are still read: DesidimeHot
+#     checked on 21 Nov 2026 and left out: ordinary deals (a "Deal Price" with no list price, sale
+#       banners, card offers) that our rules would hardly ever push: iamprasadtech, viraloffersindia,
+#       dealsheaven, loot_dealsj, Tricksbystg, TeluguTechTVDeals, turbotechplus1, techofferstoday;
+#       quiet for days or years: smartprixdeals, kingsdeals, paisabachao; no public preview:
+#       dealsbysonu, couponzguru, gopaisa, DCLOOTS, dc_loots, deals4india, dealsfreakindia,
+#       dealsoftheday_india, lootdealsindia, LootDealsOffers, lootkhoj, srinutechdeals, TheLootBazaar, TrickBuzz

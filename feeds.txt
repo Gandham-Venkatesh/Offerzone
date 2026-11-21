@@ -11,7 +11,8 @@
 #                             (Amazon's own pages refuse it). Its items are judged by how far the
 #                             price stands below the product's usual price: quietly from 60%,
 #                             loudly from 70%, at max priority from 80% (TRACKER_DROP_PCT,
-#                             URGENT_DROP_PCT), and only when at least Rs 2,000 is saved.
+#                             URGENT_DROP_PCT), and only when at least Rs 500 is saved (a big-ticket
+#                             drop counts from 50%, a give-away price whatever it saves; README).
 #
 # A line that starts with "!" is read every 20 seconds (FAST_FEED_SECONDS) instead of once a
 # minute. The price tracker is: its drops sell out fast. If a site starts refusing, it is read
@@ -20,10 +21,17 @@ https://www.dealsmagnet.com/new
 ! https://pricehistory.app/price-drop
 # DesiDime's page was read here until 18 Nov 2026, when desidime.com began refusing GitHub's
 # servers (HTTP 403). A site that refuses is left alone; DesiDime's deals still arrive through
-# its Telegram channels (desidime, DesidimeHot in channels.txt), about twenty minutes later.
+# its Telegram channel (desidime in channels.txt), about twenty minutes later.
 # On a machine where --doctor shows it as OK, remove the leading "# " to read it directly again:
 # https://www.desidime.com/new
 
 # Any RSS or Atom feed of a deal blog or forum works as well; --doctor checks the ones you add.
 # Example (remove the leading "# " to enable):
 # https://www.bigtricks.in/feed
+
+# Checked on 21 Nov 2026 from GitHub's servers and left out:
+#   pricehistoryapp.com/deals   a short ranked list (24 deals for all of Flipkart), not fresh drops
+#   pricebefore.com/price-drops no usual price and no time on its cards, only a list price: it
+#                               would add inflated-MRP gadgets, not loots
+#   bestbuysindia.com/deals     updated once a day: too late for a loot
+#   buyhatke.com, reddit.com    refuse GitHub's servers (HTTP 403, 429)
