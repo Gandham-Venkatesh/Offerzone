@@ -124,6 +124,13 @@ saved (an LG 27-inch 4K monitor at about ₹12,800 that usually costs ₹30,400)
 keep the 60% bar. A product the tracker lists in several sizes or colours (a shoe in nine sizes) is
 pushed once.
 
+**Flipkart products are looked at on Flipkart before they ring**, whoever reports them (the price
+tracker, a deal site, a channel): sold out there, it is not pushed; far dearer there than the post
+says, with no coupon or card offer named, the loot is over and is not pushed; in stock, the push says
+so and at what price. A page that cannot be read changes nothing. From a channel marked `!` nothing
+is dropped this way: a sold-out loot comes with a warning instead. (On 21 Nov 2026, 24 of 42
+Flipkart drops on the tracker were sold out when checked, among them every cheap watch.)
+
 An alert is held at **High**, whatever the discount, when the reading itself is unsure: the two
 prices are not labelled, a second amount stands where the price should be, the price needs a
 qualifying purchase ("₹1 on orders above ₹2,999"), the post hints that the deal may be over, or

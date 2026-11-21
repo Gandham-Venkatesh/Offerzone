@@ -687,6 +687,61 @@ class SitePagesInTheMonitor(unittest.TestCase):
                 self.run_stock_check(answer)
                 self.assertEqual(len(self.deals()), 1)
 
+    def run_post_check(self, answer, post, marked=False):
+        """A channel loot whose link leads to a Flipkart product, with Flipkart's page answering ``answer``."""
+        self.check_setup()
+        if marked:
+            self.settings.loot_channels = ["alpha"]
+        self.web.redirects["/r/fw"] = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        with mock.patch.object(Fetcher, "peek", return_value=answer) as peek:
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.post("alpha", 1, post + f' <a href="{self.web.base}/r/fw">{self.web.base}/r/fw</a>', time.time() - 20)
+            with self.assertLogs("lootwatch", level="INFO") as logs:
+                monitor.cycle()
+        return peek, "\n".join(logs.output)
+
+    def test_a_channel_loot_sold_out_on_flipkart_is_not_pushed(self):
+        url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        peek, lines = self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(188, "OutOfStock")),
+                                          "Fastrack Watch Loot @ ₹188")
+        self.assertEqual(peek.call_args[0][0], url)
+        self.assertEqual(self.deals(), [])
+        self.assertIn("stock check: sold out on Flipkart already, not pushed", lines)
+
+    def test_a_channel_loot_in_stock_on_flipkart_says_so(self):
+        url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(188, "InStock")), "Fastrack Watch Loot @ ₹188")
+        (push,) = self.deals()
+        self.assertIn("in stock on Flipkart just now, at ₹188", push["message"])
+
+    def test_a_channel_loot_far_dearer_on_flipkart_is_over(self):
+        url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        _, lines = self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(499, "InStock")),
+                                       "Fastrack Watch Loot @ ₹188")
+        self.assertEqual(self.deals(), [])
+        self.assertIn("stock check: ₹499 on Flipkart, not ₹188: over, not pushed", lines)
+
+    def test_a_channel_loot_that_needs_a_coupon_is_still_pushed(self):
+        url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(499, "InStock")),
+                            "Fastrack Watch Loot @ ₹188 (apply ₹311 coupon)")
+        (push,) = self.deals()
+        self.assertIn("at ₹499 before any coupon or card offer", push["message"])
+
+    def test_a_marked_channels_loot_sold_out_is_pushed_with_a_warning(self):
+        url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        _, lines = self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(188, "OutOfStock")),
+                                       "Fastrack Watch Loot @ ₹188", marked=True)
+        (push,) = self.deals()
+        self.assertIn("sold out on Flipkart when checked", push["message"])
+        self.assertIn("pushed with a warning", lines)
+
+    def test_a_channel_loot_whose_flipkart_page_cannot_be_read_goes_out(self):
+        _, lines = self.run_post_check(FetchResult("", error="offline in tests"), "Fastrack Watch Loot @ ₹188")
+        self.assertEqual(len(self.deals()), 1)
+        self.assertIn("could not read the page", lines)
+
     def test_a_repeated_drop_to_the_same_price_is_judged_again(self):
         # Missed on 20 Nov 2026: a cookware set dropped to ₹1,179 once more, hours after an earlier
         # listing at that price, and was taken for the listing already seen.

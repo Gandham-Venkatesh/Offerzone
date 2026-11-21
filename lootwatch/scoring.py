@@ -113,6 +113,7 @@ class Verdict:
     was: Optional[float] = None  # the price this monitor saw before, when that is what it is compared with
     key: str = ""  # what makes this deal the same deal elsewhere, when its link does not (a coupon code)
     needs_store_link: bool = False  # only worth a push when a link really leads into a shop
+    stock_checked: bool = False  # already looked at on the store's own page (sold out? still at that price?)
 
     @property
     def headline(self) -> str:

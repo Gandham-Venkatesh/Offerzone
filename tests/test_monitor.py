@@ -5,6 +5,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from lootwatch.config import Settings, WatchItem, load_traps
@@ -34,6 +35,10 @@ class EndToEnd(unittest.TestCase):
         for name in self.settings.channels:  # every channel starts with one old, harmless post
             self.web.channels[name] = [{"id": 0, "html": "Welcome to the channel", "ts": time.time() - 86400, "buttons": []}]
         self.monitors = []
+        # Flipkart is never asked from a test: its quick stock check answers "could not read".
+        peek = mock.patch.object(Fetcher, "peek", return_value=FetchResult("", error="offline in tests"))
+        peek.start()
+        self.addCleanup(peek.stop)
 
     def tearDown(self):
         for monitor in self.monitors:

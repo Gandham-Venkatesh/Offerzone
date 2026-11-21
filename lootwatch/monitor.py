@@ -91,6 +91,13 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+# "₹999 after coupon", "with SBI card", "effective price": a post's price that the store's page will
+# not show until the offer is applied.
+_EFFECTIVE_PRICE = re.compile(
+    r"coupon|\bcode\b|\bcards?\b|\bbank\b|cashback|effective|exchange|\bemi\b|super\s?coins?|pay\s?later|\bupi\b"
+    r"|\bcart\b|\bbuy\s+\d|\bmin(?:imum)?\s+order|\bcombo\b|\bpack\s+of\b|\bper\s+(?:piece|unit|kg)\b", re.I)
+
+
 def _first_line(text: str, limit: int = 70) -> str:
     """The line of a post that names the product, without the hype and the prices around it."""
     fallback = ""
@@ -325,6 +332,7 @@ class Monitor:
         url = next((link for link in item.links if host_of(link).endswith("flipkart.com") and "/p/" in link), "")
         if not url:
             return verdict
+        verdict.stock_checked = True
         result = self.fetcher.peek(url, timeout=STOCK_CHECK_SECONDS)
         offer = None
         if result.ok:
@@ -349,6 +357,50 @@ class Monitor:
             self._count("stock_unknown")
             log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
                      f"could not read the page ({result.problem or 'no product data'})", name)
+        return verdict
+
+    def _pushed_already(self, fingerprint: str, verdict: Verdict) -> bool:
+        """This deal was pushed lately, as loud: the push is held back anyway, so no check is worth making."""
+        previous = self.db.last_alert(fingerprint, time.time() - self.s.dedup_hours * 3600)
+        return previous is not None and verdict.tier <= previous[1]
+
+    def _flipkart_now(self, verdict: Verdict, url: str, marked: bool, name: str, text: str) -> Optional[Verdict]:
+        """A deal post's Flipkart product, looked at on Flipkart before it is pushed (as the price
+        tracker's drops are). Sold out there: not pushed; from a channel the owner marked, pushed
+        with a warning. Far dearer there than the post says, with no coupon or card named: over, not
+        pushed. In stock: the push says so, and at what price. A page that cannot be read changes
+        nothing: a check must never cost a loot."""
+        verdict.stock_checked = True
+        result = self.fetcher.peek(url, timeout=STOCK_CHECK_SECONDS)
+        offer = None
+        if result.ok:
+            page = extract_page(url, result.text)
+            offer = page.offers[0] if page.kind == "product" and page.offers else None
+        if offer is None or offer.in_stock is None:
+            self._count("stock_unknown")
+            log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
+                     f"could not read the page ({result.problem or 'no product data'})", name)
+            return verdict
+        if offer.in_stock is False:
+            self._count("stock_sold_out")
+            if not marked:
+                log.info("stock check: sold out on Flipkart already, not pushed | %s", name)
+                return None
+            verdict.flags.append("sold out on Flipkart when checked")
+            log.info("stock check: sold out on Flipkart already, pushed with a warning (a channel you marked) | %s", name)
+            return verdict
+        self._count("stock_in_stock")
+        dearer = bool(verdict.price) and offer.price > verdict.price * 1.15 + 1
+        if dearer and offer.price > verdict.price * 1.5 and not marked and not _EFFECTIVE_PRICE.search(text):
+            self._count("stock_price_up")
+            log.info("stock check: %s on Flipkart, not %s: over, not pushed | %s", fmt_inr(offer.price),
+                     fmt_inr(verdict.price), name)
+            return None
+        if dearer:
+            verdict.notes.append(f"in stock on Flipkart just now, at {fmt_inr(offer.price)} before any coupon or card offer")
+        else:
+            verdict.notes.append(f"in stock on Flipkart just now, at {fmt_inr(offer.price)}")
+        log.info("stock check: in stock at %s | %s", fmt_inr(offer.price), name)
         return verdict
 
     def _push_summary(self) -> str:
@@ -670,6 +722,11 @@ class Monitor:
             best_link = candidates[0]
         elif not candidates and verdict.needs_trusted_link:
             return
+        if (fingerprint and fingerprint.startswith("flipkart:") and not verdict.stock_checked
+                and host_of(best_link).endswith("flipkart.com") and "/p/" in best_link
+                and not self._pushed_already(fingerprint, verdict)):
+            if self._flipkart_now(verdict, best_link, marked, _first_line(text)[:70], text) is None:
+                return
         # A coupon is the same coupon whatever link a channel puts under it.
         fingerprint = verdict.key or fingerprint or text_fingerprint(text, verdict.price)
         subject = _first_line(text)
