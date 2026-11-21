@@ -1,0 +1,14 @@
+# Candidate pages, checked by a doctor run before any goes into watchlist.txt.
+https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe laptops 50+ newest
+https://www.flipkart.com/televisions/pr?sid=ckf%2Cczl&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe TVs 50+ newest
+https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe monitors 50+ newest
+https://www.flipkart.com/tablets/pr?sid=tyy%2Chry&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe tablets 50+ newest
+https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe phones 50+ newest
+https://www.flipkart.com/wearable-smart-devices/smart-watches/pr?sid=ajy%2Cbuh&p%5B%5D=facets.discount_range_v1%255B%255D%3D70%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe smart watches 70+ newest
+https://www.flipkart.com/audio-video/headphones/pr?sid=0pm%2Cfcn&p%5B%5D=facets.discount_range_v1%255B%255D%3D70%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe headphones 70+ newest
+https://www.flipkart.com/cameras/pr?sid=jek%2Cp31&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe cameras 50+ newest
+https://www.flipkart.com/search?q=soundbar&p%5B%5D=facets.discount_range_v1%255B%255D%3D70%2525%2Bor%2Bmore&sort=recency_desc | 0 | probe soundbars 70+ newest
+https://www.flipkart.com/search?q=treadmill&sort=price_asc | | probe treadmills cheapest
+https://www.flipkart.com/search?q=exercise+bike&sort=price_asc | | probe exercise bikes cheapest
+https://www.flipkart.com/search?q=whey+protein&sort=popularity | | probe whey protein popular
+https://www.flipkart.com/search?q=dumbbells+set&sort=popularity | | probe dumbbells popular
