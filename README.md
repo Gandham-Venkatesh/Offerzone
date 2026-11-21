@@ -29,7 +29,7 @@ Each scan (default: every 60 seconds) it looks in four places:
    new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
    list of drops covers Amazon and is read every 20 seconds (a line marked `!` in `feeds.txt`);
-   and 25 public Telegram channels are read as a safety net. A loot a channel posts without a
+   and 26 public Telegram channels are read as a safety net. A loot a channel posts without a
    list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
    far below its usual price, a second push says "Checked loot" at high or max priority. A
@@ -181,7 +181,9 @@ PhonePe; from a channel marked `!` these are still believed). A product that com
 subscription ("Echo Dot with 6 months of Amazon Music") is still a product, and a membership for
 something on your favourites list (a gym) is judged like any deal. Phone cases and gold or
 jewellery "loots" never alert, and clothing judged by its list price alone stays at Quiet: a
-₹100 kurta with an "MRP" of ₹2,499 is an everyday sight.
+₹100 kurta with an "MRP" of ₹2,499 is an everyday sight. Posts about **DigiHaat** (₹18 snack bars,
+₹50 makhana packs) are muted, from every channel, unless they show a huge discount on a stated list
+price: 90% or more off, saving ₹1,000 or more.
 
 Ignored: "upto 90% off" banners, capped coupons of ordinary shops ("80% off up to ₹160"), amounts that belong to an
 offer (cashback, wallet credits, coupons, bank and exchange discounts, EMIs, recharges), ranges ("under ₹999",
@@ -401,7 +403,7 @@ the two channels with the others. What to know:
   however it arrives.
 - **Public channels can be just as fast:** join them with the same Telegram account (mute and
   archive them there, so your phone stays quiet). Telegram then pushes their posts to the login as
-  they appear, and the scan log says `Telegram pushes the posts of N of the 25 public channels`.
+  they appear, and the scan log says `Telegram pushes the posts of N of the 26 public channels`.
   Channels it has not joined are read from their web page once a minute, as before.
 - The monitor only reads. Telegram's terms allow that for your own account, but it is your account
   that does it; if Telegram ever asks it to slow down, it reads less often on its own.

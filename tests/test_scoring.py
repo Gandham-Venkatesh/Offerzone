@@ -1065,6 +1065,24 @@ class TheDaysNoise(unittest.TestCase):
         self.assertIsNone(evaluate_text("Upto 85% off on Zepto: snacks from ₹9", self.s))
         self.assertIsNone(evaluate_text("Myntra: Oziva ACV Tablets @ ₹159 (MRP ₹999)", self.s))
 
+    def test_digihaat_is_muted_unless_the_discount_is_huge(self):
+        # Pushed on 21 Nov 2026 from several channels; the owner asked to mute DigiHaat.
+        for text in ("🔥Digihaat Today's Top Loot Deals\n[Coupon Auto-Applied in Cart]\n✅Brownie Energy Bar at ₹18\n"
+                     "👉https://bitli.in/fyI01RJ\n✅Dish Cleaner Cloth 10Pcs at ₹51",
+                     "🔥Digihaat Loot | Grab\nFlavoured Makhana (Pack of 3) - ₹50 + free Delivery\nhttps://bitli.in/Oo4KVIZ",
+                     "Digihaat: Electric Hot Water Bag @ 104/-\n⚡ Free delivery\n👉🏻 https://bitli.in/kkGnbpP",
+                     "Gotrackier | DIGIHAT NEW USER LOOT DEAL https://bitli.in/x",
+                     "Digi Haat loot: Bluetooth speaker @ ₹299 (MRP ₹999) https://bitli.in/x"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://bitli.in/x"]))
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://bitli.in/x"], loot_channel=True))
+        self.assertIsNone(evaluate_stated("DigiHaat: Makhana pack of 3", "", 50, 199, self.s))
+        # A huge discount on a stated list price still rings.
+        verdict = evaluate_text("Digihaat Loot: boAt Airdopes 141 @ ₹99 (MRP ₹4,490) https://bitli.in/x", self.s,
+                                links=["https://bitli.in/x"])
+        self.assertEqual(verdict.tier, TIER_URGENT)
+        self.assertEqual(evaluate_stated("DigiHaat: Samsung 43 inch 4K TV", "", 2999, 39999, self.s).tier, TIER_URGENT)
+
     def test_a_phone_case_is_never_logged_as_a_near_miss(self):
         self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")
         self.assertIn("its lowest price", tracker_near_miss(299, 1499, 299, True, None, title="Bata Men Casual Sandal"))

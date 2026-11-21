@@ -267,6 +267,23 @@ def _payment_only(hosts: Sequence[str]) -> bool:
     return bool(shops) and all(is_payment_app(host) for host in shops)
 
 
+# Muted by the owner on 21 Nov 2026: DigiHaat, an ONDC shopping app whose "loots" are ₹18 snack bars,
+# ₹39 choconuts and ₹50 makhana packs, several a day from several channels. A post about it counts
+# only with a huge discount on a stated list price (HIGH_DISCOUNT or more off, saving MIN_SAVING or
+# more), or a trap hit, from whichever channel, the owner's own included.
+_MUTED = re.compile(r"\bdigi\s?-?h+aa?t\b", re.I)
+
+
+def _unmuted(verdict: Optional[Verdict], text: str, settings: Settings) -> Optional[Verdict]:
+    if verdict is None or not _MUTED.search(text) or verdict.label == "Trap hit":
+        return verdict
+    discount, price, mrp = verdict.discount, verdict.price, verdict.mrp
+    if price is None or discount < settings.high_discount:
+        return None
+    saving = mrp - price if mrp else price * min(discount, 99.5) / (100.0 - min(discount, 99.5))
+    return verdict if saving >= settings.min_saving else None
+
+
 def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
                   loot_channel: bool = False) -> Optional[Verdict]:
     """Judge a free-text deal post (Telegram message, feed entry). ``links`` are the post's links.
@@ -290,7 +307,7 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     verdict = _judge(parsed, settings) or _quick_commerce(parsed, settings, hosts)
     if loot_channel:
         verdict = loot_channel_verdict(parsed, verdict, hosts)
-    return _hedge(_favoured(verdict, parsed.text, settings), parsed)
+    return _unmuted(_hedge(_favoured(verdict, parsed.text, settings), parsed), parsed.text, settings)
 
 
 # What a missed loot would look like: logged when such a post is not pushed, so that a day's log
@@ -679,6 +696,11 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
     the card (trap names, "price error" wording, sold-out notes, conditions) is read as in a post.
     """
     text = title + ("\n" + body if body else "")
+    return _unmuted(_evaluate_stated(title, body, text, price, mrp, settings, links), text, settings)
+
+
+def _evaluate_stated(title: str, body: str, text: str, price: Optional[float], mrp: Optional[float],
+                     settings: Settings, links: Sequence[str]) -> Optional[Verdict]:
     if is_finance_promo(text, _hosts(links)) or is_phone_case(text) or _payment_only(_hosts(links)):
         return None
     if is_service_offer(text) and not is_favourite(text, settings):

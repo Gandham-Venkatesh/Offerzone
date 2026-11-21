@@ -98,9 +98,9 @@ class CommandLine(CleanEnv):
                             favourites_file=str(root / "favourites.txt"))
         with self.assertNoLogs("lootwatch", level="WARNING"):
             settings.load_lists()
-        self.assertEqual(len(settings.channels), 25)
+        self.assertEqual(len(settings.channels), 26)
         self.assertNotIn("GrabOnIndiaOfficial", settings.channels, "removed at the owner's request")
-        self.assertNotIn("DesidimeHot", settings.channels, "removed at the owner's request")
+        self.assertIn("DesidimeHot", settings.channels, "the owner asked to mute DigiHaat, not DesiDime Hot")
         self.assertTrue({"protein", "whey", "dumbbell", "gym"} <= set(settings.favourites))
         self.assertTrue(settings.favourite_pattern.search("MuscleBlaze Raw Whey Protein 1kg"))
         self.assertNotIn("freekaamaalindia", settings.channels, "dropped for inflated list prices")
