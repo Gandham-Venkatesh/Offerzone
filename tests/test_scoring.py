@@ -1027,6 +1027,15 @@ class TheDaysNoise(unittest.TestCase):
         self.assertEqual(evaluate_stated("MuscleBlaze Whey Protein 1kg", "", 999, 3999, self.s).tier, TIER_HIGH)
         self.assertEqual(evaluate_text("Protein Bar box of 12 @ ₹299 (MRP ₹1,299)", self.s).tier, TIER_HIGH)
 
+    def test_hamara_mall_is_muted(self):
+        # Seven grocery "loots" pushed on 21 Nov 2026; the owner asked for none of them.
+        for text in ("Hamara Mall Loot: Premium Whole Jeera - 50g\n@ ₹39\nhttps://bitli.in/x",
+                     "Hamara Mall Loot: NAFED Moong Whole - 500g @ ₹66 https://bitli.in/x",
+                     "HamaraMall Skincare Loot @ ₹129 https://bitli.in/x"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://bitli.in/x"]))
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://bitli.in/x"], loot_channel=True))
+
     def test_a_phone_case_is_never_logged_as_a_near_miss(self):
         self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")
         self.assertIn("its lowest price", tracker_near_miss(299, 1499, 299, True, None, title="Bata Men Casual Sandal"))
