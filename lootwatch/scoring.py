@@ -966,9 +966,17 @@ def tenfold_mrp(price: Optional[float], mrp: Optional[float]) -> bool:
     return bool(price and mrp and price >= 3000 and mrp >= 10 * price and price >= 0.5 * mrp / 10)
 
 
+# "Parachute Advansed Protein Shampoo, 1.2L" is no protein: it rang at high priority as a favourite
+# on 21 Nov 2026. A favourite's name followed by a hair or skin care product does not count.
+_CARE_PRODUCT = re.compile(
+    r"^[^\n,|()]{0,20}?\b(?:shampoos?|conditioners?|hair|serums?|masks?|face\s?wash|lotions?|creams?|soaps?"
+    r"|body\s?wash|scrubs?|sprays?|treatments?)\b", re.I)
+
+
 def is_favourite(text: str, settings: Settings) -> bool:
     pattern = settings.favourite_pattern
-    return bool(pattern and pattern.search(text))
+    return bool(pattern) and any(not _CARE_PRODUCT.match(text[match.end():match.end() + 40])
+                                 for match in pattern.finditer(text))
 
 
 def _favoured(verdict: Optional[Verdict], text: str, settings: Settings) -> Optional[Verdict]:

@@ -1019,6 +1019,14 @@ class TheDaysNoise(unittest.TestCase):
         self.assertIsNone(evaluate_tracked("Parle-G Biscuits 100 g", 1, 10, self.s, low=1))
         self.assertIsNone(evaluate_tracked("Dettol Soap 75 g", 25, 190, self.s, low=25))
 
+    def test_a_protein_shampoo_is_no_protein(self):
+        self.s.favourites = ["protein", "whey", "gym"]
+        # Rang at high priority as a favourite: 77% off a list price, under the 85% bar for the rest.
+        self.assertIsNone(evaluate_stated("Parachute Advansed Protein Shampoo, 1.2L", "", 299, 1299, self.s))
+        self.assertIsNone(evaluate_text("Protein Hair Mask @ ₹299 (MRP ₹1,299)", self.s))
+        self.assertEqual(evaluate_stated("MuscleBlaze Whey Protein 1kg", "", 999, 3999, self.s).tier, TIER_HIGH)
+        self.assertEqual(evaluate_text("Protein Bar box of 12 @ ₹299 (MRP ₹1,299)", self.s).tier, TIER_HIGH)
+
     def test_a_phone_case_is_never_logged_as_a_near_miss(self):
         self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")
         self.assertIn("its lowest price", tracker_near_miss(299, 1499, 299, True, None, title="Bata Men Casual Sandal"))
