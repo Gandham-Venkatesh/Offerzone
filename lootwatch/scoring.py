@@ -225,6 +225,46 @@ def is_phone_case(text: str) -> bool:
     return bool(_PHONE_CASE.search(text))
 
 
+# Memberships, subscriptions, TV packs and restaurant deals are services, not loots on something to
+# buy. Pushed at high priority on 21 Nov 2026: "Free Loot : Get Free 1 Month Amazon Prime Membership"
+# as "₹2" (the owner wants none of these), "TataPlay Jingalala Saturdays: Hindi TV shows" at ₹1
+# twice, and "Swiggy Dineout Deals for ₹1" (a table at a restaurant).
+_SERVICE = re.compile(
+    r"\bprime\s+(?:membership|subscription|lite|trial)s?\b"
+    r"|\b(?:membership|subscription)s?\b[^\n]{0,40}?(?:\b\d+\s*(?:months?|days?|years?|yrs?)\b|\bfree\b|\btrial\b|@|₹|\brs\b)"
+    r"|(?:\b\d+\s*(?:months?|days?|years?)\b|\bfree\b|\btrial\b)[^\n]{0,40}?\b(?:membership|subscription)s?\b"
+    r"|\b(?:netflix|jio\s?hotstar|hotstar|spotify|youtube\s+premium|zee5|sony\s?liv|times\s+prime|gaana|wynk"
+    r"|apple\s+(?:music|tv\+?)|prime\s+video)\b[^\n]{0,40}?\b(?:premium|plan|membership|subscription|free|months?)\b"
+    r"|\b(?:tata\s?play|tata\s?sky|dish\s?tv|d2h|sun\s+direct|airtel\s+(?:dth|digital\s+tv|xstream))\b"
+    r"|\bdine\s?out\b|\btable\s+booking\b",
+    re.I)
+# "Echo Dot @ ₹2,499 with free 6 months of Amazon Music subscription": a product that comes with a
+# service is still a product.
+_BUNDLED = re.compile(r"(?:\bwith\b|\+|\bplus\b|\bincludes?\b|\bincluding\b|\bbundled?\b|\balong\b|\bcomes\b)"
+                      r"[^\n]{0,25}$", re.I)
+
+
+def is_service_offer(text: str) -> bool:
+    """A membership, subscription, TV pack or restaurant deal offered on its own (see _SERVICE)."""
+    return any(not _BUNDLED.search(text[max(0, match.start() - 30):match.start()])
+               for match in _SERVICE.finditer(text))
+
+
+# Payment apps sell vouchers, tickets, recharges and memberships, never a product at a loot price
+# ("Paytm offer Exclusive : Get ...", ₹10 against "₹999", rang at high priority on 21 Nov 2026).
+PAYMENT_APPS = ("paytm.com", "paytm.me", "phonepe.com", "mobikwik.com", "pay.google.com")
+
+
+def is_payment_app(host: str) -> bool:
+    return any(host == app or host.endswith("." + app) for app in PAYMENT_APPS)
+
+
+def _payment_only(hosts: Sequence[str]) -> bool:
+    """Every link that could lead into a shop goes to a payment app."""
+    shops = set(_shop_hosts(hosts)) | {host for host in hosts if is_payment_app(host)}
+    return bool(shops) and all(is_payment_app(host) for host in shops)
+
+
 def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
                   loot_channel: bool = False) -> Optional[Verdict]:
     """Judge a free-text deal post (Telegram message, feed entry). ``links`` are the post's links.
@@ -241,6 +281,10 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     hosts = _hosts(links)
     if is_finance_promo(parsed.text, hosts) or is_phone_case(parsed.text):
         return None
+    if _payment_only(hosts) and not loot_channel:
+        return None  # the channels the owner marked are believed on their own word (see loot_channel_verdict)
+    if is_service_offer(parsed.text) and not is_favourite(parsed.text, settings):
+        return None  # a gym membership, for one who asked for gym deals, is judged as any deal
     verdict = _judge(parsed, settings) or _quick_commerce(parsed, settings, hosts)
     if loot_channel:
         verdict = loot_channel_verdict(parsed, verdict, hosts)
@@ -259,10 +303,10 @@ def looks_like_loot(text: str) -> bool:
 
 
 def tracker_near_miss(price: float, usual: Optional[float], low: Optional[float], new_low: bool,
-                      mrp: Optional[float]) -> str:
+                      mrp: Optional[float], title: str = "") -> str:
     """For the log: a tracker drop at its lowest price, 45% or more under its usual price, that was
-    not pushed (""  when it is no such drop)."""
-    if not usual or not price or usual <= price:
+    not pushed (""  when it is no such drop, or a phone case, which is never pushed)."""
+    if not usual or not price or usual <= price or is_phone_case(title):
         return ""
     drop = (usual - price) / usual * 100
     lowest = new_low or (low is not None and price <= low * 1.03)
@@ -610,7 +654,9 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
     the card (trap names, "price error" wording, sold-out notes, conditions) is read as in a post.
     """
     text = title + ("\n" + body if body else "")
-    if is_finance_promo(text, _hosts(links)) or is_phone_case(text):
+    if is_finance_promo(text, _hosts(links)) or is_phone_case(text) or _payment_only(_hosts(links)):
+        return None
+    if is_service_offer(text) and not is_favourite(text, settings):
         return None
     if price is None:
         # The member left the price fields empty: this is an offer or a coupon ("Flat Rs 25 on
@@ -639,7 +685,7 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
                               "shows it is the device itself", price, mrp, discount, label="Trap match?",
                               max_tier=TIER_NORMAL)
         return _hedge(verdict, parsed)
-    if parsed.error_phrase:
+    if parsed.error_phrase and not _belied(parsed, discount if mrp else None):
         return _hedge(Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp, discount,
                               label="Price error?"), parsed)
     if mrp is None:
@@ -659,6 +705,8 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
     # The price stands in a field, not on a line of the text, so a condition can be anywhere in it.
     elif parsed.conditional or states_condition(parsed.text):
         cap, reason = TIER_HIGH, reason + " (needs a qualifying purchase)"
+    if cap > TIER_NORMAL and is_clothing(text):
+        cap, reason = TIER_NORMAL, reason + " (clothing list prices are often inflated)"
     return _hedge(_favoured(Verdict(min(tier, cap), reason, price, mrp, discount, max_tier=cap), text, settings), parsed)
 
 
@@ -706,6 +754,15 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
         # It has sold for less than this before, yet "usually" costs twenty times as much: the
         # average holds a seller's placeholder price (diapers at ₹255 that "usually cost" ₹21 lakh).
         return None
+    if at_low and price <= settings.loot_price and drop >= settings.high_discount and saving >= GIVEAWAY_MIN_SAVING:
+        # A few rupees for what usually costs far more: a give-away price or a price error, whatever
+        # it saves ("Parachute Advansed Ayurvedic Hair Oil (300 ml)", 99% below its usual ₹190, was
+        # left out on 21 Nov 2026 for saving under ₹500).
+        where = (f"the {fmt_inr(reference)} it usually costs" if called == "it usually costs"
+                 else f"its list price of about {fmt_inr(reference)}")
+        return _favoured(Verdict(TIER_HIGH, f"{drop:.0f}% below {where}, its lowest price so far: a give-away price",
+                                 price, None, drop, label="Price drop", was=reference, max_tier=TIER_HIGH),
+                         title, settings)
     if saving < TRACKED_MIN_SAVING:
         return None
     off_list = (mrp - price) / mrp * 100 if mrp and mrp > price else 0.0
@@ -785,7 +842,7 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
         return Verdict(TIER_URGENT, f"trap '{trap.name}' at or under {fmt_inr(trap.max_price)}", price, mrp,
                        _pct(mrp, price), label="Trap hit")
 
-    if parsed.error_phrase:
+    if parsed.error_phrase and not _belied(parsed):
         price = parsed.price
         mrp = parsed.mrp if parsed.pair_conf else None
         return Verdict(TIER_URGENT, f"says '{parsed.error_phrase}'", price, mrp,
@@ -812,6 +869,8 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
             cap, reason = TIER_HIGH, reason + " (another amount stands beside the MRP)"
         if parsed.conditional and cap > TIER_HIGH:
             cap, reason = TIER_HIGH, reason + " (needs a qualifying purchase)"
+        if cap > TIER_NORMAL and is_clothing(parsed.text):
+            cap, reason = TIER_NORMAL, reason + " (clothing list prices are often inflated)"
         return Verdict(min(tier, cap), reason, parsed.price, parsed.mrp, discount,
                        needs_trusted_link=not confident, max_tier=cap)
 
@@ -823,8 +882,10 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
         if not tier:
             return None
         cap = TIER_HIGH if parsed.conditional else TIER_URGENT
-        return Verdict(min(tier, cap), f"stated as {claim:.0f}% off, about {fmt_inr(saving)} saved", lone, None, claim,
-                       max_tier=cap)
+        reason = f"stated as {claim:.0f}% off, about {fmt_inr(saving)} saved"
+        if is_clothing(parsed.text):
+            cap, reason = TIER_NORMAL, reason + " (clothing list prices are often inflated)"
+        return Verdict(min(tier, cap), reason, lone, None, claim, max_tier=cap)
 
     # 3. Only a percentage, with no price it can be tied to: worth a look only when it is extreme,
     #    or when what it is claimed for is a product you set a trap on ("91% Off - Apple MacBook Air").
@@ -847,7 +908,7 @@ def _ladder(discount: float, saving: float, price: Optional[float], settings: Se
     price, desk lamps and flower pots with inflated ones came every day. Things on the owner's
     favourites list start at FAVOURITE_MIN_DISCOUNT and need MIN_SAVING saved.
     """
-    loot = price is not None and price <= settings.loot_price
+    loot = price is not None and price <= settings.loot_price and saving >= GIVEAWAY_MIN_SAVING
     if discount >= settings.urgent_discount:
         if saving >= settings.urgent_min_saving:
             return TIER_URGENT
@@ -861,6 +922,40 @@ def _ladder(discount: float, saving: float, price: Optional[float], settings: Se
     if discount >= max(settings.min_discount, settings.mrp_min_discount):
         return TIER_NORMAL if saving >= settings.urgent_min_saving else None
     return None
+
+
+# A give-away price (LOOT_PRICE or less) rings whatever it saves, if the thing is worth this much:
+# "100% off on - Sunfeast Marie Light", ₹0 against a list price of ₹10, rang at high priority on
+# 21 Nov 2026.
+GIVEAWAY_MIN_SAVING = 50.0
+
+# "Price Error Deal: 50% Off" rang at max priority on 21 Nov 2026: a post whose own numbers show less
+# than this off is no price error, whatever it calls itself, and the ordinary rules judge it.
+ERROR_MIN_DISCOUNT = 70.0
+
+
+def _belied(parsed: ParsedText, discount: Optional[float] = None) -> bool:
+    """The post says "price error" but its own numbers show an ordinary discount."""
+    if discount is not None:
+        return discount < ERROR_MIN_DISCOUNT
+    if parsed.pair_conf:
+        return parsed.calc_discount < ERROR_MIN_DISCOUNT
+    return parsed.pct_claim is not None and parsed.pct_claim < ERROR_MIN_DISCOUNT
+
+
+# Clothing list prices are mostly fiction ("Vbuyz Blue Printed Hand Embroidery A-Line Cotton Stitched
+# Kurta", ₹100 against a list price of ₹2,499, rang at max priority on 21 Nov 2026): judged by its list
+# price alone, clothing comes at the ordinary priority. On the price tracker it is measured, not claimed.
+_CLOTHING = re.compile(
+    r"\b(?:kurtas?|kurtis?|sarees?|saris?|lehengas?|salwars?|dupattas?|t-?shirts?|tees|shirts?|jeans|trousers|pants"
+    r"|joggers|shorts|dress(?:es)?|gowns?|leggings|jackets?|hoodies?|sweatshirts?|sweaters?|blazers?|nighty"
+    r"|nightwear|night\s?suits?|pyjamas?|innerwear|briefs|boxers|bras?|socks|co-?ord\s+sets?|ethnic\s+wear)\b"
+    r"(?!\s*(?:hangers?|racks?|stands?|organi[sz]ers?|storage|covers?|clips?|bags?|box(?:es)?|press|iron|printing"
+    r"|printers?|stickers?|buttons?|stretchers?|dryers?))", re.I)  # "Shirt Hanger set" is no shirt
+
+
+def is_clothing(text: str) -> bool:
+    return bool(_CLOTHING.search(text))
 
 
 def tenfold_mrp(price: Optional[float], mrp: Optional[float]) -> bool:

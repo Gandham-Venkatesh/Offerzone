@@ -24,7 +24,8 @@ from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host
                     text_fingerprint)
 from .notify import Notifier, build_payload
 from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, confirm_loot, evaluate_offer,
-                      evaluate_stated, evaluate_text, evaluate_tracked, looks_like_loot, tracker_near_miss, why_skipped)
+                      evaluate_stated, evaluate_text, evaluate_tracked, is_payment_app, looks_like_loot, tracker_near_miss,
+                      why_skipped)
 from .sources.dealsites import SiteError, site_label, site_reader
 from .sources.feeds import FeedError, parse_feed
 from .sources.stores import extract_page, request_headers
@@ -462,7 +463,7 @@ class Monitor:
                     verdict = evaluate_tracked(item.title, item.price, item.usual, self.s, low=item.low,
                                                new_low=item.new_low, mrp=item.mrp, in_stock=item.in_stock)
                     near = "" if verdict else tracker_near_miss(item.price, item.usual, item.low, item.new_low,
-                                                                item.mrp)
+                                                                item.mrp, title=item.title)
                 else:
                     verdict = evaluate_stated(item.title, item.body, item.price, item.mrp, self.s, links=item.links)
                     near = "" if verdict or not item.mrp or not item.price or item.price >= item.mrp * 0.25 else \
@@ -591,7 +592,8 @@ class Monitor:
         """Check where a judged deal's links lead, then push it."""
         candidates = deal_links(links)
         best_link, fingerprint, trusted, shop_link = "", None, False, False
-        strange_host, unchecked = "", ""
+        strange_host, unchecked, payment_app = "", "", ""
+        marked = self._is_loot_channel(source)
         for link in candidates[:3]:
             host = host_of(link)
             kind = classify_host(host)
@@ -607,6 +609,9 @@ class Monitor:
                         strange_host = strange_host or resolved.host or host  # it loaded, and it is not a shop we know
                     else:
                         unchecked = unchecked or f"{host} ({resolved.error if resolved else 'link checking is off'})"
+            if kind == "store" and is_payment_app(host_of(final)) and not marked:
+                payment_app = payment_app or host_of(final)  # vouchers, tickets, memberships: not a shop
+                continue
             if kind in TRUSTED_KINDS:
                 trusted = True
                 shop_link = shop_link or kind in ("store", "affiliate")
@@ -615,8 +620,11 @@ class Monitor:
                 if kind == "store":
                     fingerprint = product_key(final)
                     break
+        if payment_app and not shop_link:
+            log.info("%s post %s: not pushed: its link leads to a payment app (%s)", label, post_url, payment_app)
+            return
         if verdict.needs_store_link and not shop_link and (strange_host or not candidates or trusted):
-            if self._is_loot_channel(source):
+            if marked:
                 log.info("%s post %s: not pushed: its link does not lead into a shop (%s)", label, post_url,
                          strange_host or (host_of(candidates[0]) if candidates else "no link"))
             return  # the post was only worth a push for a link into a shop, and it leads elsewhere

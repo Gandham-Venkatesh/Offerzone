@@ -137,7 +137,7 @@ _BANK = (
 # Amounts that belong to an offer mechanic rather than to a product price. Each wording is anchored
 # directly before or after the amount, so "₹51,999 with bank offer" keeps its price.
 _EXCL_BEFORE = re.compile(
-    r"(?:\bcoupon(?:\s+(?:of|worth))?|\bcash\s?back(?:\s+(?:of|upto|up\s+to))?"
+    r"(?:\bcoupon(?:\s+(?:of|worth))?|\bcash\s?back(?:\s+(?:of|upto|up\s+to))?|\bcredit(?:s|ed)?(?:\s+(?:of|worth))?"
     r"|\bsav(?:e|ing|ings)(?:\s+(?:upto|up\s+to|extra|flat))?|\bextra|\badditional|\babove|\bover|\bmore\s+than"
     r"|\bmin(?:imum)?\.?\s*(?:order|purchase|cart|bill|spend|txn|transaction|shopping)(?:\s+value)?(?:\s+(?:of|is))?"
     r"|\b(?:orders?|purchase|shopping|spends?|bill|cart)\s+(?:of|above|over|worth|value(?:\s+of)?)"
@@ -158,7 +158,7 @@ _AFTER_OFFER = re.compile(r"\b(?:after|post)(?:\s+[a-z]+){0,2}\s*$", re.I)
 _EXCL_AFTER = re.compile(
     r"^\s*(?:off\b|cash\s?back|back\b(?!\s+(?:in|again|now|live)\b)|coupon|voucher|gv\b|gift\s*(?:card|voucher|coupon)"
     r"|rewards?\b|price\s+(?:cut|drop)\b"
-    r"|credits?\b(?!\s+card)"
+    r"|credits?\b(?!\s+card)|credited\b|free\s+cash\b"
     r"|(?:" + _BANK + r"\s+)?(?:(?:credit|debit)\s+)?(?:bank|cards?|exchange|upgrade)\s+(?:discount|bonus|off|cashback)s?\b"
     r"|" + _BANK + r"\s+(?:discount|bonus|cashback|off)s?\b"
     r"|(?:instant|extra|additional|flat)\s+(?:off|discount|cashback|savings?|bank)\b|discount\b|bonus\b"

@@ -163,6 +163,14 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(self.web.pushes[0]["priority"], 3)
         self.assertIn("link goes to 127.0.0.1, not a known store", self.web.pushes[0]["message"])
 
+    def test_short_link_landing_on_a_payment_app_is_not_pushed(self):
+        # "Paytm offer Exclusive : Get ..." at ₹10 against "₹999" rang at high priority on 21 Nov 2026.
+        self.web.redirects["/r/pt"] = "https://paytm.com/offers/movie-voucher"
+        self.web.post("alpha", 1, f'Paytm offer Exclusive : Get Combo @ ₹10 (MRP ₹999) '
+                                  f'<a href="{self.web.base}/r/pt">{self.web.base}/r/pt</a>', time.time() - 10)
+        self.monitor().cycle()
+        self.assertEqual(self.deals(), [])
+
     def test_deal_community_links_are_trusted_without_being_fetched(self):
         self.web.post("alpha", 1, 'Sony XM5 @ ₹400 (MRP ₹34,990) <a href="https://www.desidime.com/deals/sony-xm5">details</a>',
                       time.time() - 10)

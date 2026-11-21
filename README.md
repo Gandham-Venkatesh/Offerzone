@@ -90,8 +90,8 @@ kit with a ₹999 "MRP" is "92% off".
 
 | Alert | ntfy priority | When |
 |---|---|---|
-| **Urgent** | 5 (max) | 95% off or more, saving ₹2,000 or more · 90% off or more, saving ₹20,000 or more · the post says price error / glitch · a trap |
-| **High** | 4 | 90% off or more, saving ₹1,000 or more, or priced ₹10 or less (a "₹1 deal") · only a percentage is given and it is 95% or more |
+| **Urgent** | 5 (max) | 95% off or more, saving ₹2,000 or more · 90% off or more, saving ₹20,000 or more · the post says price error / glitch (and its own numbers, if it gives any, show 70% off or more) · a trap |
+| **High** | 4 | 90% off or more, saving ₹1,000 or more, or priced ₹10 or less (a "₹1 deal") on something worth ₹50 more · only a percentage is given and it is 95% or more |
 | **Quiet** | 3 | 80% off or more, saving ₹2,000 or more · any post whose link leads to a site that is not a known store (with a warning) |
 
 A deal already alerted that turns up in three channels within 20 minutes goes up one level.
@@ -115,8 +115,10 @@ usually has. So the bar is how far the price stands below that, and it sits lowe
 | **High** | 4 | 70% to 80% below |
 | **Quiet** | 3 | 60% to 70% below (`TRACKER_DROP_PCT`) |
 
-Each needs ₹2,000 or more saved, and goes one step quieter when the product has been cheaper
-than this before.
+Each needs ₹500 or more saved (max priority: ₹2,000), and goes one step quieter when the product
+has been cheaper than this before. A give-away price is the exception: ₹10 or less, 90% or more
+below its usual price and the lowest the tracker has seen, it rings at High whatever it saves (a
+300 ml hair oil at ₹2 that usually costs ₹190).
 
 An alert is held at **High**, whatever the discount, when the reading itself is unsure: the two
 prices are not labelled, a second amount stands where the price should be, the price needs a
@@ -161,8 +163,17 @@ about applying for a card or loan, its fees and limits, or a referral scheme, or
 leads to a bank. A bank offer that comes with a product deal ("₹2,000 off with SBI credit card")
 is not one of them.
 
+**Services never alert either:** memberships and subscriptions ("Get Free 1 Month Amazon Prime
+Membership" at ₹2, YouTube Premium, Swiggy One), TV packs (Tata Play, Dish TV, Airtel DTH),
+restaurant deals (Swiggy Dineout), and offers whose links lead only to a payment app (Paytm,
+PhonePe; from a channel marked `!` these are still believed). A product that comes with a
+subscription ("Echo Dot with 6 months of Amazon Music") is still a product, and a membership for
+something on your favourites list (a gym) is judged like any deal. Phone cases and gold or
+jewellery "loots" never alert, and clothing judged by its list price alone stays at Quiet: a
+₹100 kurta with an "MRP" of ₹2,499 is an everyday sight.
+
 Ignored: "upto 90% off" banners, capped coupons of ordinary shops ("80% off up to ₹160"), amounts that belong to an
-offer (cashback, coupons, bank and exchange discounts, EMIs, recharges), ranges ("under ₹999",
+offer (cashback, wallet credits, coupons, bank and exchange discounts, EMIs, recharges), ranges ("under ₹999",
 "starting ₹599"), percentages that describe the product ("90% less oil"), posts that announce
 the deal is over, posts older than 20 minutes (60 when the channel itself could not be read in
 between), accessories and refurbished units. Every number above is a setting.

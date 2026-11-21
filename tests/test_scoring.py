@@ -5,7 +5,7 @@ from pathlib import Path
 from lootwatch.config import Settings, load_traps
 from lootwatch.db import PriceInfo
 from lootwatch.scoring import (TIER_HIGH, TIER_NORMAL, TIER_URGENT, evaluate_offer, evaluate_stated, evaluate_text, evaluate_tracked,
-                              is_accessory, is_finance_promo, is_side_product)
+                              is_accessory, is_finance_promo, is_side_product, tracker_near_miss)
 
 
 def make_settings(traps: str = "") -> Settings:
@@ -129,7 +129,7 @@ class TextVerdicts(unittest.TestCase):
         for text in ("Make A Cart Value Above ₹2999+ & Get kent ₹8000 Airfryer at ₹1",
                      "Make A Cart Value Above ₹2999+ & Get kent Airfryer Worth ₹8000 at ₹1",
                      "Instamart : Get Boat Earbuds Worth ₹2,499 At ₹9 On Orders Above ₹999",
-                     "Earbuds worth ₹2,999 at ₹1 with phone purchase", "Tata Play Binge worth ₹2,388 @ ₹1 for 1st month"):
+                     "Earbuds worth ₹2,999 at ₹1 with phone purchase", "Mixer Grinder worth ₹2,388 @ ₹1 on your 1st order"):
             with self.subTest(text=text):
                 self.assertEqual(self.tier(text), TIER_HIGH)
 
@@ -925,3 +925,100 @@ class LootChannels(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheDaysNoise(unittest.TestCase):
+    """Pushed loudly on 21 Nov 2026 and none of them a loot worth the ring, or left out and one."""
+
+    def setUp(self):
+        self.s = make_settings()
+        self.link = ["https://amzn.to/x"]
+
+    def test_memberships_subscriptions_tv_packs_and_restaurant_deals_are_not_loots(self):
+        for text in ("Free Loot : Get Free 1 Month Amazon Prime Membership.\n@ ₹2\nhttps://amzn.to/x",
+                     "99% off on - TataPlay Jingalala Saturdays Offer - TataPlay Hindi TV shows - Rs. 1\n"
+                     "Read More - https://ddime.in/x",
+                     "99% off on - Tata Play Jingalala Saturdays Hindi TV Shows HD New for ₹1",
+                     "Tata Play Binge worth ₹2,388 @ ₹1 for 1st month",
+                     "Swiggy Dineout Deals for ₹1\nhttps://amzn.to/x",
+                     "Swiggy Dineout Loot Starting at ₹11\nGo to Swiggy App > Dineout > Check Above Banner",
+                     "YouTube Premium 3 months free loot https://amzn.to/x",
+                     "Swiggy One Lite membership @ ₹1 loot https://amzn.to/x"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=self.link))
+                self.assertIsNone(evaluate_text(text, self.s, links=self.link, loot_channel=True))
+        self.assertIsNone(evaluate_stated("Amazon Prime Membership 1 Month Free", "", 2, None, self.s))
+        # A product that comes with a service, a sale for Prime members, a product named Prime: deals.
+        self.assertEqual(evaluate_text("Echo Dot (5th Gen) @ ₹199 (MRP ₹5,499) with free 6 months Amazon Music "
+                                       "subscription", self.s).tier, TIER_URGENT)
+        for text in ("Prime Day sale: boAt Airdopes 141 @ ₹199 (MRP ₹4,490)",
+                     "boAt Airdopes Prime 701 ANC @ ₹199 (MRP ₹4,490)",
+                     "Prime members: boAt Airdopes 141 @ ₹199 (MRP ₹4,490)"):
+            with self.subTest(text=text):
+                self.assertIsNotNone(evaluate_text(text, self.s))
+        # A gym membership, for an owner who asked for gym deals, is judged as any deal.
+        self.s.favourites = ["gym"]
+        self.assertIsNotNone(evaluate_text("Cult gym membership 3 months loot @ ₹9 https://amzn.to/x", self.s,
+                                           links=self.link))
+
+    def test_payment_app_offers_are_not_loots(self):
+        text = "Paytm offer Exclusive : Get Combo worth ₹999 @ ₹10\nhttps://paytm.com/offer/x"
+        self.assertIsNone(evaluate_text(text, self.s, links=["https://paytm.com/offer/x"]))
+        # From a channel the owner marked, it is believed as any post that leads somewhere to buy.
+        self.assertIsNotNone(evaluate_text(text, self.s, links=["https://paytm.com/offer/x"], loot_channel=True))
+        # A deal that also links to a payment app is still a deal.
+        self.assertIsNotNone(evaluate_text("boAt Airdopes 141 @ ₹199 (MRP ₹4,490)", self.s,
+                                           links=["https://amzn.to/x", "https://paytm.com/offer/x"]))
+
+    def test_app_credit_is_not_a_price(self):
+        for text in ("Bigbasket Again Credit ₹75\nCheck in your account & use for free shopping\nhttps://t.me/x",
+                     "Bigbasket Again Credit 75 Rs\nhttps://t.me/x",
+                     "₹75 credited to your BigBasket wallet, use it for free shopping https://t.me/x"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=["https://t.me/x"]))
+        verdict = evaluate_text("BigBasket: Fortune Sunflower Oil 1L @ ₹75\nhttps://www.bigbasket.com/pd/1", self.s,
+                                links=["https://www.bigbasket.com/pd/1"])
+        self.assertEqual((verdict.tier, verdict.label), (TIER_HIGH, "Quick loot"))
+
+    def test_a_give_away_price_needs_something_worth_having(self):
+        for text in ("100% off on - Sunfeast Marie Light - Rs. 0 (MRP ₹10)\nRead More - https://ddime.in/x",
+                     "100% off on - Sunfeast Marie Light\nDeal Price: ₹0 (MRP ₹10)"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s))
+        self.assertEqual(evaluate_text("Philips 9W LED bulb @ ₹1 (MRP ₹199)", self.s).tier, TIER_HIGH)
+        self.assertEqual(evaluate_text("Jiomart 99% off - Rs. 1\nRead More - https://ddime.in/h6UM", self.s).tier, TIER_HIGH)
+
+    def test_a_price_error_needs_numbers_that_look_like_one(self):
+        self.assertIsNone(evaluate_text("Price Error Deal: 50% Off\nhttps://amzn.to/x", self.s, links=self.link))
+        self.assertIsNone(evaluate_text("Price error!! Prestige Kettle @ ₹999 (MRP ₹1,999)", self.s))
+        self.assertIsNone(evaluate_stated("Price error: Prestige Kettle", "", 999, 1999, self.s))
+        # Numbers that bear it out, or no numbers at all: max priority, as before.
+        for verdict in (evaluate_text("Price error!! Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)", self.s),
+                        evaluate_text("Price error on this one, hurry https://amzn.to/x", self.s, links=self.link),
+                        evaluate_stated("Price error: Sony WH-1000XM5", "", 499, 34990, self.s)):
+            self.assertEqual((verdict.tier, verdict.label), (TIER_URGENT, "Price error?"))
+
+    def test_clothing_judged_by_its_list_price_alone_is_quiet(self):
+        verdict = evaluate_text("Vbuyz Blue Printed Hand Embroidery A-Line Cotton Stitched Kurta\n@ ₹100 (MRP ₹2,499)\n"
+                                "https://amzn.to/x", self.s, links=self.link)
+        self.assertEqual((verdict.tier, verdict.max_tier), (TIER_NORMAL, TIER_NORMAL))
+        self.assertIn("clothing list prices are often inflated", verdict.reason)
+        self.assertEqual(evaluate_stated("Men's Cotton T-Shirt", "", 99, 1999, self.s).tier, TIER_NORMAL)
+        self.assertEqual(evaluate_text("Women Kurta, Pant & Dupatta Sets at 88% off - Rs. 299", self.s).tier, TIER_NORMAL)
+        # A hanger for shirts is no shirt; on the price tracker clothing is measured, not claimed.
+        self.assertEqual(evaluate_text("Shirt Hanger set @ ₹99 (MRP ₹2,999)", self.s).tier, TIER_URGENT)
+        self.assertEqual(evaluate_tracked("Levi's Men Slim Fit Jeans", 499, 2999, self.s, low=499).tier, TIER_URGENT)
+
+    def test_a_give_away_price_on_the_tracker_rings_whatever_it_saves(self):
+        # Left out on 21 Nov 2026 for saving under ₹500: 99% below its usual ₹190, its lowest price.
+        verdict = evaluate_tracked("Parachute Advansed Ayurvedic Hair Oil (300 ml)", 2, 190, self.s, low=2, new_low=True)
+        self.assertEqual((verdict.tier, verdict.label, verdict.was), (TIER_HIGH, "Price drop", 190))
+        self.assertIn("a give-away price", verdict.reason)
+        # It has been that cheap before, it is worth next to nothing, or it is no give-away price.
+        self.assertIsNone(evaluate_tracked("Parachute Advansed Ayurvedic Hair Oil (300 ml)", 2, 190, self.s, low=1))
+        self.assertIsNone(evaluate_tracked("Parle-G Biscuits 100 g", 1, 10, self.s, low=1))
+        self.assertIsNone(evaluate_tracked("Dettol Soap 75 g", 25, 190, self.s, low=25))
+
+    def test_a_phone_case_is_never_logged_as_a_near_miss(self):
+        self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")
+        self.assertIn("its lowest price", tracker_near_miss(299, 1499, 299, True, None, title="Bata Men Casual Sandal"))
