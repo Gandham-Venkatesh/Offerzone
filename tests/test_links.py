@@ -186,5 +186,13 @@ class ListFiles(unittest.TestCase):
         self.assertFalse(traps[0].pattern.search("there is nothing phonetic"))
 
 
+
+class ChannelShortLinks(unittest.TestCase):
+    def test_the_channels_own_short_links_are_followed(self):
+        # Seen on 20 Nov 2026: a loot behind links.bigtricks.in or amznn.cc was taken for a link to "a site".
+        for host in ("links.bigtricks.in", "fktr.in", "bitl.li", "bitl.in", "bilty.co", "amznn.cc"):
+            with self.subTest(host=host):
+                self.assertEqual(classify_host(host), "generic")
+
 if __name__ == "__main__":
     unittest.main()

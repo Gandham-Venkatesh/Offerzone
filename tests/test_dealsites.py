@@ -292,7 +292,8 @@ class Judging(unittest.TestCase):
         # the lowest in three years. Only half its usual price, but all three at once are rare.
         stove = evaluate_tracked("Sunflare Cute 2B Toughened Glass Tornado Burner Gas Stove (2 Burners)", 609, 1229,
                                  self.s, low=609, new_low=True, mrp=8000)
-        self.assertEqual((stove.tier, stove.headline), (TIER_HIGH, "Price drop: 50% off · ₹609 (was ₹1,229)"))
+        self.assertEqual((stove.tier, stove.headline), (TIER_NORMAL, "Price drop: 50% off · ₹609 (was ₹1,229)"),
+                         "pushed, at the ordinary priority: at half its usual price fashion came loud all night")
         self.assertIn("92% off its list price of about ₹8,000, its lowest price so far", stove.reason)
         self.assertIsNone(evaluate_tracked("Stove", 609, 1229, self.s, low=550, mrp=8000), "it has been cheaper")
         self.assertIsNone(evaluate_tracked("Stove", 609, 1229, self.s, low=609, new_low=True, mrp=1500),
@@ -301,6 +302,23 @@ class Judging(unittest.TestCase):
         self.assertIsNone(evaluate_tracked("RED TAPE Walking Shoes For Men", 619, 982, self.s, low=500, mrp=4762))
         # A big share of a small price is loud, not max priority.
         self.assertEqual(evaluate_tracked("boAt Airdopes 141", 99, 1999, self.s, low=99, new_low=True).tier, TIER_HIGH)
+
+    def test_a_list_price_ten_times_too_high_is_not_believed(self):
+        # Rang at max priority twice on 20-21 Nov 2026: ₹16,990 headphones with a list price of ₹1,69,990.
+        sony = evaluate_stated("Sony New WH-CH730N Noise Cancelling Bluetooth Over Ear Headphones", "", 11740, 169990, self.s)
+        self.assertEqual(sony.tier, TIER_NORMAL)
+        self.assertIn("the list price looks ten times too high", sony.reason)
+        self.assertEqual(evaluate_stated("Sony Bravia 55 inch TV", "", 2499, 79990, self.s).tier, TIER_URGENT,
+                         "a real price error is far under a tenth of the list price")
+
+    def test_a_tracker_list_price_barely_over_the_price_is_not_believed(self):
+        # Missed on 21 Nov 2026, the minute a Titan Raga watch rang at 89% under its usual price.
+        titan = evaluate_tracked("Titan Neo Ladies V Analog Watch - For Women NS2648SM01", 274, 2739, self.s,
+                                 low=274, mrp=304)
+        self.assertEqual((titan.tier, titan.was), (TIER_URGENT, 2739))
+        self.assertIsNone(evaluate_tracked("Dove Gofresh Body Wash", 749, 2966, self.s, low=549, mrp=1208),
+                          "a list price well over the price still sets a fantasy average straight")
+        self.assertIsNone(evaluate_tracked("SONATA Analog Watch - For Men NT2606WL02", 437, 1287, self.s, low=437, mrp=486))
 
     def test_a_loot_checked_against_the_tracker(self):
         from lootwatch.scoring import confirm_loot
@@ -572,6 +590,37 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertIn("61% below its usual ₹609, its lowest price", lines)
         self.assertEqual(self.deals(), [])
 
+    def test_a_deal_many_channels_post_within_the_hour_is_pushed(self):
+        # Nine channels posted the same 80%-off perfume combo within two minutes on 20 Nov 2026; under
+        # the 85% bar for list-price-only deals it was left out. The crowd's pick is pushed, once.
+        from lootwatch import links as links_module
+
+        patcher = mock.patch.object(links_module, "GENERIC_SHORTENERS", links_module.GENERIC_SHORTENERS + ("127.0.0.1",))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.settings.feeds = []
+        channels = ["c1", "c2", "c3", "c4", "c5"]
+        self.settings.channels = channels
+        for name in channels:
+            self.web.channels[name] = [{"id": 0, "html": "Welcome", "ts": time.time() - 86400, "buttons": []}]
+        self.web.redirects["/r/beardo"] = "https://www.amazon.in/dp/B0BEARDO01"
+        post = (f"80% Off : BEARDO Godfather Perfume EDP 50 Ml &amp; Whisky Smoke Deo 120Ml<br>Deal Price: ₹299 (MRP ₹1,499)"
+                f'<br><a href="{self.web.base}/r/beardo">{self.web.base}/r/beardo</a>')
+        monitor = self.monitor()
+        monitor.cycle()
+        for number, name in enumerate(channels[:3], start=1):
+            self.web.post(name, number, post, time.time() - 30)
+        monitor.cycle()
+        self.assertEqual(self.deals(), [], "three channels are not yet a crowd")
+        self.web.post("c4", 4, post, time.time() - 20)
+        monitor.cycle()
+        (push,) = self.deals()
+        self.assertEqual(push["priority"], 3)
+        self.assertIn("posted by 4 channels within the hour", push["message"])
+        self.web.post("c5", 5, post, time.time() - 10)
+        monitor.cycle()
+        self.assertEqual(len(self.deals()), 1, "pushed once")
+
     def test_a_repeated_drop_to_the_same_price_is_judged_again(self):
         # Missed on 20 Nov 2026: a cookware set dropped to ₹1,179 once more, hours after an earlier
         # listing at that price, and was taken for the listing already seen.
@@ -595,7 +644,7 @@ class SitePagesInTheMonitor(unittest.TestCase):
             monitor.cycle()
             monitor.cycle()  # the new listing, read again: not a second push
         (push,) = self.deals()
-        self.assertEqual(push["priority"], 4)
+        self.assertEqual(push["priority"], 3)
         self.assertTrue(push["title"].startswith("Price drop: 50% off · ₹609 (was ₹1,229)"), push["title"])
 
     def test_a_loot_the_tracker_does_not_bear_out_stays_as_it_was(self):

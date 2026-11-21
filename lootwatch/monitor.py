@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections
 import concurrent.futures
+import dataclasses
 import hashlib
 import json
 import logging
@@ -34,6 +35,12 @@ log = logging.getLogger("lootwatch")
 
 OUTBOX_MAX_AGE = 30 * 60  # a loot alert delivered later than this is only noise
 LOOT_CHECK_WINDOW = 3600  # how long a loot pushed without a list price waits for the price tracker to list it
+# A deal under the bar for list-price-only deals that this many channels post within the window is
+# pushed all the same (the crowd's pick: a Beardo perfume combo at 80% off, in nine channels in two
+# minutes on 20 Nov 2026). From CROWD_MIN_DISCOUNT off.
+CROWD_CHANNELS = 4
+CROWD_WINDOW = 3600
+CROWD_MIN_DISCOUNT = 75.0
 TRACKER_MEMORY = 6 * 3600  # how long what the tracker said about a product counts
 FAIL_STREAK_NOTE = 10  # scans in a row before a source is reported as broken
 BLIND_STREAK = 3  # scans in a row without reading a single deal source before the "blind" alarm
@@ -506,6 +513,8 @@ class Monitor:
                      post_url: str, ts: Optional[float]) -> None:
         marked = self._is_loot_channel(source)
         verdict = evaluate_text(analysis_text, self.s, links=links, loot_channel=marked)
+        if verdict is None and not marked:
+            verdict = self._crowd_pick(source, analysis_text, links)
         if marked:
             # Every post of the channels the owner marked is accounted for, pushed or not.
             log.info("%s post %s: %s | %s", label, post_url,
@@ -517,6 +526,21 @@ class Monitor:
                      _first_line(text)[:80])
         if verdict is not None:
             self._announce(verdict, source, label, text, links, post_url, ts)
+
+    def _crowd_pick(self, source: str, text: str, links: List[str]) -> Optional[Verdict]:
+        """A deal under the bar on its own that CROWD_CHANNELS channels post within the hour."""
+        lower = dataclasses.replace(self.s, mrp_min_discount=CROWD_MIN_DISCOUNT,
+                                    min_discount=min(self.s.min_discount, CROWD_MIN_DISCOUNT),
+                                    urgent_min_saving=min(self.s.urgent_min_saving, self.s.min_saving))
+        verdict = evaluate_text(text, lower, links=links)
+        if verdict is None:
+            return None
+        channels = self.db.add_sighting("crowd:" + text_fingerprint(text, verdict.price), source, CROWD_WINDOW)
+        if channels < CROWD_CHANNELS:
+            return None
+        verdict.tier = verdict.max_tier = min(verdict.tier, TIER_NORMAL)
+        verdict.reason += f"; posted by {channels} channels within the hour"
+        return verdict
 
     def _is_loot_channel(self, source: str) -> bool:
         """Is this a channel marked "!" in channels.txt?"""

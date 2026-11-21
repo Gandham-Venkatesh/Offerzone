@@ -52,6 +52,9 @@ GENERIC_SHORTENERS = (
     # is read from the website, from DesiDime's channel or from somebody else's), and a link that
     # ends on a shop nobody knows gets the same warning as any other.
     "ddime.in", "visit.desidime.com",
+    # Channels' own short links (seen on 20 Nov 2026): Bigtricks, IHD Deals, Loot Deals App, Flipshope,
+    # Offerzone. Followed like any short link: trusted only where they end in a known shop.
+    "links.bigtricks.in", "fktr.in", "bitl.li", "bitl.in", "bilty.co", "amznn.cc",
 )
 
 # Query parameters that track the click rather than identify the page.

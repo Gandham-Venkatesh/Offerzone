@@ -654,8 +654,10 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
         return None
     reason = f"{discount:.0f}% off, saves {fmt_inr(saving)}"
     cap = TIER_URGENT
+    if tenfold_mrp(price, mrp):
+        cap, reason = TIER_NORMAL, reason + " (the list price looks ten times too high: check it)"
     # The price stands in a field, not on a line of the text, so a condition can be anywhere in it.
-    if parsed.conditional or states_condition(parsed.text):
+    elif parsed.conditional or states_condition(parsed.text):
         cap, reason = TIER_HIGH, reason + " (needs a qualifying purchase)"
     return _hedge(_favoured(Verdict(min(tier, cap), reason, price, mrp, discount, max_tier=cap), text, settings), parsed)
 
@@ -677,8 +679,13 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     if not in_stock or is_phone_case(title):
         return None
     reference, called = usual, "it usually costs"
-    if usual and mrp and mrp < usual:
+    # A "list price" barely above the price and under a third of the usual one is no list price (a
+    # Titan Neo watch at ₹274, usually ₹2,739, "list price ₹304", missed on 21 Nov 2026).
+    implausible_list = bool(mrp and usual and mrp <= price * 1.25 and usual >= 3 * mrp and usual < 20 * price)
+    if usual and mrp and mrp < usual and not implausible_list:
         reference, called = mrp, "list price"
+    if implausible_list:
+        mrp = None
     hit = match_trap(parse_text(title), settings.traps, price=price)
     if hit:
         trap = hit[0]
@@ -714,7 +721,9 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     if tier == TIER_URGENT and saving < settings.urgent_min_saving:
         tier = TIER_HIGH  # a big share of a small price: loud, but not max priority
     if lowest_yet:
-        tier = max(tier, TIER_HIGH)
+        # Ordinary priority: on 20-21 Nov it also fired for fashion at half its usual price (Red
+        # Tape, Marks & Spencer), seven loud pushes in a night. Favourites still ring louder.
+        tier = max(tier, TIER_NORMAL)
     reason = (f"{drop:.0f}% below the {fmt_inr(reference)} it usually costs" if called == "it usually costs"
               else f"{drop:.0f}% below its list price of about {fmt_inr(reference)}")
     if lowest_yet and called == "it usually costs":
@@ -795,7 +804,9 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
             return None
         reason = f"{discount:.0f}% off, saves {fmt_inr(parsed.saving)}"
         cap = TIER_URGENT
-        if not confident:
+        if tenfold_mrp(parsed.price, parsed.mrp):
+            cap, reason = TIER_NORMAL, reason + " (the list price looks ten times too high: check it)"
+        elif not confident:
             cap, reason = TIER_HIGH, reason + " (prices not labelled)"
         elif parsed.ambiguous:
             cap, reason = TIER_HIGH, reason + " (another amount stands beside the MRP)"
@@ -850,6 +861,14 @@ def _ladder(discount: float, saving: float, price: Optional[float], settings: Se
     if discount >= max(settings.min_discount, settings.mrp_min_discount):
         return TIER_NORMAL if saving >= settings.urgent_min_saving else None
     return None
+
+
+def tenfold_mrp(price: Optional[float], mrp: Optional[float]) -> bool:
+    """A list price that looks ten times too high, an extra zero: "₹11,740 (MRP ₹1,69,990)" for
+    headphones whose list price is ₹16,990 rang at max priority twice on 20 Nov 2026. The price is
+    then an ordinary one for a product a tenth that dear. (A real price error is far under the
+    tenth: a ₹79,990 TV at ₹2,499. Watched devices such as an iPhone are judged by traps.txt.)"""
+    return bool(price and mrp and price >= 3000 and mrp >= 10 * price and price >= 0.5 * mrp / 10)
 
 
 def is_favourite(text: str, settings: Settings) -> bool:
