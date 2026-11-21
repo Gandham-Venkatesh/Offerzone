@@ -818,6 +818,33 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual(pushes[0]["click"], "https://www.amazon.in/dp/B0IDEAPAD1")
         self.assertIn("PriceHistory tracker", pushes[0]["message"])
 
+    def test_one_push_per_product_not_per_size(self):
+        # A shoe that drops in nine sizes is listed by the tracker nine times: one deal, one push.
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 60))
+        old = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 7200))
+        average = '<p class="phd-range"><span>Low ₹5,990</span> <span>High ₹58,000</span></p>' \
+                  '<p class="phd-save">₹46,010 below its average</p>'
+        self.web.pages["/new"] = tracker_page(tracker_card("old-one", "Old one", 5990, average, stamp=old))
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"):
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(
+                tracker_card("ideapad-grey", "Lenovo IdeaPad Slim 3 (Grey, 8 GB)", 5990, average, stamp=stamp,
+                             product="B0IDEAPAD1", low="1"),
+                tracker_card("ideapad-blue", "Lenovo IdeaPad Slim 3 (Blue, 16 GB)", 5990, average, stamp=stamp,
+                             product="B0IDEAPAD2", low="1"),
+                tracker_card("vivobook", "ASUS Vivobook 15 (Silver, 8 GB)", 5990, average, stamp=stamp,
+                             product="B0VIVOBOOK", low="1"),
+                tracker_card("old-one", "Old one", 5990, average, stamp=old))
+            with self.assertLogs("lootwatch", level="INFO") as logs:
+                monitor.cycle()
+        titles = [push["title"] for push in self.deals()]
+        self.assertEqual(len(titles), 2, titles)
+        self.assertEqual(sum("IdeaPad" in title for title in titles), 1)
+        self.assertTrue(any("Vivobook" in title for title in titles))
+        self.assertIn("is another size or colour of a product pushed lately", "\n".join(logs.output))
+
     def test_a_page_that_stops_showing_cards_is_reported_as_failing(self):
         self.web.pages["/new"] = "<html><body>Just a moment...</body></html>"
         with mock.patch("lootwatch.monitor.site_reader", return_value=parse_desidime):

@@ -55,6 +55,9 @@ GENERIC_SHORTENERS = (
     # Channels' own short links (seen on 20 Nov 2026): Bigtricks, IHD Deals, Loot Deals App, Flipshope,
     # Offerzone. Followed like any short link: trusted only where they end in a known shop.
     "links.bigtricks.in", "fktr.in", "bitl.li", "bitl.in", "bilty.co", "amznn.cc",
+    # Flipshope's Flipkart links (21 Nov 2026: its "278 : https://fpkrt.cc/..." loot was left out as a
+    # link to no shop, while the same deal from two other channels was pushed).
+    "fpkrt.cc",
 )
 
 # Query parameters that track the click rather than identify the page.
@@ -190,6 +193,23 @@ def same_product_name(first: str, second: str) -> bool:
         return False
     shared = sum(1 for word in short if word in long_ or (word in numbered and word in run_together))
     return shared >= (len(short) if len(short) <= 3 else len(short) - 1)
+
+
+# "(Blue, 13.5)", "(Black, 10)", "(Onyx Black, 256 GB)", "(UK 8)", "(XL)": the size or colour a store
+# names after a product. A model number in brackets ("(UA65DUE77AKLXL)") is not one.
+_VARIANT_TAIL = re.compile(
+    r"\s*\((?:[^()]*,[^()]*|\s*(?:uk|us|eu|ind?)?\s*\d{1,2}(?:\.\d)?\s*"
+    r"|\s*(?:xxs|xs|s|m|l|xl|xxl|xxxl|\dxl|free\s*size)\s*)\)\s*$", re.I)
+
+
+def model_name(title: str) -> str:
+    """A product's name without the size or colour after it, lowercased: the nine sizes of one shoe are
+    one model. "" when the name ends in no such group."""
+    title = title.strip()
+    base = _VARIANT_TAIL.sub("", title)
+    if base == title or len(base) < 10:
+        return ""
+    return re.sub(r"\s+", " ", base).lower()[:100]
 
 
 def text_fingerprint(text: str, price: Optional[float]) -> str:

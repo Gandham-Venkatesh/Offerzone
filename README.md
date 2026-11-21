@@ -29,7 +29,7 @@ Each scan (default: every 60 seconds) it looks in four places:
    new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
    list of drops covers Amazon and is read every 20 seconds (a line marked `!` in `feeds.txt`);
-   and 26 public Telegram channels are read as a safety net. A loot a channel posts without a
+   and 25 public Telegram channels are read as a safety net. A loot a channel posts without a
    list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
    far below its usual price, a second push says "Checked loot" at high or max priority. A
@@ -118,7 +118,11 @@ usually has. So the bar is how far the price stands below that, and it sits lowe
 Each needs ₹500 or more saved (max priority: ₹2,000), and goes one step quieter when the product
 has been cheaper than this before. A give-away price is the exception: ₹10 or less, 90% or more
 below its usual price and the lowest the tracker has seen, it rings at High whatever it saves (a
-300 ml hair oil at ₹2 that usually costs ₹190).
+300 ml hair oil at ₹2 that usually costs ₹190). A big-ticket drop counts from half its usual price,
+at Quiet: the lowest price the tracker has seen, 60% or more under its list price and ₹5,000 or more
+saved (an LG 27-inch 4K monitor at about ₹12,800 that usually costs ₹30,400). Clothing and footwear
+keep the 60% bar. A product the tracker lists in several sizes or colours (a shoe in nine sizes) is
+pushed once.
 
 An alert is held at **High**, whatever the discount, when the reading itself is unsure: the two
 prices are not labelled, a second amount stands where the price should be, the price needs a
@@ -132,8 +136,8 @@ be read and their deals are coupons and one-off loots:
 
 | Alert | ntfy priority | When |
 |---|---|---|
-| **High** | 4 | a coupon that takes 80% or more off the order it needs ("₹160 off on ₹199") |
-| **Quiet** | 3 | a coupon worth 60% to 80% of its order (`QUICK_COUPON_PCT`) · a post that calls something a loot and names a price ("Zepto loot @ 24"), although no list price can be checked · a hint to look inside an app ("Instamart loot: search Shampoo, sort by discount high to low"; Ajio, Myntra and Nykaa count here too) (`QUICK_LOOTS` switches the last two off) |
+| **High** | 4 | a coupon that takes 80% or more off the order it needs ("₹160 off on ₹199") · in the quick-delivery apps (Instamart, Zepto, Blinkit, BigBasket, JioMart, Flipkart Minutes, Swiggy): a loot ("Zepto loot @ 24"), a product at ₹99 or less, a product at 80% or more off ("84% off on Zepto: Oziva tablets, ₹159"), or a hint to look inside the app ("Instamart loot: search Shampoo, sort by discount high to low") |
+| **Quiet** | 3 | a coupon worth 60% to 80% of its order (`QUICK_COUPON_PCT`) · a loot with a price in the other apps ("Myntra loot @ 146"), although no list price can be checked · the same hints for Ajio, Myntra and Nykaa (`QUICK_LOOTS` switches loots and hints off) |
 
 A percentage coupon is counted at what its cap leaves of it: "80% off up to ₹50 on orders above
 ₹499" is a tenth of the bill and stays quiet. These never ring at max priority, and they are
@@ -390,7 +394,7 @@ the two channels with the others. What to know:
   however it arrives.
 - **Public channels can be just as fast:** join them with the same Telegram account (mute and
   archive them there, so your phone stays quiet). Telegram then pushes their posts to the login as
-  they appear, and the scan log says `Telegram pushes the posts of N of the 26 public channels`.
+  they appear, and the scan log says `Telegram pushes the posts of N of the 25 public channels`.
   Channels it has not joined are read from their web page once a minute, as before.
 - The monitor only reads. Telegram's terms allow that for your own account, but it is your account
   that does it; if Telegram ever asks it to slow down, it reads less often on its own.

@@ -35,7 +35,6 @@ epicdeals_in                  # Epic Deals (41K) - about 19 posts an hour
 bigtricksin                   # Bigtricks Official (24K)
 lootalerts                    # LootAlerts (21K) - about 11 posts an hour
 IHDBroadcast                  # IHD Deals Broadcast (20K)
-DesidimeHot                   # DesiDime handpicked (18K)
 
 # --- invite-only: read only when a Telegram account is set up (README: "Invite-only channels").
 #     The "!" marks a loot channel: its own word for a deal is believed. Every post of it that links
@@ -57,3 +56,5 @@ swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots (6K)
 #     the website behind it is read directly instead: dealsmagnet
 #     removed on 20 Nov 2026 at the owner's request, its "loots" being sale collections and ordinary
 #       fashion (a sari): GrabOnIndiaOfficial
+#     removed on 21 Nov 2026 at the owner's request, its picks not good enough (an unbranded projector
+#       at "88% off"); DesiDime's own channel and website are still read: DesidimeHot

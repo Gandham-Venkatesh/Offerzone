@@ -20,8 +20,8 @@ import requests
 from .config import Settings, WatchItem
 from .db import DB
 from .fetch import Fetcher, policy_for
-from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host_of, product_key, same_product_name,
-                    text_fingerprint)
+from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host_of, model_name, product_key,
+                    same_product_name, text_fingerprint)
 from .notify import Notifier, build_payload
 from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, confirm_loot, evaluate_offer,
                       evaluate_stated, evaluate_text, evaluate_tracked, is_payment_app, looks_like_loot, tracker_near_miss,
@@ -126,6 +126,7 @@ class Monitor:
         self._fast_feeds = [url for url in settings.fast_feeds if url in settings.feeds]
         self._push_lags: List[float] = []  # how late Telegram pushed posts, since the last scan line
         self._watch_checked: Dict[str, float] = {}
+        self._near_logged: Dict[str, float] = {}  # tracker near misses logged lately: once an hour is enough
         self._ntfy_pause_until = 0.0
         self._last_ping = 0.0
         self._warned_no_topic = False
@@ -468,16 +469,36 @@ class Monitor:
                     verdict = evaluate_stated(item.title, item.body, item.price, item.mrp, self.s, links=item.links)
                     near = "" if verdict or not item.mrp or not item.price or item.price >= item.mrp * 0.25 else \
                         f"{(item.mrp - item.price) / item.mrp * 100:.0f}% off a list price of {fmt_inr(item.mrp)}"
-                if near:
-                    # Close to a loot, left out: the day's log shows it.
+                near_key = f"{item.url}:{int(item.price or 0)}"
+                if near and time.time() - self._near_logged.get(near_key, 0.0) > 3600:
+                    # Close to a loot, left out: the day's log shows it (once, not at every relisting).
+                    self._near_logged[near_key] = time.time()
                     log.info("skipped %s %s: %s | %s", label, item.url, near, _first_line(item.title)[:80])
                 if verdict and item.tracked:
                     verdict = self._still_there(verdict, item)
+                if verdict and item.tracked and self._another_variant(item.title, verdict):
+                    continue
                 if verdict:
                     self._announce(verdict, source, label, item.text, item.links, item.url, item.ts)
             except Exception:
                 log.exception("failed to process feed item %s", item.url)
         return ""
+
+    def _another_variant(self, title: str, verdict: Verdict) -> bool:
+        """Another size or colour of this product was pushed lately, at least as loud: a shoe that drops
+        in nine sizes is one deal, not nine pushes."""
+        model = model_name(title)
+        if not model:
+            return False
+        key, now, name = "model:" + model, time.time(), title.strip().lower()[:120]
+        stamp, _, rest = self.db.get(key).partition(":")
+        tier, _, pushed = rest.partition(":")
+        if (stamp.isdigit() and tier.isdigit() and now - int(stamp) < self.s.dedup_hours * 3600
+                and int(tier) >= verdict.tier and pushed != name):
+            log.info("not pushed: %s is another size or colour of a product pushed lately", title[:80])
+            return True
+        self.db.set(key, f"{int(now)}:{verdict.tier}:{name}")
+        return False
 
     def _scan_watch(self, item: WatchItem, deadline: float) -> None:
         source = source_key("watch", item.url)

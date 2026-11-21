@@ -1,8 +1,8 @@
 import unittest
 
 from lootwatch.config import load_channels, load_traps, load_watchlist, parse_channel
-from lootwatch.links import (LinkResolver, classify_host, deal_links, host_of, product_key, same_product_name,
-                             text_fingerprint)
+from lootwatch.links import (LinkResolver, classify_host, deal_links, host_of, model_name, product_key,
+                             same_product_name, text_fingerprint)
 from tests.helpers import FakeWeb
 
 
@@ -190,9 +190,26 @@ class ListFiles(unittest.TestCase):
 class ChannelShortLinks(unittest.TestCase):
     def test_the_channels_own_short_links_are_followed(self):
         # Seen on 20 Nov 2026: a loot behind links.bigtricks.in or amznn.cc was taken for a link to "a site".
-        for host in ("links.bigtricks.in", "fktr.in", "bitl.li", "bitl.in", "bilty.co", "amznn.cc"):
+        for host in ("links.bigtricks.in", "fktr.in", "bitl.li", "bitl.in", "bilty.co", "amznn.cc", "fpkrt.cc"):
             with self.subTest(host=host):
                 self.assertEqual(classify_host(host), "generic")
+
+
+class ModelNames(unittest.TestCase):
+    def test_sizes_and_colours_are_one_model(self):
+        self.assertEqual(model_name("ADIDAS ULTRABOOST 5 Running Shoes For Men (Blue, 13.5)"),
+                         model_name("ADIDAS ULTRABOOST 5 Running Shoes For Men (Black, 9)"))
+        for title, model in (("Bata Women Flats Sandal (Red, 6)", "bata women flats sandal"),
+                             ("Apple iPhone 15 (Black, 128 GB)", "apple iphone 15"),
+                             ("Puma Men T-Shirt (XL)", "puma men t-shirt"), ("Nike Air Max (UK 8)", "nike air max")):
+            with self.subTest(title=title):
+                self.assertEqual(model_name(title), model)
+
+    def test_a_model_number_or_a_screen_size_is_not_a_variant(self):
+        for title in ("SAMSUNG Crystal 4K 163 cm (65 inch) Ultra HD Smart TV (UA65DUE77AKLXL)",
+                      "LG 27 (68.58 cm) Ultrafine UHD 4K IPS Display", "Titan Neo Analog Watch - For Men NR1849SL01"):
+            with self.subTest(title=title):
+                self.assertEqual(model_name(title), "")
 
 if __name__ == "__main__":
     unittest.main()

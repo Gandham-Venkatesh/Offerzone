@@ -1036,6 +1036,35 @@ class TheDaysNoise(unittest.TestCase):
                 self.assertIsNone(evaluate_text(text, self.s, links=["https://bitli.in/x"]))
                 self.assertIsNone(evaluate_text(text, self.s, links=["https://bitli.in/x"], loot_channel=True))
 
+    def test_a_big_ticket_drop_rings_from_half_its_usual_price(self):
+        # Left out on 21 Nov 2026 under the 60% bar: 58% below its usual ₹30,426, 73% off its list price.
+        verdict = evaluate_tracked("LG 27 (68.58 cm) Ultrafine UHD 4K IPS Display", 12779, 30426, self.s, low=12779,
+                                   new_low=True, mrp=47330)
+        self.assertEqual((verdict.tier, verdict.label), (TIER_NORMAL, "Price drop"))
+        self.assertIn("saving ₹17,647", verdict.reason)
+        cases = (
+            ("ADIDAS ULTRABOOST 5 Running Shoes For Men (Blue, 13.5)", 7187, 15623, 7187, 17968),  # footwear
+            ("Wrangler Men's Loose Fit Jeans", 5615, 13059, 5615, None),  # clothing, and no list price
+            ("Microsoft Surface Headphones 2", 20084, 43660, 20084, 40168),  # only 50% off its list price
+            ("Samsonite Freeform Trolley Bag (75 cm)", 13602, 56676, 13602, 17438),  # an average above the list price
+            ("Lifelong Desk Lamp", 1800, 4000, 1800, 6000),  # saves under ₹5,000
+            ("LG 27 (68.58 cm) Ultrafine UHD 4K IPS Display", 12779, 30426, 11999, 47330),  # it has been cheaper
+        )
+        for title, price, usual, low, mrp in cases:
+            with self.subTest(title=title, low=low):
+                self.assertIsNone(evaluate_tracked(title, price, usual, self.s, low=low, mrp=mrp))
+
+    def test_a_quick_app_product_at_80_percent_off_rings(self):
+        for text in ("84% off on - Zepto - Oziva Apple Cider Vinegar with Moringa Tablets - Rs. 159\n"
+                     "Read More - https://ddime.in/x", "Zepto: Oziva ACV Tablets @ ₹159 (MRP ₹999)"):
+            with self.subTest(text=text):
+                verdict = evaluate_text(text, self.s, links=["https://ddime.in/x"])
+                self.assertEqual((verdict.tier, verdict.label), (TIER_HIGH, "Quick loot"))
+        # Worth next to nothing, or a sale banner: no.
+        self.assertIsNone(evaluate_text("Zepto: Lays Chips @ ₹2 (MRP ₹20)", self.s))
+        self.assertIsNone(evaluate_text("Upto 85% off on Zepto: snacks from ₹9", self.s))
+        self.assertIsNone(evaluate_text("Myntra: Oziva ACV Tablets @ ₹159 (MRP ₹999)", self.s))
+
     def test_a_phone_case_is_never_logged_as_a_near_miss(self):
         self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")
         self.assertIn("its lowest price", tracker_near_miss(299, 1499, 299, True, None, title="Bata Men Casual Sandal"))

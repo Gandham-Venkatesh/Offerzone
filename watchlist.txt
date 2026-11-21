@@ -109,6 +109,16 @@
 ! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DDell&sort=price_asc | 2300 | Flipkart Dell monitors
 ! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.brand%255B%255D%3DBenQ&sort=price_asc | 2800 | Flipkart BenQ monitors
 
+# --- 50% off or more, newest first (checked on 21 Nov 2026; Flipkart ignores this filter for TVs and
+#     tablets, and on cameras, soundbars, smart watches and headphones it lists no-name goods with
+#     made-up list prices). Price 0: a product new to the page at 85%+ off, saving Rs 2,000+, alerts.
+! https://www.flipkart.com/laptops/pr?sid=6bo%2Cb5g&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | Flipkart laptops 50%+ off, newest
+! https://www.flipkart.com/monitors/pr?sid=6bo%2Cg0i%2C9no&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | Flipkart monitors 50%+ off, newest
+! https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&p%5B%5D=facets.discount_range_v1%255B%255D%3D50%2525%2Bor%2Bmore&sort=recency_desc | 0 | Flipkart smartphones 50%+ off, newest
+# --- your favourites (favourites.txt): the cheapest real treadmill was Rs 7,499 on 21 Nov 2026; the
+#     popular whey proteins alert on a fall from their own price.
+https://www.flipkart.com/search?q=treadmill&sort=price_asc | 3000 | Flipkart treadmills
+https://www.flipkart.com/search?q=whey+protein&sort=popularity | | Flipkart popular whey protein
 # --- the most popular products of each category. No floor: each product alerts on a fall from its own price.
 https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity | | Flipkart popular smartphones
 https://www.flipkart.com/mobiles/pr?sid=tyy%2C4io&p%5B%5D=facets.type%255B%255D%3DSmartphones&sort=popularity&page=2 | | Flipkart popular smartphones 2

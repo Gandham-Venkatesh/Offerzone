@@ -496,7 +496,30 @@ def _quick_commerce(parsed: ParsedText, settings: Settings, hosts: Sequence[str]
         verdict = _coupon(parsed, settings, brand)
         if verdict:
             return verdict
-    return _price_loot(parsed, settings, hosts) or _app_hint(parsed, settings, hosts)
+    return _instant_discount(parsed, hosts) or _price_loot(parsed, settings, hosts) or _app_hint(parsed, settings, hosts)
+
+
+# A quick-delivery app's product at 80% or more off ("84% off on - Zepto - Oziva Apple Cider Vinegar
+# with Moringa Tablets", left out on 21 Nov 2026 for costing over ₹99): what these apps sell carries
+# a printed MRP, so a discount this deep there is a loot, if it is worth GIVEAWAY_MIN_SAVING.
+_INSTANT_LOOT_DISCOUNT = 80.0
+
+
+def _instant_discount(parsed: ParsedText, hosts: Sequence[str]) -> Optional[Verdict]:
+    app = _app_named(parsed.text, hosts, quick_only=False)
+    if app not in _INSTANT_APPS or _BULLION.search(parsed.text):
+        return None
+    if parsed.pair_conf in ("labelled", "arrow") and parsed.price and parsed.calc_discount >= _INSTANT_LOOT_DISCOUNT:
+        price, mrp, discount, saving = parsed.price, parsed.mrp, parsed.calc_discount, parsed.saving
+    elif parsed.pct_claim is not None and parsed.claim_price and parsed.pct_claim >= _INSTANT_LOOT_DISCOUNT:
+        price, mrp, discount = parsed.claim_price, None, min(parsed.pct_claim, 99.5)
+        saving = price * discount / (100.0 - discount)
+    else:
+        return None
+    if saving < GIVEAWAY_MIN_SAVING:
+        return None
+    return Verdict(TIER_HIGH, f"{app} at {fmt_inr(price)}, {discount:.0f}% off", price, mrp, discount,
+                   label="Quick loot", max_tier=TIER_HIGH)
 
 
 # A loot at a few rupees is one wherever it leads.
@@ -771,7 +794,9 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     # missed on 20 Nov 2026 (a gas stove at ₹609 that usually costs ₹1,229, list price ₹8,000).
     record_low = bool(new_low) or (low is not None and price <= low * 1.03)
     lowest_yet = record_low and drop >= LOWEST_YET_DROP_PCT and off_list >= settings.min_discount
-    if drop < settings.tracker_drop_pct and not lowest_yet:
+    big_ticket = (record_low and drop >= BIG_TICKET_DROP_PCT and off_list >= BIG_TICKET_OFF_LIST
+                  and saving >= BIG_TICKET_SAVING and not is_clothing(title) and not _FOOTWEAR.search(title))
+    if drop < settings.tracker_drop_pct and not lowest_yet and not big_ticket:
         return None
     middle = (settings.tracker_drop_pct + settings.urgent_drop_pct) / 2
     tier = TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle else TIER_NORMAL
@@ -783,8 +808,10 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
         tier = max(tier, TIER_NORMAL)
     reason = (f"{drop:.0f}% below the {fmt_inr(reference)} it usually costs" if called == "it usually costs"
               else f"{drop:.0f}% below its list price of about {fmt_inr(reference)}")
-    if lowest_yet and called == "it usually costs":
+    if (lowest_yet or big_ticket) and called == "it usually costs":
         reason += f" and {off_list:.0f}% off its list price of about {fmt_inr(mrp)}"
+    if big_ticket and drop < settings.tracker_drop_pct and not lowest_yet:
+        reason += f", saving {fmt_inr(saving)}"
     if at_low:
         reason += ", its lowest price so far"
     else:
@@ -801,6 +828,18 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
 # under its list price, must stand.
 TRACKED_MIN_SAVING = 500.0
 LOWEST_YET_DROP_PCT = 45.0
+
+# A big-ticket drop: half its usual price or less, the lowest the tracker has seen, 60% or more under
+# its list price and ₹5,000 or more saved. The 60% bar is for everyday prices: an LG 27" 4K monitor
+# at about ₹12,800 that usually costs ₹30,426 (58% below it, ₹17,600 saved) was left out on 21 Nov
+# 2026. Clothing and footwear keep the ordinary bar: their list prices are fiction, and a shoe comes
+# in a dozen sizes, each listed as a drop of its own.
+BIG_TICKET_DROP_PCT = 50.0
+BIG_TICKET_OFF_LIST = 60.0
+BIG_TICKET_SAVING = 5000.0
+_FOOTWEAR = re.compile(
+    r"\b(?:shoes?|sneakers?|sandals?|slippers?|flip[- ]?flops?|slides?|heels|boots?|loafers?|floaters?|clogs?"
+    r"|crocs|footwear|flats|moccasins?)\b", re.I)
 
 # A loot posted without a list price, found again on the price tracker's list: how far below the
 # product's own usual price it must stand to count as a big loot, and the least it must save.
