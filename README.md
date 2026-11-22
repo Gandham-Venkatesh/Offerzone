@@ -119,16 +119,19 @@ Each needs ₹500 or more saved (max priority: ₹2,000), and goes one step quie
 has been cheaper than this before. A give-away price is the exception: ₹10 or less, 90% or more
 below its usual price and the lowest the tracker has seen, it rings at High whatever it saves (a
 300 ml hair oil at ₹2 that usually costs ₹190). A big-ticket drop counts from half its usual price,
-at Quiet: the lowest price the tracker has seen, 60% or more under its list price and ₹5,000 or more
-saved (an LG 27-inch 4K monitor at about ₹12,800 that usually costs ₹30,400). Clothing and footwear
-keep the 60% bar. A product the tracker lists in several sizes or colours (a shoe in nine sizes) is
-pushed once.
+at Quiet: the lowest price the tracker has seen, 60% or more under its list price and ₹3,000 or more
+saved (an LG 27-inch 4K monitor at about ₹12,800 that usually costs ₹30,400; a Preethi 3-burner
+glass gas stove at ₹3,284 that usually costs ₹6,569). Clothing and footwear, whose usual and list
+prices are the least real, count from 70% below their usual price and ring at High only from 80%. A
+product the tracker lists in several sizes or colours (a shoe in nine sizes) is pushed once.
 
 **Flipkart products are looked at on Flipkart before they ring**, whoever reports them (the price
 tracker, a deal site, a channel): sold out there, it is not pushed; far dearer there than the post
 says, with no coupon or card offer named, the loot is over and is not pushed; in stock, the push says
 so and at what price. A page that cannot be read changes nothing. From a channel marked `!` nothing
-is dropped this way: a sold-out loot comes with a warning instead. (On 21 Nov 2026, 24 of 42
+is dropped this way: a sold-out loot comes with a warning instead. Flipkart's answer is kept for a
+while (sold out: half an hour; in stock: two minutes), since the tracker lists a drop again every few
+minutes and Flipkart refuses quick checks that come too often. (On 21 Nov 2026, 24 of 42
 Flipkart drops on the tracker were sold out when checked, among them every cheap watch.)
 
 An alert is held at **High**, whatever the discount, when the reading itself is unsure: the two

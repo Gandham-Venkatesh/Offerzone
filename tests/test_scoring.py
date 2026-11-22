@@ -1054,6 +1054,30 @@ class TheDaysNoise(unittest.TestCase):
             with self.subTest(title=title, low=low):
                 self.assertIsNone(evaluate_tracked(title, price, usual, self.s, low=low, mrp=mrp))
 
+    def test_clothing_and_footwear_on_the_tracker_count_from_70_percent(self):
+        # The night of 21-22 Nov 2026: nine of fifteen pushes were jeans, shirts and sandals at 64-68%.
+        for title, price, usual in (("LEVI'S Men Slim Mid Rise Black Jeans", 844, 2659),
+                                    ("PUMA Vitality Connect Running Shoes For Men (Grey, 10)", 1304, 3716),
+                                    ("REEBOK CLASSIC LEATHER For Men (White, 10)", 2577, 5603),
+                                    ("Skechers UPPER CUT NEO JOGGER - LANTIS Casuals For Men (Beige, 6)", 3018, 7185)):
+            with self.subTest(title=title):
+                self.assertIsNone(evaluate_tracked(title, price, usual, self.s, low=price, mrp=usual * 2))
+        self.assertEqual(evaluate_tracked("RED TAPE Casual Shoes for Men", 1555, 5590, self.s, low=1555).tier, TIER_NORMAL)
+        self.assertEqual(evaluate_tracked("crocs Men's, Women's Adult Classic Flip-Flop/Slide", 276, 1649, self.s,
+                                          low=276).tier, TIER_HIGH)
+        # The rest keep the 60% bar, and 70% is high priority for them.
+        self.assertEqual(evaluate_tracked("KODAK H3221 Photo & Video Head Tripod Ball Head", 797, 2657, self.s,
+                                          low=797).tier, TIER_HIGH)
+        self.assertEqual(evaluate_tracked("Safari Good Luck Minis - Ranch 8 Pcs", 990, 2763, self.s, low=990).tier,
+                         TIER_NORMAL)
+
+    def test_a_kitchen_appliance_at_half_price_is_a_big_ticket_drop(self):
+        # Left out on the night of 21-22 Nov 2026 for saving under ₹5,000: 50% below its usual ₹6,569.
+        verdict = evaluate_tracked("Preethi Luxe pro 3 Burner Glass Manual Gas Stove (3 Burners)", 3284, 6569, self.s,
+                                   low=3284, new_low=True, mrp=9952)
+        self.assertEqual(verdict.tier, TIER_NORMAL)
+        self.assertIn("saving ₹3,285", verdict.reason)
+
     def test_a_quick_app_product_at_80_percent_off_rings(self):
         for text in ("84% off on - Zepto - Oziva Apple Cider Vinegar with Moringa Tablets - Rs. 159\n"
                      "Read More - https://ddime.in/x", "Zepto: Oziva ACV Tablets @ ₹159 (MRP ₹999)"):

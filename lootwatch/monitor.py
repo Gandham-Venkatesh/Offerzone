@@ -12,7 +12,7 @@ import os
 import re
 import threading
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlsplit
 
 import requests
@@ -28,7 +28,7 @@ from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, 
                       why_skipped)
 from .sources.dealsites import SiteError, site_label, site_reader
 from .sources.feeds import FeedError, parse_feed
-from .sources.stores import extract_page, request_headers
+from .sources.stores import Offer, extract_page, request_headers
 from .sources.telegram import parse_channel_page
 from .textparse import fmt_inr
 
@@ -42,6 +42,10 @@ LOOT_CHECK_WINDOW = 3600  # how long a loot pushed without a list price waits fo
 # Before a price tracker's Flipkart drop is pushed, its Flipkart page is read once: the owner found
 # the tracker's Flipkart watches sold out every time, even opened the second they rang (20-21 Nov).
 STOCK_CHECK_SECONDS = 6.0
+# How long Flipkart's answer on a product is kept: sold out stays sold out for half an hour, in stock
+# is believed for two minutes.
+STOCK_SOLD_OUT_MEMORY = 1800.0
+STOCK_IN_STOCK_MEMORY = 120.0
 CROWD_CHANNELS = 4
 CROWD_WINDOW = 3600
 CROWD_MIN_DISCOUNT = 75.0
@@ -144,6 +148,7 @@ class Monitor:
         self._push_lags: List[float] = []  # how late Telegram pushed posts, since the last scan line
         self._watch_checked: Dict[str, float] = {}
         self._near_logged: Dict[str, float] = {}  # tracker near misses logged lately: once an hour is enough
+        self._stock_answers: Dict[str, Tuple[Offer, float]] = {}  # Flipkart's last word on a product, and when
         self._ntfy_pause_until = 0.0
         self._last_ping = 0.0
         self._warned_no_topic = False
@@ -343,16 +348,12 @@ class Monitor:
         if not url:
             return verdict
         verdict.stock_checked = True
-        result = self.fetcher.peek(url, timeout=STOCK_CHECK_SECONDS)
-        offer = None
-        if result.ok:
-            page = extract_page(url, result.text)
-            offer = page.offers[0] if page.kind == "product" and page.offers else None
+        offer, problem, when = self._flipkart_offer(url)
         name = _first_line(item.title)[:70]
         if offer is not None and offer.in_stock is False:
             self._count("stock_sold_out")
-            log.info("stock check: sold out on Flipkart already, not pushed (listed %s ago at %s) | %s",
-                     _age(time.time() - item.ts) if item.ts else "?", fmt_inr(item.price), name)
+            log.info("stock check: sold out on Flipkart already, not pushed (listed %s at %s%s) | %s",
+                     _age(time.time() - item.ts) if item.ts else "?", fmt_inr(item.price), when, name)
             return None
         if offer is not None and offer.price > item.price * 1.15 + 1:
             self._count("stock_price_up")
@@ -366,8 +367,28 @@ class Monitor:
         else:
             self._count("stock_unknown")
             log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
-                     f"could not read the page ({result.problem or 'no product data'})", name)
+                     f"could not read the page ({problem})", name)
         return verdict
+
+    def _flipkart_offer(self, url: str) -> Tuple[Optional[Offer], str, str]:
+        """What Flipkart's own page says of a product now: (offer or None, why not, when it was read
+        if not just now). The tracker lists a drop again every few minutes, and Flipkart refuses quick
+        checks that come too often (ten of 36 on the night of 21-22 Nov 2026), so an answer is kept:
+        "sold out" for half an hour, "in stock" for two minutes."""
+        key, now = product_key(url) or url, time.time()
+        kept = self._stock_answers.get(key)
+        if kept is not None:
+            offer, at = kept
+            if now - at < (STOCK_SOLD_OUT_MEMORY if offer.in_stock is False else STOCK_IN_STOCK_MEMORY):
+                return offer, "", f", checked {_age(now - at)}"
+        result = self.fetcher.peek(url, timeout=STOCK_CHECK_SECONDS)
+        offer = None
+        if result.ok:
+            page = extract_page(url, result.text)
+            offer = page.offers[0] if page.kind == "product" and page.offers else None
+        if offer is not None and offer.in_stock is not None:
+            self._stock_answers[key] = (offer, now)
+        return offer, result.problem or "no product data", ""
 
     def _pushed_already(self, fingerprint: str, verdict: Verdict) -> bool:
         """This deal was pushed lately, as loud: the push is held back anyway, so no check is worth making."""
@@ -381,22 +402,19 @@ class Monitor:
         pushed. In stock: the push says so, and at what price. A page that cannot be read changes
         nothing: a check must never cost a loot."""
         verdict.stock_checked = True
-        result = self.fetcher.peek(url, timeout=STOCK_CHECK_SECONDS)
-        offer = None
-        if result.ok:
-            page = extract_page(url, result.text)
-            offer = page.offers[0] if page.kind == "product" and page.offers else None
+        offer, problem, when = self._flipkart_offer(url)
         if offer is not None and offer.title:
             verdict.product_name = offer.title
         if offer is None or offer.in_stock is None:
             self._count("stock_unknown")
             log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
-                     f"could not read the page ({result.problem or 'no product data'})", name)
+                     f"could not read the page ({problem})", name)
             return verdict
         if offer.in_stock is False:
             self._count("stock_sold_out")
             if not marked:
-                log.info("stock check: sold out on Flipkart already, not pushed | %s", name)
+                log.info("stock check: sold out on Flipkart already, not pushed%s | %s", f" ({when[2:]})" if when else "",
+                         name)
                 return None
             verdict.flags.append("sold out on Flipkart when checked")
             log.info("stock check: sold out on Flipkart already, pushed with a warning (a channel you marked) | %s", name)

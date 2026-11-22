@@ -817,12 +817,15 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     # price, all at once: none of 108 drops on its list one morning, and the loot the owner
     # missed on 20 Nov 2026 (a gas stove at ₹609 that usually costs ₹1,229, list price ₹8,000).
     record_low = bool(new_low) or (low is not None and price <= low * 1.03)
-    lowest_yet = record_low and drop >= LOWEST_YET_DROP_PCT and off_list >= settings.min_discount
-    big_ticket = (record_low and drop >= BIG_TICKET_DROP_PCT and off_list >= BIG_TICKET_OFF_LIST
-                  and saving >= BIG_TICKET_SAVING and not is_clothing(title) and not _FOOTWEAR.search(title))
-    if drop < settings.tracker_drop_pct and not lowest_yet and not big_ticket:
+    # Clothing and footwear: their "usual" prices and list prices are the least real, and on the night
+    # of 21-22 Nov 2026 nine of fifteen pushes were jeans, shirts and sandals at 64-68% below "usual".
+    fashion = is_clothing(title) or is_footwear(title)
+    lowest_yet = not fashion and record_low and drop >= LOWEST_YET_DROP_PCT and off_list >= settings.min_discount
+    big_ticket = (not fashion and record_low and drop >= BIG_TICKET_DROP_PCT and off_list >= BIG_TICKET_OFF_LIST
+                  and saving >= BIG_TICKET_SAVING)
+    if drop < (FASHION_DROP_PCT if fashion else settings.tracker_drop_pct) and not lowest_yet and not big_ticket:
         return None
-    middle = (settings.tracker_drop_pct + settings.urgent_drop_pct) / 2
+    middle = settings.urgent_drop_pct if fashion else (settings.tracker_drop_pct + settings.urgent_drop_pct) / 2
     tier = TIER_URGENT if drop >= settings.urgent_drop_pct else TIER_HIGH if drop >= middle else TIER_NORMAL
     if tier == TIER_URGENT and saving < settings.urgent_min_saving:
         tier = TIER_HIGH  # a big share of a small price: loud, but not max priority
@@ -860,10 +863,21 @@ LOWEST_YET_DROP_PCT = 45.0
 # in a dozen sizes, each listed as a drop of its own.
 BIG_TICKET_DROP_PCT = 50.0
 BIG_TICKET_OFF_LIST = 60.0
-BIG_TICKET_SAVING = 5000.0
+BIG_TICKET_SAVING = 3000.0  # from ₹5,000 on 22 Nov 2026: three Preethi glass gas stoves at half price saved ₹3,300-4,600
+# Clothing and footwear on the price tracker count from this far below their usual price (60% for the rest),
+# and at high priority only from URGENT_DROP_PCT.
+FASHION_DROP_PCT = 70.0
 _FOOTWEAR = re.compile(
     r"\b(?:shoes?|sneakers?|sandals?|slippers?|flip[- ]?flops?|slides?|heels|boots?|loafers?|floaters?|clogs?"
-    r"|crocs|footwear|flats|moccasins?)\b", re.I)
+    r"|crocs|footwear|flats|moccasins?|derby|slip[- ]?ons?|mojaris?|juttis?|kolhapuris?)\b"
+    r"|\b(?:casuals?|outdoors?)\s+for\s+(?:men|women|boys|girls|kids)\b", re.I)
+# "REEBOK CLASSIC LEATHER For Men (White, 10)": a shoe size after a colour, for men or women.
+_SHOE_SIZE = re.compile(r"\bfor\s+(?:men|women|boys|girls|kids|unisex)\b.*\((?:[^()]*,\s*)?(?:uk|ind?)?\s*"
+                        r"(?:[1-9]|1[0-4])(?:\.5)?\s*\)\s*$", re.I)
+
+
+def is_footwear(title: str) -> bool:
+    return bool(_FOOTWEAR.search(title) or _SHOE_SIZE.search(title))
 
 # A loot posted without a list price, found again on the price tracker's list: how far below the
 # product's own usual price it must stand to count as a big loot, and the least it must save.

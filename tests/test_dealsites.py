@@ -662,6 +662,32 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual(self.deals(), [])
         self.assertIn("stock check: sold out on Flipkart already, not pushed", lines)
 
+    def test_a_drop_listed_again_is_not_checked_again(self):
+        # The tracker lists a drop again every few minutes; Flipkart refused ten of 36 quick checks on
+        # the night of 21-22 Nov 2026. Its answer on a product is kept a while.
+        from datetime import datetime, timezone
+
+        url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
+        answer = FetchResult(url, status=200, text=self.flipkart_page(188, "OutOfStock"))
+        card = lambda stamp: tracker_card(  # noqa: E731
+            "fastrack-fk-WX1", "Fastrack FK Exclusive Analog Watch - For Men NT3274SL06", 188,
+            '<p class="phd-range"><span>Low ₹188</span> <span>High ₹1,495</span></p><p class="phd-save">₹727 below its average</p>',
+            store="flipkart", product="WATGZFASTRK12345", stamp=stamp, low="1")
+        self.web.pages["/new"] = tracker_page(tracker_card("old-thing-AB1", "Old thing", 500, ""))
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"), \
+                mock.patch.object(Fetcher, "peek", return_value=answer) as peek:
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(card(datetime.now(timezone.utc).isoformat()))
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(card(datetime.fromtimestamp(time.time() + 120, timezone.utc).isoformat()))
+            with self.assertLogs("lootwatch", level="INFO") as logs:
+                monitor.cycle()
+        self.assertEqual(peek.call_count, 1)
+        self.assertEqual(self.deals(), [])
+        self.assertIn(", checked ", "\n".join(logs.output))
+
     def test_a_tracker_drop_in_stock_on_flipkart_is_pushed_and_says_so(self):
         url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
         self.run_stock_check(FetchResult(url, status=200, text=self.flipkart_page(188, "InStock")))
