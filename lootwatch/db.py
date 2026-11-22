@@ -401,5 +401,7 @@ class DB:
             self._conn.execute("DELETE FROM loot_checks WHERE created_at < ?", (now - 86400,))
             self._conn.execute("DELETE FROM kv WHERE key LIKE 'model:%' AND "
                                "CAST(substr(value, 1, instr(value, ':') - 1) AS INTEGER) < ?", (now - 2 * 86400,))
+            self._conn.execute("DELETE FROM kv WHERE key LIKE 'soldout:%' AND (value = '' OR "
+                               "CAST(substr(value, 1, instr(value, ':') - 1) AS INTEGER) < ?)", (now - 86400,))
             self._conn.execute("DELETE FROM kv WHERE key LIKE 'day:%' AND key < ?",
                                ("day:" + time.strftime("%Y-%m-%d", time.gmtime(now - 10 * 86400)),))

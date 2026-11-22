@@ -46,6 +46,8 @@ STOCK_CHECK_SECONDS = 6.0
 # is believed for two minutes.
 STOCK_SOLD_OUT_MEMORY = 1800.0
 STOCK_IN_STOCK_MEMORY = 120.0
+# When Flipkart does not answer, an earlier "sold out" still counts for this long.
+STOCK_SOLD_OUT_TRUST = 6 * 3600.0
 CROWD_CHANNELS = 4
 CROWD_WINDOW = 3600
 CROWD_MIN_DISCOUNT = 75.0
@@ -366,9 +368,19 @@ class Monitor:
             log.info("stock check: in stock at %s | %s", fmt_inr(offer.price), name)
         else:
             self._count("stock_unknown")
+            self._unchecked(verdict, item.price, marked=False)
             log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
                      f"could not read the page ({problem})", name)
         return verdict
+
+    def _unchecked(self, verdict: Verdict, price: Optional[float], marked: bool) -> None:
+        """Flipkart did not say whether it has the product: the push says so, and a give-away price
+        that could not be checked comes at the ordinary priority (on Flipkart those were sold out,
+        nearly every one: a ₹1 detergent bar, a ₹5 sauce on 21-22 Nov 2026)."""
+        verdict.flags.append("stock not checked: Flipkart did not answer")
+        if not marked and price is not None and price <= self.s.loot_price:
+            verdict.tier = min(verdict.tier, TIER_NORMAL)
+            verdict.max_tier = min(verdict.max_tier, TIER_NORMAL)
 
     def _flipkart_offer(self, url: str) -> Tuple[Optional[Offer], str, str]:
         """What Flipkart's own page says of a product now: (offer or None, why not, when it was read
@@ -377,6 +389,12 @@ class Monitor:
         "sold out" for half an hour, "in stock" for two minutes."""
         key, now = product_key(url) or url, time.time()
         kept = self._stock_answers.get(key)
+        if kept is None:
+            # A run lasts a quarter of an hour; "sold out" is kept in the state file, so the next run
+            # knows it too (a ₹5 sauce found sold out twice was pushed by the next run on 22 Nov 2026).
+            stamp, _, price = self.db.get("soldout:" + key).partition(":")
+            if stamp.isdigit():
+                kept = (Offer(key, "flipkart", "", float(price or 0), None, url, in_stock=False), float(stamp))
         if kept is not None:
             offer, at = kept
             if now - at < (STOCK_SOLD_OUT_MEMORY if offer.in_stock is False else STOCK_IN_STOCK_MEMORY):
@@ -388,6 +406,12 @@ class Monitor:
             offer = page.offers[0] if page.kind == "product" and page.offers else None
         if offer is not None and offer.in_stock is not None:
             self._stock_answers[key] = (offer, now)
+            self.db.set("soldout:" + key, f"{int(now)}:{offer.price:.0f}" if offer.in_stock is False else "")
+            return offer, "", ""
+        if kept is not None and kept[0].in_stock is False and now - kept[1] < STOCK_SOLD_OUT_TRUST:
+            # Flipkart does not answer now (it refuses checks that come too often), but it said "sold
+            # out" a while ago: that still counts, rather than a push of something nobody can buy.
+            return kept[0], "", f", checked {_age(now - kept[1])}; Flipkart did not answer now"
         return offer, result.problem or "no product data", ""
 
     def _pushed_already(self, fingerprint: str, verdict: Verdict) -> bool:
@@ -407,6 +431,7 @@ class Monitor:
             verdict.product_name = offer.title
         if offer is None or offer.in_stock is None:
             self._count("stock_unknown")
+            self._unchecked(verdict, verdict.price, marked)
             log.info("stock check: %s; pushed as it is | %s", "the page does not say" if offer is not None else
                      f"could not read the page ({problem})", name)
             return verdict

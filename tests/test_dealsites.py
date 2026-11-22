@@ -688,6 +688,63 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual(self.deals(), [])
         self.assertIn(", checked ", "\n".join(logs.output))
 
+    def test_sold_out_is_remembered_by_the_next_run(self):
+        # 22 Nov 2026: a ₹5 sauce found sold out twice was pushed by the next run, which knew nothing of it.
+        from datetime import datetime, timezone
+
+        url = "https://www.flipkart.com/product/p/itme?pid=SAUMAGGI1KG12345"
+        card = lambda when: tracker_card(  # noqa: E731
+            "maggi-sauce-1kg", "Maggi Hot & Sweet Tomato Chilli Sauce (1 kg)", 5,
+            '<p class="phd-range"><span>Low ₹5</span> <span>High ₹199</span></p><p class="phd-save">₹180 below its average</p>',
+            store="flipkart", product="SAUMAGGI1KG12345", stamp=datetime.fromtimestamp(when, timezone.utc).isoformat(), low="1")
+        self.web.pages["/new"] = tracker_page(tracker_card("old-thing-AB1", "Old thing", 500, ""))
+        sold_out = FetchResult(url, status=200, text=self.flipkart_page(5, "OutOfStock"))
+        refused = FetchResult(url, status=429, error="HTTP 429")
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"):
+            with mock.patch.object(Fetcher, "peek", return_value=sold_out) as peek:
+                first = self.monitor()
+                first.cycle()
+                self.web.pages["/new"] = tracker_page(card(time.time()))
+                first.cycle()
+            self.assertEqual(peek.call_count, 1)
+            # The next run, a quarter of an hour later: the tracker lists the drop again.
+            with mock.patch.object(Fetcher, "peek", return_value=refused) as peek:
+                second = self.monitor()
+                self.web.pages["/new"] = tracker_page(card(time.time() + 60))
+                second.cycle()
+                self.assertEqual(peek.call_count, 0, "sold out a quarter of an hour ago: not asked again")
+                # Much later Flipkart is asked again and refuses: the earlier "sold out" still counts.
+                key = next(k for k, in second.db._conn.execute("SELECT key FROM kv WHERE key LIKE 'soldout:%'"))
+                second.db.set(key, f"{int(time.time()) - 3600}:5")
+                self.web.pages["/new"] = tracker_page(card(time.time() + 120))
+                with self.assertLogs("lootwatch", level="INFO") as logs:
+                    second.cycle()
+                self.assertEqual(peek.call_count, 1)
+        self.assertEqual(self.deals(), [])
+        self.assertIn("Flipkart did not answer now", "\n".join(logs.output))
+
+    def test_a_give_away_price_flipkart_will_not_check_is_not_loud(self):
+        # The ₹5 sauce of 22 Nov 2026 was pushed at high priority while Flipkart refused the check.
+        from datetime import datetime, timezone
+
+        url = "https://www.flipkart.com/product/p/itme?pid=SAUMAGGI1KG12345"
+        sauce = tracker_card("maggi-sauce-1kg", "Maggi Hot & Sweet Tomato Chilli Sauce (1 kg)", 5,
+                             '<p class="phd-range"><span>Low ₹5</span> <span>High ₹199</span></p>'
+                             '<p class="phd-save">₹136 below its average</p>', store="flipkart", product="SAUMAGGI1KG12345",
+                             stamp=datetime.now(timezone.utc).isoformat(), low="1")
+        self.web.pages["/new"] = tracker_page(tracker_card("old-thing-AB1", "Old thing", 500, ""))
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"), \
+                mock.patch.object(Fetcher, "peek", return_value=FetchResult(url, status=429, error="HTTP 429")):
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(sauce)
+            monitor.cycle()
+        (push,) = self.deals()
+        self.assertEqual(push["priority"], 3)
+        self.assertIn("stock not checked: Flipkart did not answer", push["message"])
+
     def test_a_tracker_drop_in_stock_on_flipkart_is_pushed_and_says_so(self):
         url = "https://www.flipkart.com/product/p/itme?pid=WATGZFASTRK12345"
         self.run_stock_check(FetchResult(url, status=200, text=self.flipkart_page(188, "InStock")))

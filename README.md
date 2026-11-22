@@ -130,8 +130,12 @@ tracker, a deal site, a channel): sold out there, it is not pushed; far dearer t
 says, with no coupon or card offer named, the loot is over and is not pushed; in stock, the push says
 so and at what price. A page that cannot be read changes nothing. From a channel marked `!` nothing
 is dropped this way: a sold-out loot comes with a warning instead. Flipkart's answer is kept for a
-while (sold out: half an hour; in stock: two minutes), since the tracker lists a drop again every few
-minutes and Flipkart refuses quick checks that come too often. (On 21 Nov 2026, 24 of 42
+while (sold out: half an hour, from one run to the next; in stock: two minutes), since the tracker
+lists a drop again every few minutes and Flipkart refuses quick checks that come too often. When it
+refuses, an earlier "sold out" (up to six hours old) still counts; with no answer at all the push
+says "stock not checked", and a give-away price (₹10 or less) then comes at Quiet. The check reads
+Flipkart's public product page, which tells whether Flipkart has the product, not whether it
+delivers it to your pincode. (On 21 Nov 2026, 24 of 42
 Flipkart drops on the tracker were sold out when checked, among them every cheap watch.)
 
 An alert is held at **High**, whatever the discount, when the reading itself is unsure: the two
