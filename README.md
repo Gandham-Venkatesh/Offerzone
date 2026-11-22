@@ -28,8 +28,9 @@ Each scan (default: every 60 seconds) it looks in four places:
 4. **Deal sites and public deal channels** (`feeds.txt`, `channels.txt`). DealsMagnet's
    new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
-   list of drops covers Amazon and is read every 20 seconds (a line marked `!` in `feeds.txt`);
-   and 26 public Telegram channels are read as a safety net. A loot a channel posts without a
+   list of drops covers Amazon. Both are read every 20 seconds (lines marked `!` in `feeds.txt`).
+   26 public Telegram channels are read from the web once a minute, or within seconds once the
+   Telegram login has joined them (see "Invite-only channels"). A loot a channel posts without a
    list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
    far below its usual price, a second push says "Checked loot" at high or max priority. A

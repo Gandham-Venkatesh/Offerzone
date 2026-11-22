@@ -15,9 +15,10 @@
 #                             drop counts from 50%, a give-away price whatever it saves; README).
 #
 # A line that starts with "!" is read every 20 seconds (FAST_FEED_SECONDS) instead of once a
-# minute. The price tracker is: its drops sell out fast. If a site starts refusing, it is read
+# minute. Both of these are: their deals sell out fast (a ₹1,819 bicycle from DealsMagnet, read
+# once a minute, was over when it arrived on 22 Nov 2026). If a site starts refusing, it is read
 # less often on its own, so it never has a reason to shut the monitor out for good.
-https://www.dealsmagnet.com/new
+! https://www.dealsmagnet.com/new
 ! https://pricehistory.app/price-drop
 # DesiDime's page was read here until 18 Nov 2026, when desidime.com began refusing GitHub's
 # servers (HTTP 403). A site that refuses is left alone; DesiDime's deals still arrive through

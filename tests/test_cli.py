@@ -138,7 +138,8 @@ class CommandLine(CleanEnv):
         self.assertLess(flipkart_load / 12 / 12, 3.0, "the !! pages must come round within three minutes")
         self.assertGreaterEqual(len(settings.traps), 4)
         self.assertEqual(settings.feeds, ["https://www.dealsmagnet.com/new", "https://pricehistory.app/price-drop"])
-        self.assertEqual(settings.fast_feeds, ["https://pricehistory.app/price-drop"], "the tracker is read every 20s")
+        self.assertEqual(settings.fast_feeds, ["https://www.dealsmagnet.com/new", "https://pricehistory.app/price-drop"],
+                         "both are read every 20s")
 
     def test_test_ntfy_and_missing_topic(self):
         self.assertEqual(main(["--test-ntfy", "--ntfy-server", self.web.base]), 1)  # no topic anywhere
