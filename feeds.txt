@@ -21,7 +21,7 @@
 ! https://www.dealsmagnet.com/new
 ! https://pricehistory.app/price-drop
 # DesiDime's page was read here until 18 Nov 2026, when desidime.com began refusing GitHub's
-# servers (HTTP 403). A site that refuses is left alone; DesiDime's deals still arrive through
+# servers (HTTP 403; checked again on 22 Nov 2026, still refused). A site that refuses is left alone; DesiDime's deals still arrive through
 # its Telegram channels (desidime, DesidimeHot in channels.txt), about twenty minutes later.
 # On a machine where --doctor shows it as OK, remove the leading "# " to read it directly again:
 # https://www.desidime.com/new

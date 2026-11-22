@@ -29,7 +29,7 @@ Each scan (default: every 60 seconds) it looks in four places:
    new-deal page is read directly, minutes before its deals are repeated on Telegram (DesiDime's
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
    list of drops covers Amazon. Both are read every 20 seconds (lines marked `!` in `feeds.txt`).
-   26 public Telegram channels are read from the web once a minute, or within seconds once the
+   27 public Telegram channels are read from the web once a minute, or within seconds once the
    Telegram login has joined them (see "Invite-only channels"). A loot a channel posts without a
    list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
@@ -409,12 +409,15 @@ the two channels with the others. What to know:
   push came half a minute late, so asking wins. The scan log shows how late the pushes come
   (`Telegram pushed 2 post(s) 3-35s after they were published`). A post is pushed to you once,
   however it arrives.
-- **Public channels can be just as fast:** join them with the same Telegram account (mute and
-  archive them there, so your phone stays quiet). Telegram then pushes their posts to the login as
-  they appear, and the scan log says `Telegram pushes the posts of N of the 26 public channels`.
-  Channels it has not joined are read from their web page once a minute, as before.
-- The monitor only reads. Telegram's terms allow that for your own account, but it is your account
-  that does it; if Telegram ever asks it to slow down, it reads less often on its own.
+- **Public channels are just as fast:** the login joins the public channels of `channels.txt` by
+  itself (`TG_JOIN_CHANNELS`, on unless set to 0), one a minute and at most ten a run, each muted
+  for good and archived so that your phone stays quiet. Telegram then pushes their posts to the
+  login as they appear, and the scan log says `Telegram pushes the posts of N of the 27 public
+  channels`. If Telegram asks the account to wait before joining more, the rest are joined by a
+  later run. Channels not joined yet are read from their web page once a minute, as before.
+- Apart from joining the public channels of `channels.txt` (muted, archived), the monitor only
+  reads. Telegram's terms allow that for your own account, but it is your account that does it; if
+  Telegram ever asks it to slow down, it reads (or joins) less often on its own.
 
 ## Commands
 
@@ -466,6 +469,7 @@ python -m lootwatch               # scan forever
 | `HEALTHCHECK_URL` | – | A [healthchecks.io](https://healthchecks.io) ping URL; it alerts you if scans stop |
 | `TG_API_ID` / `TG_API_HASH` / `TG_SESSION` | – | Secrets: the Telegram login for invite-only channels (see "Invite-only channels") |
 | `TG_FAST_SECONDS` | 5 | Seconds between two readings of the invite-only channels through that login (0: once a scan) |
+| `TG_JOIN_CHANNELS` | 1 | The login joins the public channels of `channels.txt` (muted, archived) so their posts come within seconds; 0: never |
 | `MRP_MIN_DISCOUNT` | 85 | A deal judged only by its list price alerts from this % off (or `MIN_DISCOUNT`, if higher) |
 | `FAVOURITE_MIN_DISCOUNT` | 70 | The same for things on `favourites.txt`, which also ring one step louder |
 | `FAST_FEED_SECONDS` | 20 | Seconds between two readings of a `feeds.txt` line marked `!` (0: once a scan); a site that refuses is read half as often from then on |

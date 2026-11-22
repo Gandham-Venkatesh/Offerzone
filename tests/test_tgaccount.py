@@ -117,6 +117,30 @@ class FakeClient:
         return done()
 
 
+class JoiningClient(FakeClient):
+    """Also answers the calls that join a public channel, mute it and archive it."""
+
+    def __init__(self, join_error=None, **kwargs):
+        super().__init__(**kwargs)
+        self.join_error = join_error
+        self.requests = []
+
+    async def get_entity(self, name):
+        return SimpleNamespace(id=700 + len(name), username=name)
+
+    async def get_input_entity(self, channel):
+        return SimpleNamespace(channel_id=channel.id)
+
+    async def __call__(self, request):
+        kind = type(request).__name__
+        if kind == "CheckChatInviteRequest":
+            return await super().__call__(request)
+        if kind == "JoinChannelRequest" and self.join_error:
+            raise self.join_error
+        self.requests.append((kind, request))
+        return SimpleNamespace()
+
+
 @unittest.skipUnless(HAS_TELETHON, "needs telethon")
 class Reader(unittest.TestCase):
     def reader(self, client):
@@ -227,6 +251,43 @@ class Reader(unittest.TestCase):
         self.assertTrue(done.wait(5))
         self.assertEqual(got, [("@lootersindia", "https://t.me/lootersindia/901")])
 
+    def test_the_login_joins_the_public_channels_it_has_not_quietly(self):
+        import threading
+
+        client = JoiningClient(messages=[])
+        client.dialogs = [SimpleNamespace(entity=SimpleNamespace(id=555, username="epicdeals_in", usernames=None))]
+        reader = self.reader(client)
+        self.assertIsNone(reader.missing_public(), "not known before the chat list is looked at")
+        got, done = [], threading.Event()
+        reader.listen(lambda code, post: (got.append((code, post.url)), done.set()), public=["epicdeals_in", "dealsmagnet"])
+        reader.read("uV5wcTkUWJEwM2Y1")
+        self.assertEqual(reader.missing_public(), ["dealsmagnet"])
+        self.assertEqual(reader.join("dealsmagnet"), "")
+        kinds = [kind for kind, _ in client.requests]
+        self.assertEqual(kinds, ["JoinChannelRequest", "UpdateNotifySettingsRequest", "EditPeerFoldersRequest"])
+        self.assertEqual(client.requests[1][1].settings.mute_until, 2 ** 31 - 1, "muted for good")
+        self.assertEqual(client.requests[2][1].folder_peers[0].folder_id, 1, "put in the archive")
+        self.assertEqual(reader.missing_public(), [])
+        # Its posts are pushed from now on.
+        (handler, _), = client.handlers
+        message = SimpleNamespace(id=77, date=datetime.now(timezone.utc), message="Loot ₹99 https://amzn.to/x",
+                                  entities=[], peer_id=SimpleNamespace(channel_id=700 + len("dealsmagnet")))
+        asyncio.run_coroutine_threadsafe(handler(SimpleNamespace(message=message)), reader._loop).result(5)
+        self.assertTrue(done.wait(5))
+        self.assertEqual(got, [("@dealsmagnet", "https://t.me/dealsmagnet/77")])
+
+    def test_a_join_limit_holds_up_joining_not_reading(self):
+        error = type("FloodWaitError", (Exception,), {"seconds": 900})("wait")
+        client = JoiningClient(messages=[], join_error=error)
+        reader = self.reader(client)
+        reader.listen(lambda code, post: None, public=["dealsmagnet"])
+        reader.read("uV5wcTkUWJEwM2Y1")
+        self.assertEqual(reader.join("dealsmagnet"), "wait 900s")
+        self.assertTrue(reader.join("dealsmagnet").startswith("wait 9"), "not asked again meanwhile")
+        self.assertEqual(reader.quiet_for(), 0.0)
+        page, error_text = reader.read("uV5wcTkUWJEwM2Y1", newer_only=True)
+        self.assertEqual(error_text, "")
+
     def test_without_listen_no_handler_is_added(self):
         client = FakeClient(messages=[])
         self.reader(client).read("uV5wcTkUWJEwM2Y1")
@@ -294,6 +355,66 @@ class FakeAccount:
 
     def close(self):
         self.closed = True
+
+
+class JoiningAccount(FakeAccount):
+    def __init__(self, missing, answers):
+        super().__init__()
+        self.missing, self.answers, self.joined = missing, answers, []
+
+    def missing_public(self):
+        return self.missing
+
+    def join(self, name):
+        self.joined.append(name)
+        return self.answers.get(name, "")
+
+
+class JoiningInTheMonitor(unittest.TestCase):
+    def make_monitor(self, account):
+        folder = tempfile.mkdtemp()
+        settings = Settings(ntfy_server="http://127.0.0.1:9", ntfy_topic="t", db_path=os.path.join(folder, "s.db"),
+                            startup_note=False, heartbeat_hour=-1)
+        self.monitor = Monitor(settings, DB(settings.db_path), Fetcher("off"), Notifier(settings.ntfy_server, "t", "", ""))
+        self.addCleanup(self.monitor.db.close)
+        self.monitor.account = account
+        return self.monitor
+
+    def run_join(self, account, monitor=None):
+        from unittest import mock
+
+        from lootwatch import monitor as monitor_module
+
+        monitor = monitor or self.make_monitor(account)
+        with mock.patch.object(monitor_module, "JOIN_START_SECONDS", 0), \
+                mock.patch.object(monitor_module, "JOIN_GAP_SECONDS", 0), \
+                self.assertLogs("lootwatch", level="INFO") as logs:
+            monitor._join_channels()
+            log = __import__("logging").getLogger("lootwatch")
+            log.info("(end of the joining)")
+        return "\n".join(logs.output)
+
+    def test_a_later_run_waits_as_long_as_telegram_asked(self):
+        account = JoiningAccount(["a_one"], {})
+        monitor = self.make_monitor(account)
+        monitor.db.set("tg_join_wait_until", int(time.time()) + 600)
+        self.run_join(account, monitor)
+        self.assertEqual(account.joined, [])
+
+    def test_joins_what_is_missing_and_says_so(self):
+        account = JoiningAccount(["dealsmagnet", "ttsdeals"], {"ttsdeals": "UsernameNotOccupiedError: gone"})
+        lines = self.run_join(account)
+        self.assertEqual(account.joined, ["dealsmagnet", "ttsdeals"])
+        self.assertIn("joined @dealsmagnet with the Telegram login (muted, archived)", lines)
+        self.assertIn("could not join @ttsdeals", lines)
+
+    def test_stops_for_the_run_when_telegram_says_wait(self):
+        account = JoiningAccount(["a_one", "b_two", "c_three"], {"b_two": "wait 900s"})
+        lines = self.run_join(account)
+        self.assertEqual(account.joined, ["a_one", "b_two"])
+        self.assertIn("the rest are joined by a later run", lines)
+        waited = int(self.monitor.db.get("tg_join_wait_until"))
+        self.assertAlmostEqual(waited, time.time() + 900, delta=30)
 
 
 class InTheMonitor(unittest.TestCase):

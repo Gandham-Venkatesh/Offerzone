@@ -301,6 +301,7 @@ class Settings:
     # Seconds between two readings of the invite-only channels through that account (0: once a
     # scan, like the rest). Telegram's own push of a new post can lag half a minute behind it.
     tg_fast_seconds: float = 5.0
+    tg_join_channels: bool = True  # the login joins the public channels of channels.txt (muted, archived)
     fast_feed_seconds: float = 20.0  # seconds between two readings of a feed marked "!" (0: once a scan)
 
     db_path: str = "lootwatch.db"
@@ -370,6 +371,7 @@ class Settings:
             tg_api_hash=_get("TG_API_HASH", ""),
             tg_session=_get("TG_SESSION", ""),
             tg_fast_seconds=max(0.0, _num("TG_FAST_SECONDS", 5.0)),
+            tg_join_channels=_get("TG_JOIN_CHANNELS", "1") != "0",
             fast_feed_seconds=max(0.0, _num("FAST_FEED_SECONDS", 20.0)),
             db_path=_get("DB_PATH", "lootwatch.db"),
             channels_file=_get("CHANNELS_FILE", "channels.txt"),

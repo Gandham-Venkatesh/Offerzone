@@ -42,6 +42,11 @@ LOOT_CHECK_WINDOW = 3600  # how long a loot pushed without a list price waits fo
 # Before a price tracker's Flipkart drop is pushed, its Flipkart page is read once: the owner found
 # the tracker's Flipkart watches sold out every time, even opened the second they rang (20-21 Nov).
 STOCK_CHECK_SECONDS = 6.0
+# Joining the public channels with the Telegram login (TG_JOIN_CHANNELS): after this long, this far
+# apart, at most this many a run.
+JOIN_START_SECONDS = 45.0
+JOIN_GAP_SECONDS = 60.0
+JOIN_PER_RUN = 10
 # How long Flipkart's answer on a product is kept: sold out stays sold out for half an hour, in stock
 # is believed for two minutes.
 STOCK_SOLD_OUT_MEMORY = 1800.0
@@ -272,6 +277,39 @@ class Monitor:
                     log.warning("Telegram asked the login to slow down: the invite-only channels are read every %.0fs "
                                 "from now on", gap)
             self._fast_stop.wait(max(0.5, started + gap - time.time()))
+
+    def _join_channels(self) -> None:
+        """The public channels of channels.txt that the Telegram login has not joined, joined with it
+        (TG_JOIN_CHANNELS, on unless set to 0): then Telegram pushes their posts within seconds,
+        where the web pages are read once a minute. Muted for good and archived, so the owner's
+        phone stays quiet. One at a time, JOIN_GAP_SECONDS apart and at most JOIN_PER_RUN a run:
+        Telegram limits how many channels an account joins in a while, and when it says so the
+        rest wait for a later run (reading goes on regardless)."""
+        waited = self.db.get("tg_join_wait_until")
+        if waited.isdigit() and int(waited) > time.time():
+            return  # Telegram asked an earlier run to wait before joining more: asking again would not help
+        if self._fast_stop.wait(JOIN_START_SECONDS):  # the first readings look at the account's chat list
+            return
+        missing = self.account.missing_public()
+        if missing is None and not self._fast_stop.wait(JOIN_START_SECONDS):
+            missing = self.account.missing_public()
+        if not missing:
+            return
+        log.info("joining %d public channel(s) with the Telegram login, each muted and archived: %s", len(missing),
+                 ", ".join("@" + name for name in missing))
+        for number, name in enumerate(missing[:JOIN_PER_RUN]):
+            if number and self._fast_stop.wait(JOIN_GAP_SECONDS):
+                return
+            why = self.account.join(name)
+            if not why:
+                log.info("joined @%s with the Telegram login (muted, archived): its posts now come within seconds", name)
+            elif why.startswith("wait"):
+                seconds = int(re.sub(r"\D", "", why) or 3600)
+                self.db.set("tg_join_wait_until", int(time.time()) + seconds)
+                log.warning("Telegram wants no more channels joined for now (%s): the rest are joined by a later run", why)
+                return
+            else:
+                log.warning("could not join @%s with the Telegram login: %s", name, why)
 
     def _fast_reading(self) -> bool:
         return self._fast_thread is not None and self._fast_thread.is_alive()
@@ -1274,6 +1312,9 @@ class Monitor:
         )
         if self._private and hasattr(self.account, "listen"):
             self.account.listen(self._live_post, public=list(self.s.channels))  # posts as Telegram pushes them
+        if (self._private and self.s.tg_join_channels and not once and not self.s.dry_run
+                and hasattr(self.account, "missing_public")):
+            threading.Thread(target=self._join_channels, name="telegram-join", daemon=True).start()
         if self._private and self.s.tg_fast_seconds > 0 and not once:
             self._fast_thread = threading.Thread(target=self._read_private_often, name="telegram-fast", daemon=True)
             self._fast_thread.start()

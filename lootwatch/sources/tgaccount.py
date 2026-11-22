@@ -6,11 +6,13 @@ the Telethon library, with an api_id and api_hash from my.telegram.org and a log
 "session string" (tools/telegram_login.py makes one). Without those three, or without Telethon,
 invite links in channels.txt are simply skipped.
 
-Only reading is done. The monitor asks every few seconds for messages newer than the last one
-it saw (next to nothing for Telegram), since Telegram's own push of a new post can lag half a
-minute behind on a channel with millions of members; the push is taken as well, whichever comes
-first. Public channels in channels.txt that the account has joined are pushed the same way. The
-session string is a full login to
+The monitor asks every few seconds for messages newer than the last one it saw (next to nothing
+for Telegram), since Telegram's own push of a new post can lag half a minute behind on a channel
+with millions of members; the push is taken as well, whichever comes first. Public channels in
+channels.txt that the account has joined are pushed the same way, and the account joins those it
+has not (TG_JOIN_CHANNELS, on unless set to 0): one at a time, each muted for good and archived,
+so the owner's phone stays quiet. Nothing else is ever written. The session string is a full
+login to
 that account, so it is kept as a secret, and a separate account that has only joined deal
 channels is the safer choice. Telegram ends a session that is used from two places at the same
 moment, which is why only the scan runs use it, never the doctor or a test.
@@ -129,6 +131,7 @@ class AccountReader:
         self.titles: Dict[str, str] = {}
         self._dead = ""  # why the login no longer works, once that is known
         self._quiet_until = 0.0  # Telegram asked us to wait (FloodWait)
+        self._join_quiet_until = 0.0  # Telegram wants no more channels joined for a while (reading goes on)
         self._chat_codes: Dict[int, str] = {}  # channel id -> invite code, or "@username": which live posts are ours
         self._newest: Dict[str, int] = {}  # invite code -> newest message id read
         self._public: Dict[str, str] = {}  # public channels to take pushed posts from: lower-case name -> name
@@ -248,6 +251,49 @@ class AccountReader:
         log.info("Telegram pushes the posts of %d of the %d public channels as they appear (the login has joined "
                  "them)%s", len(joined), len(self._public),
                  f"; the other {others} are read from the web once a minute" if others else "")
+
+    def missing_public(self) -> Optional[List[str]]:
+        """The public channels of channels.txt the account has not joined; None until its chat list
+        has been looked at (the first reading through the account does that)."""
+        if not self._public_checked:
+            return None
+        joined = {code[1:].lower() for code in self._chat_codes.values() if code.startswith("@")}
+        return [name for key, name in self._public.items() if key not in joined]
+
+    def join(self, name: str) -> str:
+        """Join a public channel with the account, muted for good and archived, so that its posts come
+        pushed within seconds while the owner's phone stays quiet: "" when done, else why not ("wait
+        Ns" when Telegram wants no more channels joined for a while; reading is not held up by that)."""
+        with self._lock:  # one request at a time on this login
+            if self._dead:
+                return self._dead
+            if time.time() < self._join_quiet_until:
+                return f"wait {int(self._join_quiet_until - time.time())}s"
+            try:
+                return self._call(self._join(name))
+            except Exception as exc:
+                kind, seconds = type(exc).__name__, getattr(exc, "seconds", None)
+                if "FloodWait" in kind and seconds:
+                    self._join_quiet_until = time.time() + float(seconds) + 5
+                    return f"wait {int(seconds)}s"
+                if any(dead in kind for dead in _DEAD_LOGIN):
+                    self._dead = (f"Telegram ended the saved login ({kind}): make a new TG_SESSION with "
+                                  "tools/telegram_login.py")
+                    log.error("%s", self._dead)
+                    return self._dead
+                return f"{kind}: {str(exc)[:80]}"
+
+    async def _join(self, name: str) -> str:
+        client = await self._connected()
+        channel = await client.get_entity(name)
+        await client(functions.channels.JoinChannelRequest(channel))
+        peer = await client.get_input_entity(channel)
+        await client(functions.account.UpdateNotifySettingsRequest(  # muted until 2038: for good
+            peer=types.InputNotifyPeer(peer), settings=types.InputPeerNotifySettings(mute_until=2 ** 31 - 1)))
+        await client(functions.folders.EditPeerFoldersRequest(  # folder 1 is the archive
+            folder_peers=[types.InputFolderPeer(peer=peer, folder_id=1)]))
+        self._chat_codes[int(getattr(channel, "id", 0))] = "@" + self._public.get(name.lower(), name)
+        return ""
 
     async def _fetch(self, code: str, limit: int, min_id: int = 0):
         client = await self._connected()

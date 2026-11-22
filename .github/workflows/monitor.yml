@@ -90,6 +90,7 @@ jobs:
       QUICK_COUPON_PCT: ${{ vars.QUICK_COUPON_PCT }}
       QUICK_LOOTS: ${{ vars.QUICK_LOOTS }}
       TG_FAST_SECONDS: ${{ vars.TG_FAST_SECONDS }}
+      TG_JOIN_CHANNELS: ${{ vars.TG_JOIN_CHANNELS }}
       FAST_FEED_SECONDS: ${{ vars.FAST_FEED_SECONDS }}
       MAX_POST_AGE_MIN: ${{ vars.MAX_POST_AGE_MIN }}
       LATE_POST_MIN: ${{ vars.LATE_POST_MIN }}
