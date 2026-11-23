@@ -95,6 +95,12 @@ _POLICIES: Tuple[Tuple[str, Policy], ...] = (
     ("swiggy.com", Policy(6.0, 10.0, 300, 7200, True)),
 )
 _DEFAULT_POLICY = Policy(3.0, 5.0, 120, 3600, True)
+# Quick checks (Fetcher.peek): the longest they wait for the site's next turn, when they ask again
+# after an HTTP 429, and how long they wait after a refusal (doubling, up to the most).
+PEEK_MAX_WAIT = 5.0
+PEEK_RETRY_SECONDS = 6.0
+PEEK_BASE_COOLDOWN = 60.0
+PEEK_MAX_COOLDOWN = 900.0
 _LOCAL_POLICY = Policy(0.0, 0.0, 1, 5)  # localhost: tests and self-hosted services
 
 
@@ -169,6 +175,9 @@ class _Site:
         self.last_refusal = ""
         self.peek_lock = threading.Lock()  # quick checks (Fetcher.peek) have a session of their own
         self.peek_session: Optional[object] = None
+        self.peek_cooldown_until = 0.0  # quick checks refused: they wait, the paced reading goes on
+        self.peek_strikes = 0
+        self.peek_refusal = ""
 
 
 def _retry_after(value: Optional[str]) -> float:
@@ -272,26 +281,45 @@ class Fetcher:
 
     def peek(self, url: str, timeout: float = 8.0) -> FetchResult:
         """One page read now, outside the site's queue of paced reads: for a check that cannot wait
-        its turn (is a product still in stock?), made a few times a day. A site that refuses is
-        left alone as with any read, and one still being left alone is not asked."""
+        its turn (is a product still in stock?), a few dozen times a day.
+
+        Not right on the heels of a paced read (a burst of two requests is what Flipkart refused),
+        and asked once more a few seconds after an HTTP 429. A refused check makes the next checks
+        wait, not the paced reading of the site: on 22-23 Nov 2026 each refused check stopped all
+        of Flipkart for five minutes and more, and the checks that came next with it. While the
+        site's paced reading is itself being refused, no check is made."""
         host = (urlsplit(url).hostname or "").lower()
         if not host:
             return FetchResult(url, error="bad url")
         site = self._site(host)
-        if time.time() < site.cooldown_until:
+        now = time.time()
+        if now < site.cooldown_until:
             return FetchResult(url, skipped=True, error=f"cooldown after {site.last_refusal or 'a refusal'}")
+        if now < site.peek_cooldown_until:
+            return FetchResult(url, skipped=True, error=f"cooldown after {site.peek_refusal or 'a refusal'}")
         with site.peek_lock:
-            if site.peek_session is None:
-                site.peek_session = self._new_session(site)  # a session of its own: the queue's is busy
-            result = self._request(site, url, None, session=site.peek_session, timeout=timeout)
-        if result.blocked or result.status in (403, 429, 503):
-            with site.lock:
-                site.strikes += 1
-                cooldown = min(site.policy.max_cooldown, site.policy.base_cooldown * 2 ** (site.strikes - 1))
-                site.cooldown_until = max(site.cooldown_until, time.time() + cooldown)
-                site.last_refusal = result.blocked or f"HTTP {result.status}"
-            result.blocked = result.blocked or f"HTTP {result.status}"
-            log.warning("%s refused a quick check (%s); leaving it alone for %ds", host, result.blocked, int(cooldown))
+            for attempt in (1, 2):
+                wait = site.next_ok - time.time()
+                if wait > 0:
+                    time.sleep(min(wait, PEEK_MAX_WAIT))
+                if site.peek_session is None:
+                    site.peek_session = self._new_session(site)  # a session of its own: the queue's is busy
+                result = self._request(site, url, None, session=site.peek_session, timeout=timeout)
+                site.next_ok = max(site.next_ok, time.time() + random.uniform(site.policy.min_gap, site.policy.max_gap))
+                if not (result.blocked or result.status in (403, 429, 503)):
+                    site.peek_strikes = 0
+                    return result
+                if attempt == 1 and result.status == 429 and not result.blocked:
+                    time.sleep(min(max(result.retry_after, PEEK_RETRY_SECONDS), PEEK_MAX_WAIT * 2))
+                    continue
+                break
+            site.peek_strikes += 1
+            cooldown = min(PEEK_MAX_COOLDOWN, PEEK_BASE_COOLDOWN * 2 ** (site.peek_strikes - 1))
+            site.peek_cooldown_until = time.time() + cooldown
+            site.peek_refusal = result.blocked or f"HTTP {result.status}"
+        result.blocked = site.peek_refusal
+        log.warning("%s refused a quick check (%s); quick checks wait %ds, its pages are read as before", host,
+                    result.blocked, int(cooldown))
         return result
 
     def _request(self, site: _Site, url: str, headers: Optional[Dict[str, str]], session=None,

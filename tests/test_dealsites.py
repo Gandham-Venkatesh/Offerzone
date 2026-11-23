@@ -792,6 +792,18 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual(self.deals(), [])
         self.assertIn("stock check: sold out on Flipkart already, not pushed", lines)
 
+    def test_an_app_link_is_checked_on_flipkarts_website(self):
+        self.check_setup()
+        self.web.redirects["/r/fw"] = "https://dl.flipkart.com/dl/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+        answer = FetchResult("x", status=200, text=self.flipkart_page(188, "InStock"))
+        with mock.patch.object(Fetcher, "peek", return_value=answer) as peek:
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.post("alpha", 1, f'Fastrack Watch Loot @ ₹188 <a href="{self.web.base}/r/fw">{self.web.base}/r/fw</a>',
+                          time.time() - 20)
+            monitor.cycle()
+        self.assertEqual(peek.call_args[0][0], "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345")
+
     def test_a_channel_loot_in_stock_on_flipkart_says_so(self):
         url = "https://www.flipkart.com/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
         self.run_post_check(FetchResult(url, status=200, text=self.flipkart_page(188, "InStock")), "Fastrack Watch Loot @ ₹188")

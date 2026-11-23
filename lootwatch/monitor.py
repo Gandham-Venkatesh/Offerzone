@@ -13,7 +13,7 @@ import re
 import threading
 import time
 from typing import Dict, List, Optional, Set, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -437,6 +437,9 @@ class Monitor:
             offer, at = kept
             if now - at < (STOCK_SOLD_OUT_MEMORY if offer.in_stock is False else STOCK_IN_STOCK_MEMORY):
                 return offer, "", f", checked {_age(now - at)}"
+        parts = urlsplit(url)
+        if parts.hostname == "dl.flipkart.com":  # the app's link to a product page: its website's, same queue
+            url = urlunsplit(("https", "www.flipkart.com", re.sub(r"^/dl(?=/)", "", parts.path), parts.query, ""))
         result = self.fetcher.peek(url, timeout=STOCK_CHECK_SECONDS)
         offer = None
         if result.ok:

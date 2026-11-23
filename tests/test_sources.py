@@ -427,3 +427,51 @@ class StoreLists(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuickChecks(unittest.TestCase):
+    """Fetcher.peek: refused quick checks of Flipkart stock on 22-23 Nov 2026 stopped all of Flipkart."""
+
+    URL = "http://127.0.0.1:9/fastrack-watch/p/itm123?pid=WATGZFASTRK12345"
+
+    def setUp(self):
+        from unittest import mock
+
+        from lootwatch import fetch
+        from lootwatch.fetch import Fetcher
+
+        for name in ("PEEK_RETRY_SECONDS", "PEEK_MAX_WAIT"):
+            patcher = mock.patch.object(fetch, name, 0)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.fetcher = Fetcher("off")
+
+    def answers(self, *statuses):
+        from unittest import mock
+
+        from lootwatch.fetch import Fetcher, FetchResult
+
+        results = [FetchResult(self.URL, status=status, text="page" if status == 200 else "") for status in statuses]
+        return mock.patch.object(Fetcher, "_request", side_effect=results)
+
+    def test_asked_once_more_after_a_429(self):
+        with self.answers(429, 200) as request:
+            result = self.fetcher.peek(self.URL)
+        self.assertTrue(result.ok)
+        self.assertEqual(request.call_count, 2)
+
+    def test_a_refused_check_holds_up_checks_not_the_sites_pages(self):
+        with self.answers(429, 429):
+            with self.assertLogs("lootwatch", level="WARNING") as logs:
+                result = self.fetcher.peek(self.URL)
+        self.assertFalse(result.ok)
+        self.assertIn("its pages are read as before", logs.output[0])
+        site = self.fetcher._site("127.0.0.1")
+        self.assertEqual(site.cooldown_until, 0.0, "the paced reading of the site goes on")
+        self.assertGreater(site.peek_cooldown_until, time.time())
+        with self.answers() as request:
+            self.assertTrue(self.fetcher.peek(self.URL).skipped, "the next check waits")
+        request.assert_not_called()
+        with self.answers(200) as request:
+            self.assertTrue(self.fetcher.get(self.URL).ok)
+        self.assertEqual(request.call_count, 1)

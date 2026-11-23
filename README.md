@@ -132,7 +132,9 @@ says, with no coupon or card offer named, the loot is over and is not pushed; in
 so and at what price. A page that cannot be read changes nothing. From a channel marked `!` nothing
 is dropped this way: a sold-out loot comes with a warning instead. Flipkart's answer is kept for a
 while (sold out: half an hour, from one run to the next; in stock: two minutes), since the tracker
-lists a drop again every few minutes and Flipkart refuses quick checks that come too often. When it
+lists a drop again every few minutes and Flipkart refuses quick checks that come too often. A check waits for a gap after the
+monitor's own paced reading of Flipkart, asks once more a few seconds after a refusal, and a refused
+check only makes the next checks wait: Flipkart's pages are read on as before. When it
 refuses, an earlier "sold out" (up to six hours old) still counts; with no answer at all the push
 says "stock not checked", and a give-away price (₹10 or less) then comes at Quiet. The check reads
 Flipkart's public product page, which tells whether Flipkart has the product, not whether it
@@ -187,8 +189,9 @@ Membership" at ₹2, YouTube Premium, Swiggy One), TV packs (Tata Play, Dish TV,
 restaurant deals (Swiggy Dineout), and offers whose links lead only to a payment app (Paytm,
 PhonePe; from a channel marked `!` these are still believed). A product that comes with a
 subscription ("Echo Dot with 6 months of Amazon Music") is still a product, and a membership for
-something on your favourites list (a gym) is judged like any deal. Phone cases and gold or
-jewellery "loots" never alert, and clothing judged by its list price alone stays at Quiet: a
+something on your favourites list (a gym) is judged like any deal. Staycations and holiday packages
+count as services too. Phone cases, printer ink and toner (a printer is still a printer), and gold
+or jewellery "loots" never alert, and clothing judged by its list price alone stays at Quiet: a
 ₹100 kurta with an "MRP" of ₹2,499 is an everyday sight. Posts about **DigiHaat** (₹18 snack bars,
 ₹50 makhana packs) are muted, from every channel, unless they show a huge discount on a stated list
 price: 90% or more off, saving ₹1,000 or more.

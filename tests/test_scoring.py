@@ -1107,6 +1107,26 @@ class TheDaysNoise(unittest.TestCase):
         self.assertEqual(verdict.tier, TIER_URGENT)
         self.assertEqual(evaluate_stated("DigiHaat: Samsung 43 inch 4K TV", "", 2999, 39999, self.s).tier, TIER_URGENT)
 
+    def test_printer_ink_and_toner_are_never_loots(self):
+        # Rang at max priority on 23 Nov 2026; the owner wants no ink at all.
+        self.assertIsNone(evaluate_tracked("HP 36A Black Original Laserjet Toner Cartridge (Dual Pack)", 1452, 8169, self.s,
+                                           low=1452))
+        for text in ("Canon PG-745 Black Ink Cartridge @ ₹99 (MRP ₹1,999)", "Epson 003 Black Ink Bottle Loot @ ₹9 https://amzn.to/x",
+                     "Brother TN-2365 Toner @ ₹299 (MRP ₹4,990)"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=self.link))
+        self.assertIsNone(evaluate_stated("HP 680 Tri-color Original Ink Advantage Cartridge", "", 99, 1999, self.s))
+        # A printer is still a printer, even one named for its ink tank.
+        self.assertEqual(evaluate_tracked("Canon PIXMA MegaTank GM2070- Single Function, Wi-Fi, Monochrome, Ink Efficient "
+                                          "Printer", 3546, 12663, self.s, low=3546).tier, TIER_HIGH)
+        self.assertEqual(evaluate_text("HP Smart Tank 580 All-in-One Ink Tank Printer @ ₹999 (MRP ₹22,999)", self.s).tier,
+                         TIER_URGENT)
+        self.assertEqual(tracker_near_miss(1452, 8169, 1452, True, None, title="HP 36A Black Laserjet Toner Cartridge"), "")
+
+    def test_staycations_are_services(self):
+        self.assertIsNone(evaluate_text("Wondergifts Loot: Upto 50% Off On Dinner & Staycation @ ₹4,899 https://amzn.to/x",
+                                        self.s, links=self.link))
+
     def test_a_phone_case_is_never_logged_as_a_near_miss(self):
         self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")
         self.assertIn("its lowest price", tracker_near_miss(299, 1499, 299, True, None, title="Bata Men Casual Sandal"))

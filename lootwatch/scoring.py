@@ -227,6 +227,29 @@ def is_phone_case(text: str) -> bool:
     return bool(_PHONE_CASE.search(text))
 
 
+# Printer ink and toner: the owner wants none of it ("HP 36A Black Original Laserjet Toner Cartridge",
+# 82% below its "usual" price, rang at max priority on 23 Nov 2026). A printer is still a printer,
+# even one named for its ink tank ("HP Smart Tank 580 ... Ink Tank Printer").
+_INK = re.compile(
+    r"\b(?:ink|toner)\s*(?:cartridges?|bottles?|refills?|kits?|powder|carts?)\b|\btoners?\b|\bdrum\s+units?\b"
+    r"|\bcartridges?\b[^\n]{0,40}\b(?:ink|laserjet|deskjet|inkjet|officejet|pixma|ecotank|black|tri-?colou?r)\b"
+    r"|\b(?:ink|inkjet|laserjet)\b[^\n]{0,40}\bcartridges?\b", re.I)
+_A_PRINTER = re.compile(r"\bprinters?\b(?![^\n]{0,3}\b(?:ink|toner|cartridge))", re.I)
+_FOR_PRINTERS = re.compile(r"\b(?:for|compatible\s+(?:with|for)|fits?|works?\s+with)\b[^\n]{0,40}\bprinters?\b", re.I)
+
+
+def is_printer_ink(text: str) -> bool:
+    if not _INK.search(text):
+        return False
+    printer = _A_PRINTER.search(text) and not _FOR_PRINTERS.search(text)
+    return not (printer and not re.search(r"\bcartridges?\b|\btoners?\b|\bbottles?\b|\brefills?\b", text, re.I))
+
+
+def is_unwanted(text: str) -> bool:
+    """Things the owner never wants pushed, whatever their price: phone cases, printer ink."""
+    return is_phone_case(text) or is_printer_ink(text)
+
+
 # Memberships, subscriptions, TV packs and restaurant deals are services, not loots on something to
 # buy. Pushed at high priority on 21 Nov 2026: "Free Loot : Get Free 1 Month Amazon Prime Membership"
 # as "₹2" (the owner wants none of these), "TataPlay Jingalala Saturdays: Hindi TV shows" at ₹1
@@ -238,7 +261,8 @@ _SERVICE = re.compile(
     r"|\b(?:netflix|jio\s?hotstar|hotstar|spotify|youtube\s+premium|zee5|sony\s?liv|times\s+prime|gaana|wynk"
     r"|apple\s+(?:music|tv\+?)|prime\s+video)\b[^\n]{0,40}?\b(?:premium|plan|membership|subscription|free|months?)\b"
     r"|\b(?:tata\s?play|tata\s?sky|dish\s?tv|d2h|sun\s+direct|airtel\s+(?:dth|digital\s+tv|xstream))\b"
-    r"|\bdine\s?out\b|\btable\s+booking\b",
+    r"|\bdine\s?out\b|\btable\s+booking\b"
+    r"|\bstay\s?cations?\b|\bholiday\s+packages?\b|\b(?:hotel|resort)\s+stays?\b",  # "Dinner & Staycation", 22 Nov 2026
     re.I)
 # "Echo Dot @ ₹2,499 with free 6 months of Amazon Music subscription": a product that comes with a
 # service is still a product.
@@ -298,7 +322,7 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     if deny and deny.search(parsed.text):
         return None
     hosts = _hosts(links)
-    if is_finance_promo(parsed.text, hosts) or is_phone_case(parsed.text):
+    if is_finance_promo(parsed.text, hosts) or is_unwanted(parsed.text):
         return None
     if _payment_only(hosts) and not loot_channel:
         return None  # the channels the owner marked are believed on their own word (see loot_channel_verdict)
@@ -325,7 +349,7 @@ def tracker_near_miss(price: float, usual: Optional[float], low: Optional[float]
                       mrp: Optional[float], title: str = "") -> str:
     """For the log: a tracker drop at its lowest price, 45% or more under its usual price, that was
     not pushed (""  when it is no such drop, or a phone case, which is never pushed)."""
-    if not usual or not price or usual <= price or is_phone_case(title):
+    if not usual or not price or usual <= price or is_unwanted(title):
         return ""
     drop = (usual - price) / usual * 100
     lowest = new_low or (low is not None and price <= low * 1.03)
@@ -701,7 +725,7 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
 
 def _evaluate_stated(title: str, body: str, text: str, price: Optional[float], mrp: Optional[float],
                      settings: Settings, links: Sequence[str]) -> Optional[Verdict]:
-    if is_finance_promo(text, _hosts(links)) or is_phone_case(text) or _payment_only(_hosts(links)):
+    if is_finance_promo(text, _hosts(links)) or is_unwanted(text) or _payment_only(_hosts(links)):
         return None
     if is_service_offer(text) and not is_favourite(text, settings):
         return None
@@ -771,7 +795,7 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     product's list price; the price is then measured against the list price (``mrp``) instead.
     A product the tracker shows as out of stock is not announced at all.
     """
-    if not in_stock or is_phone_case(title):
+    if not in_stock or is_unwanted(title):
         return None
     reference, called = usual, "it usually costs"
     # A "list price" barely above the price and under a third of the usual one is no list price (a
@@ -1115,7 +1139,7 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
     search/category page ("nothing here should cost this little"). ``baseline`` marks the very
     first read of a listing, which only records what is normal there.
     """
-    if (listing and baseline) or is_phone_case(title):
+    if (listing and baseline) or is_unwanted(title):
         return None
 
     if target is not None and _entered(price, target, info, settings):

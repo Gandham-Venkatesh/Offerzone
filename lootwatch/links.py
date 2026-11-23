@@ -161,10 +161,13 @@ _FILLER_WORDS = {
 }
 
 
+_URL = re.compile(r"(?:https?://|www\.)\S+|\b[a-z0-9-]+\.(?:com|in|it|co|cc|to|li|ly|me|link|app)/\S*", re.I)
+
+
 def name_words(name: str, limit: int = 6) -> List[str]:
     """The first few words of a product name that say what it is (no hype, no single letters)."""
     found: List[str] = []
-    for word in re.findall(r"[a-z0-9]+", name.lower()):
+    for word in re.findall(r"[a-z0-9]+", _URL.sub(" ", name.lower())):
         if word in _FILLER_WORDS or word in ("lowest", "new", "upto", "up", "flat") or len(word) < 2:
             continue
         if word not in found:
@@ -213,8 +216,10 @@ def model_name(title: str) -> str:
 
 
 def text_fingerprint(text: str, price: Optional[float]) -> str:
-    """Fallback identity when a post has no resolvable product link."""
-    words = re.findall(r"[a-z0-9]+", text.lower())
+    """Fallback identity when a post has no resolvable product link. Links are left out: four channels
+    posted "Add 2 Quantity : https://myntr.it/..." at ₹133 on 22 Nov 2026, each with a short link of its
+    own, and it rang four times."""
+    words = re.findall(r"[a-z0-9]+", _URL.sub(" ", text.lower()))
     stop = _FILLER_WORDS
     significant = [w for w in words if w not in stop and not w.isdigit() and len(w) > 1][:10]
     basis = " ".join(sorted(set(significant))) + f"|{int(price) if price is not None else ''}"

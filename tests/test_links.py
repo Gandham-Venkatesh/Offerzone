@@ -195,6 +195,15 @@ class ChannelShortLinks(unittest.TestCase):
                 self.assertEqual(classify_host(host), "generic")
 
 
+class TheSameLootFromSeveralChannels(unittest.TestCase):
+    def test_their_short_links_do_not_make_it_another_loot(self):
+        # 22 Nov 2026: four channels, four short links, four pushes of one ₹133 Myntra loot.
+        texts = [f"Add 2 Quantity : https://myntr.it/{code}\nLoot @ 133" for code in ("K029L93", "1nxhhJu", "Jl5L7Bi")]
+        self.assertEqual(len({text_fingerprint(text, 133) for text in texts}), 1)
+        self.assertTrue(same_product_name("Add 2 Quantity : https://myntr.it/K029L93", "Add 2 Quantity : https://myntr.it/8gw2UWZ"))
+        self.assertNotEqual(text_fingerprint(texts[0], 133), text_fingerprint("Boat Airdopes 141 https://myntr.it/K029L93", 133))
+
+
 class ModelNames(unittest.TestCase):
     def test_sizes_and_colours_are_one_model(self):
         self.assertEqual(model_name("ADIDAS ULTRABOOST 5 Running Shoes For Men (Blue, 13.5)"),
