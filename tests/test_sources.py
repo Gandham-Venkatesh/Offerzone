@@ -460,6 +460,20 @@ class QuickChecks(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(request.call_count, 2)
 
+    def test_a_check_goes_in_turn_and_as_the_same_visitor(self):
+        from unittest import mock
+
+        from lootwatch import fetch
+
+        site = self.fetcher._site("127.0.0.1")
+        with self.answers(200) as request:
+            self.fetcher.peek(self.URL)
+        self.assertIs(request.call_args.kwargs["session"], site.session, "the paced reading's connection")
+        with mock.patch.object(fetch, "PEEK_LOCK_WAIT", 0.05), site.lock, self.answers(200) as request:
+            self.fetcher.peek(self.URL)  # the paced reading is busy with a slow page
+        self.assertIs(request.call_args.kwargs["session"], site.peek_session)
+        self.assertIsNot(site.peek_session, site.session)
+
     def test_a_refused_check_holds_up_checks_not_the_sites_pages(self):
         with self.answers(429, 429):
             with self.assertLogs("lootwatch", level="WARNING") as logs:

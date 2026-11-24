@@ -98,6 +98,7 @@ _DEFAULT_POLICY = Policy(3.0, 5.0, 120, 3600, True)
 # Quick checks (Fetcher.peek): the longest they wait for the site's next turn, when they ask again
 # after an HTTP 429, and how long they wait after a refusal (doubling, up to the most).
 PEEK_MAX_WAIT = 5.0
+PEEK_LOCK_WAIT = 10.0  # the longest a check waits for the paced reading to finish its page
 PEEK_RETRY_SECONDS = 6.0
 PEEK_BASE_COOLDOWN = 60.0
 PEEK_MAX_COOLDOWN = 900.0
@@ -299,13 +300,25 @@ class Fetcher:
             return FetchResult(url, skipped=True, error=f"cooldown after {site.peek_refusal or 'a refusal'}")
         with site.peek_lock:
             for attempt in (1, 2):
-                wait = site.next_ok - time.time()
-                if wait > 0:
-                    time.sleep(min(wait, PEEK_MAX_WAIT))
-                if site.peek_session is None:
-                    site.peek_session = self._new_session(site)  # a session of its own: the queue's is busy
-                result = self._request(site, url, None, session=site.peek_session, timeout=timeout)
-                site.next_ok = max(site.next_ok, time.time() + random.uniform(site.policy.min_gap, site.policy.max_gap))
+                # In turn with the paced reading, and as the same visitor: on 23-24 Nov 2026 a quarter of
+                # the checks, made on a connection of their own, were refused while the pages never were.
+                locked = site.lock.acquire(timeout=PEEK_LOCK_WAIT)
+                try:
+                    wait = site.next_ok - time.time()
+                    if wait > 0:
+                        time.sleep(min(wait, PEEK_MAX_WAIT))
+                    if locked:
+                        session = self._session(site)
+                    else:  # the paced reading is stuck on a slow page: a connection of its own, then
+                        if site.peek_session is None:
+                            site.peek_session = self._new_session(site)
+                        session = site.peek_session
+                    result = self._request(site, url, None, session=session, timeout=timeout)
+                    site.next_ok = max(site.next_ok,
+                                       time.time() + random.uniform(site.policy.min_gap, site.policy.max_gap))
+                finally:
+                    if locked:
+                        site.lock.release()
                 if not (result.blocked or result.status in (403, 429, 503)):
                     site.peek_strikes = 0
                     return result
