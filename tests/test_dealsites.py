@@ -552,6 +552,21 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual((push["priority"], push["title"][:38]), (4, "Checked loot: 78% off · ₹99 (was ₹449)"),
                          "one push, already checked")
 
+    def test_a_loot_post_that_names_nothing_takes_the_trackers_name(self):
+        # "199 : https://amzn.to/..." came a dozen times on 23 Nov 2026, named by nothing but its price.
+        self.check_setup()
+        quiet = self.boat_card.replace("₹1,900 below its average", "₹350 below its average")
+        self.web.pages["/new"] = tracker_page(quiet, self.old_card)
+        reader, label = self.patched_tracker()
+        with reader, label:
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.post("alpha", 1, f'Loot @ ₹99 : <a href="{self.web.base}/r/boat">{self.web.base}/r/boat</a>',
+                          time.time() - 20)
+            monitor.cycle()
+        (push,) = self.deals()
+        self.assertTrue(push["title"].endswith("— boAt Airdopes 141"), push["title"])
+
     def test_a_flipkart_loot_is_checked_against_the_monitors_own_readings(self):
         self.check_setup()
         self.web.redirects["/r/fk"] = "https://www.flipkart.com/boat-airdopes-141/p/itm0123456789ab?pid=ACCGBOAT1234ABCD"
@@ -974,6 +989,26 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual(pushes[0]["title"], "Price drop: 88% off · ₹5,990 (was ₹52,000) — Lenovo IdeaPad Slim 3")
         self.assertEqual(pushes[0]["click"], "https://www.amazon.in/dp/B0IDEAPAD1")
         self.assertIn("PriceHistory tracker", pushes[0]["message"])
+
+    def test_a_sale_of_favourites_rings_loudly_twice_then_quietly(self):
+        # Seven treadmills from DealsMagnet in eight minutes rang at high priority on 23 Nov 2026.
+        self.settings.favourites = ["treadmill"]
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 60))
+        old = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 7200))
+        usual = '<p class="phd-range"><span>Low ₹6,999</span> <span>High ₹29,999</span></p>' \
+                '<p class="phd-save">₹13,000 below its average</p>'
+        self.web.pages["/new"] = tracker_page(tracker_card("old-one", "Old one", 5990, usual, stamp=old))
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"):
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(*[
+                tracker_card(f"treadmill-{n}", f"Brand{n} Motorised Treadmill Model {n}", 6999, usual, stamp=stamp,
+                             product=f"B0TREAD00{n}", low="1") for n in range(4)])
+            monitor.cycle()
+        priorities = sorted(push["priority"] for push in self.deals())
+        self.assertEqual(priorities, [3, 3, 4, 4])
+        self.assertTrue(any("one of several favourites" in push["message"] for push in self.deals()))
 
     def test_one_push_per_product_not_per_size(self):
         # A shoe that drops in nine sizes is listed by the tracker nine times: one deal, one push.

@@ -45,6 +45,11 @@ STOCK_CHECK_SECONDS = 6.0
 # Joining the public channels with the Telegram login (TG_JOIN_CHANNELS): after this long, this far
 # apart, at most this many a run.
 JOIN_START_SECONDS = 45.0
+# A slower pace Telegram asked for is kept by the next runs for this long.
+SLOW_PACE_HOURS = 3
+# At most this many favourites from one source ring at high priority within this many seconds.
+FAVOURITE_BURST = 2
+FAVOURITE_BURST_SECONDS = 900.0
 JOIN_GAP_SECONDS = 60.0
 JOIN_PER_RUN = 10
 # How long Flipkart's answer on a product is kept: sold out stays sold out for half an hour, in stock
@@ -155,6 +160,7 @@ class Monitor:
         self._push_lags: List[float] = []  # how late Telegram pushed posts, since the last scan line
         self._watch_checked: Dict[str, float] = {}
         self._near_logged: Dict[str, float] = {}  # tracker near misses logged lately: once an hour is enough
+        self._favourite_pushes: Dict[str, collections.deque] = {}  # source -> when its favourites rang loudly
         self._stock_answers: Dict[str, Tuple[Offer, float]] = {}  # Flipkart's last word on a product, and when
         self._ntfy_pause_until = 0.0
         self._last_ping = 0.0
@@ -178,6 +184,10 @@ class Monitor:
             else:
                 log.warning("invite-only channels need the telethon package (pip install telethon); skipping them")
         self._private = list(settings.private_channels) if self.account is not None else []
+        if self._private and hasattr(self.account, "use_known"):
+            known = {code: self.db.get(f"tg_invite:{code}") for code in self._private}
+            self.account.use_known({code: int(chat) for code, chat in known.items() if chat.isdigit()},
+                                   {code: settings.private_names.get(code, "") for code in self._private})
         self._names.update({f"tg:+{code}": f"invite-only channel {code[:6]}…" for code in self._private})
         # Whose turn it is survives a restart: with a long list and short runs, the pages at the
         # top of the file would otherwise be read again and again and the rest hardly ever.
@@ -246,6 +256,9 @@ class Monitor:
                 self._count("source_failures")
             return error
         self._names[source] = f"{page.title} (invite-only)"
+        chat = self.account.chat_id(code) if hasattr(self.account, "chat_id") else None
+        if chat and self.db.get(f"tg_invite:{code}") != str(chat):
+            self.db.set(f"tg_invite:{code}", chat)  # found by its chat id from now on, not its invite link
         self._take_channel_page(source, page.title, page, record=record)
         return ""
 
@@ -258,6 +271,10 @@ class Monitor:
         the account to slow down, it does.
         """
         gap = self.s.tg_fast_seconds
+        stamp, _, kept = self.db.get("tg_fast_gap").partition(":")
+        if stamp.isdigit() and time.time() - int(stamp) < SLOW_PACE_HOURS * 3600:
+            gap = max(gap, float(kept or gap))  # Telegram asked an earlier run to slow down lately
+            log.info("the invite-only channels are read every %.0fs: Telegram asked for a slower pace lately", gap)
         recorded: Dict[str, float] = {}
         while not self._fast_stop.is_set():
             started = time.time()
@@ -274,6 +291,7 @@ class Monitor:
                     recorded[code] = started
                 if "before asking again" in error and gap < 60:
                     gap = min(60.0, gap * 2)
+                    self.db.set("tg_fast_gap", f"{int(time.time())}:{gap:.0f}")
                     log.warning("Telegram asked the login to slow down: the invite-only channels are read every %.0fs "
                                 "from now on", gap)
             self._fast_stop.wait(max(0.5, started + gap - time.time()))
@@ -828,6 +846,11 @@ class Monitor:
         subject = _first_line(text)
         if verdict.product_name and _says_little(subject):
             subject = _first_line(verdict.product_name)  # "Loot at 398.": the store's page names the product
+        elif _says_little(subject) and fingerprint.startswith(("amazon:", "flipkart:")):
+            # "199 : https://amzn.to/...": the price tracker may have listed the product lately.
+            seen = self.db.tracker_item(fingerprint, time.time() - TRACKER_MEMORY)
+            if seen and seen[0]:
+                subject = _first_line(seen[0])
         # A loot posted without a list price is checked against the price tracker (Amazon and
         # Flipkart): at once if it has listed the product lately, otherwise for the next hour.
         product = fingerprint if fingerprint.startswith(("amazon:", "flipkart:")) else ""
@@ -840,6 +863,18 @@ class Monitor:
                 verdict.reason = f"{verdict.reason}; {checked.reason}"
                 to_check = False
 
+        if verdict.tier == TIER_HIGH and "on your favourites list" in verdict.notes:
+            # A sale of favourites comes all at once (seven treadmills from DealsMagnet in eight minutes on
+            # 23 Nov 2026, each at high priority): the first FAVOURITE_BURST of a source ring loudly, the
+            # rest of the burst come at the ordinary priority.
+            now, recent = time.time(), self._favourite_pushes.setdefault(source, collections.deque())
+            while recent and now - recent[0] > FAVOURITE_BURST_SECONDS:
+                recent.popleft()
+            if len(recent) >= FAVOURITE_BURST:
+                verdict.tier = TIER_NORMAL
+                verdict.notes.append("one of several favourites from the same place just now")
+            else:
+                recent.append(now)
         lines = [text[:600].strip(), ""]
         lines.extend("⚠ " + flag for flag in verdict.flags)
         lines.extend("Note: " + note for note in verdict.notes)

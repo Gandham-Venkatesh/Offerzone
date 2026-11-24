@@ -1127,6 +1127,24 @@ class TheDaysNoise(unittest.TestCase):
         self.assertIsNone(evaluate_text("Wondergifts Loot: Upto 50% Off On Dinner & Staycation @ ₹4,899 https://amzn.to/x",
                                         self.s, links=self.link))
 
+    def test_a_pouch_for_a_phone_is_a_phone_case(self):
+        self.assertIsNone(evaluate_tracked("Apple Pouch for iPhone 12 Pro Max (Baltic Blue, Leather)", 999, 9116, self.s,
+                                           low=999))
+
+    def test_a_spare_part_on_the_tracker_is_never_loud(self):
+        verdict = evaluate_tracked("Electrolux Washable Allergy Plus Hygiene S-Filter for Electrolux vacuum cleaners", 549,
+                                   4739, self.s, low=549)
+        self.assertEqual(verdict.tier, TIER_NORMAL)
+        self.assertIn("a spare part or accessory", verdict.reason)
+        self.assertEqual(evaluate_tracked("Kent Grand RO Water Purifier with UV filter", 3999, 19999, self.s, low=3999).tier,
+                         TIER_URGENT, "a purifier with a filter is a purifier")
+
+    def test_sarees_are_muted_unless_the_discount_is_huge(self):
+        self.assertIsNone(evaluate_text("Kanjivaram silk sarees Loot @ ₹257 https://amzn.to/x", self.s, links=self.link))
+        self.assertIsNone(evaluate_text("Kanjivaram silk sarees Loot @ ₹257 https://amzn.to/x", self.s, links=self.link,
+                                        loot_channel=True))
+        self.assertIsNotNone(evaluate_text("Kanjivaram silk saree @ ₹99 (MRP ₹12,999)", self.s))
+
     def test_a_phone_case_is_never_logged_as_a_near_miss(self):
         self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")
         self.assertIn("its lowest price", tracker_near_miss(299, 1499, 299, True, None, title="Bata Men Casual Sandal"))

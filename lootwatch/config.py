@@ -121,6 +121,26 @@ def load_private_channels(path: Path) -> List[str]:
     return codes
 
 
+def load_private_names(path: Path) -> Dict[str, str]:
+    """The names channels.txt gives its invite-only channels in a comment ("! https://t.me/+xxxx # Offerzone
+    (3.9M)" -> "Offerzone"): with them the channels are found in the login's chat list."""
+    from .sources.tgaccount import invite_code
+
+    names: Dict[str, str] = {}
+    if not path.is_file():
+        return names
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line.startswith("#") or " #" not in line:
+            continue
+        link, _, comment = line.partition(" #")
+        code = invite_code(link)
+        name = re.sub(r"\s*\([^)]*\)\s*$", "", comment).strip()
+        if code and name:
+            names.setdefault(code, name)
+    return names
+
+
 # How much more often a page marked "!" or "!!" comes round than an unmarked one.
 WATCH_WEIGHTS = {0: 1.0, 1: 4.0, 2: 12.0}
 
@@ -316,6 +336,7 @@ class Settings:
     channels: List[str] = field(default_factory=list)
     private_channels: List[str] = field(default_factory=list)  # invite codes, read through a Telegram account
     loot_channels: List[str] = field(default_factory=list)  # marked "!": lowercase names and invite codes
+    private_names: Dict[str, str] = field(default_factory=dict)  # invite code -> name in channels.txt
     watchlist: List[WatchItem] = field(default_factory=list)
     traps: List[Trap] = field(default_factory=list)
     favourites: List[str] = field(default_factory=list)
@@ -396,6 +417,7 @@ class Settings:
         if self.use_channels:
             self.channels = load_channels(Path(self.channels_file))
             self.private_channels = load_private_channels(Path(self.channels_file))
+            self.private_names = load_private_names(Path(self.channels_file))
             self.loot_channels = load_loot_channels(Path(self.channels_file))
             self.feeds, self.fast_feeds = load_feeds(Path(self.feeds_file))
         if self.use_store_pages:

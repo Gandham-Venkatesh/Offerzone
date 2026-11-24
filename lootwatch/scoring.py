@@ -217,8 +217,8 @@ _PHONES = (r"(?:iphone|galaxy|redmi|oneplus|one\s+plus|pixel|vivo|oppo|realme|po
 _PHONE_CASE = re.compile(
     r"\b(?:phone|mobile|back|flip|bumper|silicone|silicon|clear|transparent|protective|rugged|armou?r|shockproof|hybrid"
     r"|leather\s+wallet|wallet)\s+(?:case|cover)s?\b"
-    r"|\b(?:case|cover)s?\s+(?:(?:for|compatible\s+with)\s+)?(?:the\s+)?(?:apple\s+|samsung\s+)?" + _PHONES +
-    r"|\b" + _PHONES + r"\b[^\n|,]{0,40}?(?<!free\s)(?<!with\s)(?<!charging\s)(?<!\+\s)\b(?:case|cover|bumper)s?\b"
+    r"|\b(?:case|cover|pouch|sleeve|skin)s?\s+(?:(?:for|compatible\s+with)\s+)?(?:the\s+)?(?:apple\s+|samsung\s+)?" + _PHONES +
+    r"|\b" + _PHONES + r"\b[^\n|,]{0,40}?(?<!free\s)(?<!with\s)(?<!charging\s)(?<!\+\s)\b(?:case|cover|bumper|pouch)s?\b"
     r"|\bscreen\s*(?:guard|protector)s?\b|\btempered\s+glass\b|\bcamera\s+lens\s+protector\b",
     re.I)
 
@@ -291,11 +291,12 @@ def _payment_only(hosts: Sequence[str]) -> bool:
     return bool(shops) and all(is_payment_app(host) for host in shops)
 
 
-# Muted by the owner on 21 Nov 2026: DigiHaat, an ONDC shopping app whose "loots" are ₹18 snack bars,
-# ₹39 choconuts and ₹50 makhana packs, several a day from several channels. A post about it counts
-# only with a huge discount on a stated list price (HIGH_DISCOUNT or more off, saving MIN_SAVING or
-# more), or a trap hit, from whichever channel, the owner's own included.
-_MUTED = re.compile(r"\bdigi\s?-?h+aa?t\b", re.I)
+# Muted by the owner: DigiHaat (21 Nov 2026), an ONDC shopping app whose "loots" are ₹18 snack bars,
+# ₹39 choconuts and ₹50 makhana packs, several a day from several channels; and sarees (asked on 20 Nov
+# 2026; "Kanjivaram silk sarees" still came on 23 Nov). A post about them counts only with a huge
+# discount on a stated list price (HIGH_DISCOUNT or more off, saving MIN_SAVING or more), or a trap hit,
+# from whichever channel, the owner's own included.
+_MUTED = re.compile(r"\bdigi\s?-?h+aa?t\b|\bsarees?\b|\bsaris?\b", re.I)
 
 
 def _unmuted(verdict: Optional[Verdict], text: str, settings: Settings) -> Optional[Verdict]:
@@ -870,9 +871,23 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
         reason += f" (it has been as low as {fmt_inr(low)})"
         if tier < TIER_NORMAL:
             return None
+    if tier > TIER_NORMAL and (is_side_product(title) or is_spare(title)):
+        # A filter, a brush roll, a pouch: worth knowing, never at high or max priority ("Electrolux
+        # Washable Allergy Plus Hygiene S-Filter" rang at max priority on 24 Nov 2026).
+        tier, reason = TIER_NORMAL, reason + " (a spare part or accessory)"
     return _favoured(Verdict(tier, reason, price, None, drop, label="Price drop", was=reference, max_tier=tier),
                      title, settings)
 
+
+_SPARE = re.compile(r"\b(?:filters?|replacement|spare|refills?|brush\s+rolls?|roller\s+brush|extension\s+rod|mounts?"
+                    r"|adapters?\s+for|strap\s+for|cable\s+for)\b", re.I)
+
+
+def is_spare(title: str) -> bool:
+    """A spare part or an add-on rather than the product ("... S-Filter for", "Roller Brush"); a feature
+    named after "with" is no spare ("RO water purifier with UV filter")."""
+    match = _SPARE.search(title)
+    return bool(match) and not re.search(r"\bwith\b", title[:match.start()], re.I)
 
 # Price tracker drops: the least a drop must save to be pushed at all (max priority still takes
 # URGENT_MIN_SAVING), and how far below its usual price a product at its lowest price yet, and far

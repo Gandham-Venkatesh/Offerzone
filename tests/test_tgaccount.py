@@ -288,6 +288,57 @@ class Reader(unittest.TestCase):
         page, error_text = reader.read("uV5wcTkUWJEwM2Y1", newer_only=True)
         self.assertEqual(error_text, "")
 
+    def test_invite_only_channels_are_found_in_the_chat_list_without_their_invite_links(self):
+        # Telegram refused invite-link look-ups for hours on 23-24 Nov 2026, when every run asked again.
+        import threading
+
+        offerzone = SimpleNamespace(id=1357275556, title="Offerzone", username=None, usernames=None)
+        client = FakeClient(messages=[SimpleNamespace(id=5, date=datetime.now(timezone.utc), message="Loot ₹1 https://amzn.to/x",
+                                                      entities=[])])
+        client.dialogs = [SimpleNamespace(entity=SimpleNamespace(id=42, title="Offerzone", username="offerzone_public",
+                                                                 usernames=None)),  # a public namesake: not it
+                          SimpleNamespace(entity=offerzone)]
+        reader = self.reader(client)
+        reader.use_known({}, {"7rHGiXC8TnsxN2I9": "Offerzone"})
+        got, done = [], threading.Event()
+        reader.listen(lambda code, post: (got.append(code), done.set()), public=[])
+        with self.assertLogs("lootwatch", level="INFO") as logs:
+            page, error = reader.read("7rHGiXC8TnsxN2I9")
+        self.assertEqual((error, page.title), ("", "Offerzone"))
+        self.assertEqual(client.asked, [], "no invite-link look-up")
+        self.assertEqual(reader.chat_id("7rHGiXC8TnsxN2I9"), 1357275556)
+        self.assertIn("invite-only channels found in the login's chat list: 1 of 1", "\n".join(logs.output))
+        # Its pushed posts are recognised at once.
+        (handler, _), = client.handlers
+        message = SimpleNamespace(id=6, date=datetime.now(timezone.utc), message="Loot ₹1 https://amzn.to/x", entities=[],
+                                  peer_id=SimpleNamespace(channel_id=1357275556))
+        asyncio.run_coroutine_threadsafe(handler(SimpleNamespace(message=message)), reader._loop).result(5)
+        self.assertTrue(done.wait(5))
+        self.assertEqual(got, ["7rHGiXC8TnsxN2I9"])
+
+    def test_a_channel_known_from_an_earlier_run_is_found_by_its_id(self):
+        client = FakeClient(messages=[])
+        client.dialogs = [SimpleNamespace(entity=SimpleNamespace(id=1702197669, title="Offerzone Tricks 2.0", username=None,
+                                                                 usernames=None))]
+        reader = self.reader(client)
+        reader.use_known({"uV5wcTkUWJEwM2Y1": 1702197669}, {"uV5wcTkUWJEwM2Y1": "Offerzone Tricks"})
+        page, error = reader.read("uV5wcTkUWJEwM2Y1")
+        self.assertEqual(error, "")
+        self.assertEqual(client.asked, [])
+
+    def test_a_channel_the_login_has_not_joined_names_its_link(self):
+        client = FakeClient(joined=False)
+        page, error = self.reader(client).read("7rHGiXC8TnsxN2I9")
+        self.assertIsNone(page)
+        self.assertIn("open https://t.me/+7rHGiXC8TnsxN2I9 with it and join", error)
+
+    def test_a_wait_telegram_asks_for_is_logged_with_its_cause(self):
+        error = type("FloodWaitError", (Exception,), {"seconds": 3600})("A wait of 3600 seconds is required "
+                                                                        "(caused by CheckChatInviteRequest)")
+        with self.assertLogs("lootwatch", level="WARNING") as logs:
+            self.reader(FakeClient(error=error)).read("7rHGiXC8TnsxN2I9")
+        self.assertIn("wait 3600s (CheckChatInviteRequest)", logs.output[0])
+
     def test_without_listen_no_handler_is_added(self):
         client = FakeClient(messages=[])
         self.reader(client).read("uV5wcTkUWJEwM2Y1")
@@ -316,6 +367,15 @@ class Lists(unittest.TestCase):
         self.assertEqual(load_loot_channels(path), ["7rHGiXC8TnsxN2I9", "loot_dealsx"])
         self.assertEqual(load_channels(path), ["Loot_Dealsx", "desidime"])
         self.assertEqual(load_private_channels(path), ["7rHGiXC8TnsxN2I9"])
+
+    def test_the_names_channels_txt_gives_invite_only_channels(self):
+        from lootwatch.config import load_private_names
+
+        folder = tempfile.mkdtemp()
+        path = Path(folder) / "channels.txt"
+        path.write_text("Loot_Dealsx  # Trending (1.79M)\n! https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone (3.9M)\n"
+                        "! https://t.me/+uV5wcTkUWJEwM2Y1 # Offerzone Tricks (3.0M)\nt.me/+abcdefgh12345\n", encoding="utf-8")
+        self.assertEqual(load_private_names(path), {"7rHGiXC8TnsxN2I9": "Offerzone", "uV5wcTkUWJEwM2Y1": "Offerzone Tricks"})
 
     def test_invite_links_are_kept_apart_from_public_channels(self):
         folder = tempfile.mkdtemp()
@@ -355,6 +415,36 @@ class FakeAccount:
 
     def close(self):
         self.closed = True
+
+
+class RememberingAccount(FakeAccount):
+    def __init__(self):
+        super().__init__()
+        self.known = None
+
+    def use_known(self, chats, names):
+        self.known = (chats, names)
+
+    def chat_id(self, code):
+        return 1357275556
+
+
+class RememberingInTheMonitor(unittest.TestCase):
+    def test_the_chat_id_of_an_invite_link_is_kept_for_the_next_run(self):
+        folder = tempfile.mkdtemp()
+        settings = Settings(ntfy_server="http://127.0.0.1:9", ntfy_topic="t", db_path=os.path.join(folder, "s.db"),
+                            startup_note=False, heartbeat_hour=-1)
+        settings.private_channels = ["7rHGiXC8TnsxN2I9"]
+        settings.private_names = {"7rHGiXC8TnsxN2I9": "Offerzone"}
+        first = Monitor(settings, DB(settings.db_path), Fetcher("off"), Notifier(settings.ntfy_server, "t", "", ""),
+                        account=RememberingAccount())
+        self.assertEqual(first.account.known, ({}, {"7rHGiXC8TnsxN2I9": "Offerzone"}))
+        first._scan_private("7rHGiXC8TnsxN2I9", time.time() + 30)
+        first.db.close()
+        second = Monitor(settings, DB(settings.db_path), Fetcher("off"), Notifier(settings.ntfy_server, "t", "", ""),
+                         account=RememberingAccount())
+        self.addCleanup(second.db.close)
+        self.assertEqual(second.account.known[0], {"7rHGiXC8TnsxN2I9": 1357275556})
 
 
 class JoiningAccount(FakeAccount):

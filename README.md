@@ -38,7 +38,8 @@ Each scan (default: every 60 seconds) it looks in four places:
    at once. Loots in the quick-delivery apps (Instamart, Zepto, Blinkit, BigBasket, Swiggy,
    Flipkart Minutes, JioMart), and their "search X, sort by discount" hints, ring at high priority.
 5. **Your favourites** (`favourites.txt`: protein, whey, gym equipment, ... edit it freely). A deal
-   on one of them rings one step louder, and one judged by its list price alone counts from 70% off.
+   on one of them rings one step louder, and one judged by its list price alone counts from 70% off;
+   when a source sends many at once (a treadmill sale), two ring loudly and the rest quietly.
    Every other deal judged only by its list price needs 85% (`MRP_MIN_DISCOUNT`), since inflated
    list prices make 80% off an everyday sight. Posts are parsed for price, MRP and discount, de-duplicated across
    all of these, and filtered hard.
@@ -190,11 +191,12 @@ restaurant deals (Swiggy Dineout), and offers whose links lead only to a payment
 PhonePe; from a channel marked `!` these are still believed). A product that comes with a
 subscription ("Echo Dot with 6 months of Amazon Music") is still a product, and a membership for
 something on your favourites list (a gym) is judged like any deal. Staycations and holiday packages
-count as services too. Phone cases, printer ink and toner (a printer is still a printer), and gold
-or jewellery "loots" never alert, and clothing judged by its list price alone stays at Quiet: a
+count as services too. Phone cases and pouches, printer ink and toner (a printer is still a printer), and gold
+or jewellery "loots" never alert; a spare part or accessory on the price tracker (a vacuum filter)
+comes at Quiet at most; and clothing judged by its list price alone stays at Quiet: a
 ₹100 kurta with an "MRP" of ₹2,499 is an everyday sight. Posts about **DigiHaat** (₹18 snack bars,
-₹50 makhana packs) are muted, from every channel, unless they show a huge discount on a stated list
-price: 90% or more off, saving ₹1,000 or more.
+₹50 makhana packs) and about sarees are muted, from every channel, unless they show a huge discount
+on a stated list price: 90% or more off, saving ₹1,000 or more.
 
 Ignored: "upto 90% off" banners, capped coupons of ordinary shops ("80% off up to ₹160"), amounts that belong to an
 offer (cashback, wallet credits, coupons, bank and exchange discounts, EMIs, recharges), ranges ("under ₹999",
@@ -406,8 +408,13 @@ the two channels with the others. What to know:
   two channels failing with "Telegram ended the saved login"), run step 3 again and replace
   `TG_SESSION`.
 - If the session string ever leaks, end it in Telegram: *Settings → Devices*, then make a new one.
+- The two channels are found in the login's own chat list by the name `channels.txt` gives them
+  (`# Offerzone`), and from then on by their chat id, kept in the state file: their invite links are
+  looked up only the first time. Telegram allows those look-ups only so often, and when every run
+  asked again (23-24 Nov 2026) it refused them for hours, and the channels could not be read.
 - New posts are caught within seconds: the two channels are read every 5 seconds through the
-  login (`TG_FAST_SECONDS`), each time asking only for messages newer than the last one seen.
+  login (`TG_FAST_SECONDS`), each time asking only for messages newer than the last one seen. When
+  Telegram asks for a slower pace, the next runs keep it for three hours.
   Telegram also pushes new posts to the login, but on a channel with millions of members that
   push came half a minute late, so asking wins. The scan log shows how late the pushes come
   (`Telegram pushed 2 post(s) 3-35s after they were published`). A post is pushed to you once,

@@ -135,6 +135,8 @@ class AccountReader:
         self._chat_codes: Dict[int, str] = {}  # channel id -> invite code, or "@username": which live posts are ours
         self._newest: Dict[str, int] = {}  # invite code -> newest message id read
         self._public: Dict[str, str] = {}  # public channels to take pushed posts from: lower-case name -> name
+        self.known_chats: Dict[str, int] = {}  # invite code -> channel id, kept from an earlier run
+        self.names: Dict[str, str] = {}  # invite code -> the channel's name as channels.txt gives it
         self._public_checked = False
         self._on_post: Optional[Callable[[str, TgPost], None]] = None
         self._listening = False
@@ -216,9 +218,23 @@ class AccountReader:
         if self._on_post is not None and not self._listening:
             self._client.add_event_handler(self._new_message, events.NewMessage() if HAS_TELETHON else None)
             self._listening = True
-        if self._public and self._on_post is not None and not self._public_checked:
+        if not self._public_checked and ((self._public and self._on_post is not None) or self.known_chats or self.names):
             await self._find_public()
         return self._client
+
+    def use_known(self, chats: Dict[str, int], names: Dict[str, str]) -> None:
+        """Which chat each invite link stood for in an earlier run, and the names channels.txt gives the
+        channels: they are then found in the account's chat list, with no look-up of the invite link.
+        Telegram allows those look-ups only so often, and refused them for hours on 23-24 Nov 2026,
+        when every run asked again: Offerzone could not be read, nor its pushed posts recognised."""
+        self.known_chats = {code: int(chat) for code, chat in chats.items() if chat}
+        self.names = {code: name for code, name in names.items() if name}
+
+    def chat_id(self, code: str) -> Optional[int]:
+        chat = self._chats.get(code)
+        if chat is None:
+            return None
+        return int(getattr(chat, "id", 0) or 0) or None
 
     async def _find_public(self) -> None:
         """Which public channels the account has joined: Telegram pushes their posts too.
@@ -228,9 +244,20 @@ class AccountReader:
         """
         self._public_checked = True
         joined: List[str] = []
+        by_id = {chat: code for code, chat in self.known_chats.items()}
+        by_name = {name.strip().lower(): code for code, name in self.names.items()}
         try:
             async for dialog in self._client.iter_dialogs():
                 entity = getattr(dialog, "entity", None)
+                chat = int(getattr(entity, "id", 0) or 0)
+                code = by_id.get(chat)
+                if code is None and getattr(entity, "username", None) is None:  # invite-only: no public name
+                    code = by_name.get((getattr(entity, "title", "") or "").strip().lower())
+                if code is not None and code not in self._chats:
+                    self._chats[code] = entity
+                    self.titles[code] = getattr(entity, "title", "") or code
+                    self._chat_codes[chat] = code
+                    continue
                 names = [getattr(entity, "username", None)]
                 names += [getattr(extra, "username", None) for extra in getattr(entity, "usernames", None) or []]
                 for name in names:
@@ -242,6 +269,14 @@ class AccountReader:
         except Exception as exc:  # the reading from the web goes on regardless
             log.warning("could not list the Telegram account's chats (%s): public channels are read from "
                         "the web only", type(exc).__name__)
+            return
+        found = [code for code in list(self.known_chats) + list(self.names) if code in self._chats]
+        if self.known_chats or self.names:
+            log.info("invite-only channels found in the login's chat list: %d of %d%s", len(set(found)),
+                     len(set(self.known_chats) | set(self.names)),
+                     "" if set(found) >= set(self.known_chats) | set(self.names) else
+                     " (the others are looked up through their invite links)")
+        if not self._public:
             return
         others = len(self._public) - len(joined)
         if not joined:
@@ -302,7 +337,8 @@ class AccountReader:
             invite = await client(functions.messages.CheckChatInviteRequest(code))
             chat = getattr(invite, "chat", None)
             if chat is None:  # types.ChatInvite: the link works, but this account is not a member
-                raise AccountError("the Telegram account has not joined this channel: open the invite link with it and join")
+                raise AccountError(f"the Telegram account has not joined this channel: open https://t.me/+{code} "
+                                   "with it and join")
             self._chats[code] = chat
             self.titles[code] = getattr(chat, "title", "") or code
             self._chat_codes[int(getattr(chat, "id", 0))] = code
@@ -333,6 +369,9 @@ class AccountReader:
                 seconds = getattr(exc, "seconds", None)
                 if "FloodWait" in name and seconds:
                     self._quiet_until = time.time() + float(seconds) + 5
+                    caused = re.search(r"caused by (\w+)", str(exc))
+                    log.warning("Telegram asked the login to wait %ds (%s); pushed posts are still taken meanwhile",
+                                int(seconds), caused.group(1) if caused else name)
                     return None, f"Telegram asked to wait {int(seconds)}s before asking again"
                 if any(dead in name for dead in _DEAD_LOGIN):
                     self._dead = (f"Telegram ended the saved login ({name}): make a new TG_SESSION with "
