@@ -990,8 +990,8 @@ class SitePagesInTheMonitor(unittest.TestCase):
         self.assertEqual(pushes[0]["click"], "https://www.amazon.in/dp/B0IDEAPAD1")
         self.assertIn("PriceHistory tracker", pushes[0]["message"])
 
-    def test_a_sale_of_favourites_rings_loudly_twice_then_quietly(self):
-        # Seven treadmills from DealsMagnet in eight minutes rang at high priority on 23 Nov 2026.
+    def test_every_favourite_of_a_sale_rings_loudly(self):
+        # The owner wants treadmills at high priority, however many come at once (23-24 Nov 2026).
         self.settings.favourites = ["treadmill"]
         stamp = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 60))
         old = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 7200))
@@ -1006,9 +1006,7 @@ class SitePagesInTheMonitor(unittest.TestCase):
                 tracker_card(f"treadmill-{n}", f"Brand{n} Motorised Treadmill Model {n}", 6999, usual, stamp=stamp,
                              product=f"B0TREAD00{n}", low="1") for n in range(4)])
             monitor.cycle()
-        priorities = sorted(push["priority"] for push in self.deals())
-        self.assertEqual(priorities, [3, 3, 4, 4])
-        self.assertTrue(any("one of several favourites" in push["message"] for push in self.deals()))
+        self.assertEqual(sorted(push["priority"] for push in self.deals()), [4, 4, 4, 4])
 
     def test_one_push_per_product_not_per_size(self):
         # A shoe that drops in nine sizes is listed by the tracker nine times: one deal, one push.

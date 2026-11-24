@@ -47,9 +47,6 @@ STOCK_CHECK_SECONDS = 6.0
 JOIN_START_SECONDS = 45.0
 # A slower pace Telegram asked for is kept by the next runs for this long.
 SLOW_PACE_HOURS = 3
-# At most this many favourites from one source ring at high priority within this many seconds.
-FAVOURITE_BURST = 2
-FAVOURITE_BURST_SECONDS = 900.0
 JOIN_GAP_SECONDS = 60.0
 JOIN_PER_RUN = 10
 # How long Flipkart's answer on a product is kept: sold out stays sold out for half an hour, in stock
@@ -160,7 +157,6 @@ class Monitor:
         self._push_lags: List[float] = []  # how late Telegram pushed posts, since the last scan line
         self._watch_checked: Dict[str, float] = {}
         self._near_logged: Dict[str, float] = {}  # tracker near misses logged lately: once an hour is enough
-        self._favourite_pushes: Dict[str, collections.deque] = {}  # source -> when its favourites rang loudly
         self._stock_answers: Dict[str, Tuple[Offer, float]] = {}  # Flipkart's last word on a product, and when
         self._ntfy_pause_until = 0.0
         self._last_ping = 0.0
@@ -863,18 +859,6 @@ class Monitor:
                 verdict.reason = f"{verdict.reason}; {checked.reason}"
                 to_check = False
 
-        if verdict.tier == TIER_HIGH and "on your favourites list" in verdict.notes:
-            # A sale of favourites comes all at once (seven treadmills from DealsMagnet in eight minutes on
-            # 23 Nov 2026, each at high priority): the first FAVOURITE_BURST of a source ring loudly, the
-            # rest of the burst come at the ordinary priority.
-            now, recent = time.time(), self._favourite_pushes.setdefault(source, collections.deque())
-            while recent and now - recent[0] > FAVOURITE_BURST_SECONDS:
-                recent.popleft()
-            if len(recent) >= FAVOURITE_BURST:
-                verdict.tier = TIER_NORMAL
-                verdict.notes.append("one of several favourites from the same place just now")
-            else:
-                recent.append(now)
         lines = [text[:600].strip(), ""]
         lines.extend("⚠ " + flag for flag in verdict.flags)
         lines.extend("Note: " + note for note in verdict.notes)

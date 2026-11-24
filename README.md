@@ -38,8 +38,7 @@ Each scan (default: every 60 seconds) it looks in four places:
    at once. Loots in the quick-delivery apps (Instamart, Zepto, Blinkit, BigBasket, Swiggy,
    Flipkart Minutes, JioMart), and their "search X, sort by discount" hints, ring at high priority.
 5. **Your favourites** (`favourites.txt`: protein, whey, gym equipment, ... edit it freely). A deal
-   on one of them rings one step louder, and one judged by its list price alone counts from 70% off;
-   when a source sends many at once (a treadmill sale), two ring loudly and the rest quietly.
+   on one of them rings one step louder, and one judged by its list price alone counts from 70% off.
    Every other deal judged only by its list price needs 85% (`MRP_MIN_DISCOUNT`), since inflated
    list prices make 80% off an everyday sight. Posts are parsed for price, MRP and discount, de-duplicated across
    all of these, and filtered hard.
