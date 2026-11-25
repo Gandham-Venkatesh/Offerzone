@@ -31,9 +31,9 @@ Each scan (default: every 60 seconds) it looks in four places:
    list of drops covers Amazon. Both are read every 20 seconds (lines marked `!` in `feeds.txt`).
    27 public Telegram channels are read from the web once a minute, or within seconds once the
    Telegram login has joined them (see "Invite-only channels"); so are the two big Offerzone
-   channels and, on trial since 25 November 2026, eight more invite-only ones (Dealdost, Premium
-   Deals and its Instamart loots, DC Loots, four from the Offerzone network), which only the login
-   can read. A loot a channel posts without a
+   channels and, on trial since 25 November 2026, PD Tricks (quick-commerce tricks), which only
+   the login can read. Six other big channels that went private were joined, read and left out:
+   they repost the same deals as the public ones (notes in `channels.txt`). A loot a channel posts without a
    list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
    far below its usual price, a second push says "Checked loot" at high or max priority. A

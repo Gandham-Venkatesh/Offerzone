@@ -360,7 +360,7 @@ class AccountReader:
             title = getattr(invite, "title", "") or getattr(chat, "title", "") or code
             members = int(getattr(invite, "participants_count", 0) or getattr(chat, "participants_count", 0) or 0)
             about = " ".join((getattr(invite, "about", "") or "").split())[:120]
-            info = f'"{title}", {members:,} members' + (f": {about}" if about else "")
+            info = f'"{title}"' + (f", {members:,} members" if members else "") + (f": {about}" if about else "")
             if chat is None:
                 channel, broadcast = getattr(invite, "channel", None), getattr(invite, "broadcast", None)
             else:
