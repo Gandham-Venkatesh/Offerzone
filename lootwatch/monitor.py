@@ -828,6 +828,14 @@ class Monitor:
     # ----------------------------------------------------- alert pipeline ---
     def _handle_post(self, source: str, label: str, text: str, analysis_text: str, links: List[str],
                      post_url: str, ts: Optional[float]) -> None:
+        if self._is_trial_channel(source):
+            # On trial ("?" in channels.txt): every post goes to the log with what the rules would make
+            # of it, and nothing is pushed, so that a channel can be judged before it reaches a phone.
+            verdict = evaluate_text(analysis_text, self.s, links=links)
+            log.info("%s post %s (on trial, not pushed): %s | %s", label, post_url,
+                     f"would be {TIER_NAMES.get(verdict.tier, verdict.tier)} ({verdict.reason})" if verdict
+                     else "nothing: " + why_skipped(analysis_text, links), _first_line(text)[:90])
+            return
         marked = self._is_loot_channel(source)
         verdict = evaluate_text(analysis_text, self.s, links=links, loot_channel=marked)
         if verdict is None and not marked:
@@ -858,6 +866,12 @@ class Monitor:
         verdict.tier = verdict.max_tier = min(verdict.tier, TIER_NORMAL)
         verdict.reason += f"; posted by {channels} channels within the hour"
         return verdict
+
+    def _is_trial_channel(self, source: str) -> bool:
+        """Is this a channel marked "?" (on trial) in channels.txt?"""
+        if source.startswith("tg:+"):
+            return source[4:] in self.s.trial_channels
+        return source.startswith("tg:") and source[3:].lower() in self.s.trial_channels
 
     def _is_loot_channel(self, source: str) -> bool:
         """Is this a channel marked "!" in channels.txt?"""

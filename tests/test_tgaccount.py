@@ -464,6 +464,18 @@ class Lists(unittest.TestCase):
         self.assertEqual(load_channels(path), ["Loot_Dealsx", "desidime"])
         self.assertEqual(load_private_channels(path), ["7rHGiXC8TnsxN2I9"])
 
+    def test_a_question_mark_puts_a_channel_on_trial(self):
+        from lootwatch.config import load_loot_channels, load_trial_channels
+
+        folder = tempfile.mkdtemp()
+        path = Path(folder) / "channels.txt"
+        path.write_text("? https://t.me/+SdXYwHH_G3VkZWVl # Instamart/Blinkit/Zepto\n?dealztrendz\n"
+                        "! https://t.me/+7rHGiXC8TnsxN2I9\n", encoding="utf-8")
+        self.assertEqual(load_trial_channels(path), ["SdXYwHH_G3VkZWVl", "dealztrendz"])
+        self.assertEqual(load_loot_channels(path), ["7rHGiXC8TnsxN2I9"])
+        self.assertEqual(load_channels(path), ["dealztrendz"])
+        self.assertEqual(load_private_channels(path), ["SdXYwHH_G3VkZWVl", "7rHGiXC8TnsxN2I9"])
+
     def test_the_names_channels_txt_gives_invite_only_channels(self):
         from lootwatch.config import load_private_names
 
@@ -739,6 +751,19 @@ class InTheMonitor(unittest.TestCase):
         self.assertEqual(len(pushes), 2, pushes)
         self.assertEqual(pushes[1][0], 3)
         self.assertIn("links only to Telegram channels", self.web.pushes[1]["message"])
+
+    def test_a_channel_on_trial_is_logged_and_never_pushed(self):
+        self.settings.trial_channels = ["7rHGiXC8TnsxN2I9"]
+        self.web.redirects["/r/1"] = "https://www.amazon.in/dp/B0SONYXM51"
+        self.page(TgPost("c/1357275556", 1, time.time() - 7200, "Welcome", "Welcome"))
+        monitor = self.monitor()
+        monitor.cycle()
+        text = "Price Error 😱 Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)"
+        self.page(TgPost("c/1357275556", 2, time.time() - 20, text, text, links=[self.web.base + "/r/1"]))
+        with self.assertLogs("lootwatch", level="INFO") as logs:
+            monitor.cycle()
+        self.assertEqual(self.web.pushes, [])
+        self.assertTrue(any("(on trial, not pushed): would be urgent" in line for line in logs.output), logs.output)
 
     def test_a_channel_that_cannot_be_read_is_reported_like_any_source(self):
         self.account.errors["7rHGiXC8TnsxN2I9"] = "the Telegram account has not joined this channel: open the invite link"

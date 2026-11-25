@@ -453,6 +453,10 @@ the two channels with the others. What to know:
   channel by. A link that cannot be joined (a request the channel's admins have to accept, a link
   that no longer works, a group chat) is left alone for a day and then tried again. A channel the
   account is in already is left as you set it, neither muted nor archived.
+- **A channel on trial** (`?` in front of it in `channels.txt`) is read and joined like the rest,
+  but nothing from it is pushed: every post goes to the scan log with what the rules would make of
+  it (`... (on trial, not pushed): would be high (...)`), so a channel can be judged on a day of
+  real posts before it reaches your phone.
 - Apart from joining the channels of `channels.txt` (muted, archived), the monitor only
   reads. Telegram's terms allow that for your own account, but it is your account that does it; if
   Telegram ever asks it to slow down, it reads (or joins) less often on its own.

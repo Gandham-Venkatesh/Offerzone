@@ -66,7 +66,7 @@ _BARE_CHANNEL = re.compile(r"^@?(?P<name>[A-Za-z][A-Za-z0-9_]{3,31})$")
 
 def parse_channel(entry: str) -> Optional[str]:
     """Accept '@name', 'name' or a t.me link; private invite links cannot be read publicly."""
-    entry = entry.strip().lstrip("!").strip()  # "!" marks a loot channel (see load_loot_channels)
+    entry = entry.strip().lstrip("!?").strip()  # "!" marks a loot channel, "?" one on trial (see load_loot_channels)
     if "/+" in entry or "joinchat" in entry:
         return None
     match = _CHANNEL.match(entry) or _BARE_CHANNEL.match(entry)
@@ -101,6 +101,24 @@ def load_loot_channels(path: Path) -> List[str]:
     marked: List[str] = []
     for line in read_lines(path):
         if not line.startswith("!"):
+            continue
+        rest = line[1:].strip()
+        found = invite_code(rest) or (parse_channel(rest) or "").lower()
+        if found and found not in marked:
+            marked.append(found)
+    return marked
+
+
+def load_trial_channels(path: Path) -> List[str]:
+    """Channels marked with "?" in a channels file: on trial, read and logged, never pushed.
+
+    Holds lowercase public names and invite codes (as written), like load_loot_channels.
+    """
+    from .sources.tgaccount import invite_code
+
+    marked: List[str] = []
+    for line in read_lines(path):
+        if not line.startswith("?"):
             continue
         rest = line[1:].strip()
         found = invite_code(rest) or (parse_channel(rest) or "").lower()
@@ -336,6 +354,7 @@ class Settings:
     channels: List[str] = field(default_factory=list)
     private_channels: List[str] = field(default_factory=list)  # invite codes, read through a Telegram account
     loot_channels: List[str] = field(default_factory=list)  # marked "!": lowercase names and invite codes
+    trial_channels: List[str] = field(default_factory=list)  # marked "?": read and logged, never pushed
     private_names: Dict[str, str] = field(default_factory=dict)  # invite code -> name in channels.txt
     watchlist: List[WatchItem] = field(default_factory=list)
     traps: List[Trap] = field(default_factory=list)
@@ -413,12 +432,14 @@ class Settings:
         self.traps = load_traps(Path(self.traps_file))
         self.favourites = [line.lower() for line in read_lines(Path(self.favourites_file))]
         self.channels, self.private_channels, self.loot_channels, self.feeds, self.watchlist = [], [], [], [], []
+        self.trial_channels = []
         self.fast_feeds = []
         if self.use_channels:
             self.channels = load_channels(Path(self.channels_file))
             self.private_channels = load_private_channels(Path(self.channels_file))
             self.private_names = load_private_names(Path(self.channels_file))
             self.loot_channels = load_loot_channels(Path(self.channels_file))
+            self.trial_channels = load_trial_channels(Path(self.channels_file))
             self.feeds, self.fast_feeds = load_feeds(Path(self.feeds_file))
         if self.use_store_pages:
             self.watchlist = load_watchlist(Path(self.watchlist_file))

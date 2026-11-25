@@ -44,6 +44,8 @@ DesidimeHot                   # DesiDime handpicked (18K)
 #     into a shop is pushed, a quick-commerce or fashion-app loot loudly, and a "big loot" with a
 #     shop link at max priority. Card, loan and referral promotions and adverts for other channels
 #     still never are. Any channel can be marked this way.
+#     A "?" puts a channel on trial instead: it is read (and joined) like the rest, every post goes to
+#     the log with what the rules would make of it, and nothing is pushed.
 ! https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone (3.9M)
 ! https://t.me/+uV5wcTkUWJEwM2Y1 # Offerzone Tricks (3.0M)
 ! https://t.me/+S1zaVBoakn3KkBbY # DV Offers (63K)
@@ -56,6 +58,9 @@ DesidimeHot                   # DesiDime handpicked (18K)
 #     a group chat), and the log then shows its latest posts ("first look at ...") to judge it by. Unmarked
 #     invite-only channels are asked for new posts once a minute; Telegram pushes them within seconds.
 https://t.me/+9MtPJAnaAnBkMmU1   # PD Tricks (Premium Deals' tricks: Instamart, Zepto and BigBasket searches, app freebies; posts rarely)
+? https://t.me/+SdXYwHH_G3VkZWVl # Instamart/Blinkit/Zepto (50K)
+#     Instamart/Blinkit/Zepto: a quick-commerce loot channel of about 50K members, found the night DV Offers
+#     was added; on trial (logged, not pushed) until its posts show it is ahead of the channels above.
 
 # --- quick commerce and food (Blinkit, Zepto, Swiggy Instamart, BigBasket)
 FoodJunction                  # FRJ food coupons (11K)
