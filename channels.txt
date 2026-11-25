@@ -47,6 +47,20 @@ DesidimeHot                   # DesiDime handpicked (18K)
 ! https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone (3.9M)
 ! https://t.me/+uV5wcTkUWJEwM2Y1 # Offerzone Tricks (3.0M)
 
+# --- invite-only, on trial since 25 Nov 2026, judged like any channel (not marked). Many of the big deal
+#     channels went private in October 2026 and left only these links in their public channels. The login
+#     joins each, muted and archived, once a look at the link shows a broadcast channel (never a group
+#     chat), and the log then shows its latest posts ("first look at ...") to judge it by. Unmarked
+#     invite-only channels are asked for new posts once a minute; Telegram pushes them within seconds.
+https://t.me/+6c3lXEpYo5U3Njc1   # Dealdost (main channel, "since 2015": its public @dealdost now only links here)
+https://t.me/+7ufF-z6CPo8zYzI1   # Premium Deals (its public @PremiumLootDeals links here)
+https://t.me/+9MtPJAnaAnBkMmU1   # Premium Deals Instamart (Swiggy Instamart loots, linked from @PremiumLootDeals)
+https://t.me/+Vc5XKzHtGyTl_c6i   # DC LOOTS Offers And Deals (602K)
+https://t.me/+sX1Ht4p33nFjZDE1   # Offerzone network (links seen on Offerzone's pages; which channel each is, the log will say)
+https://t.me/+LQ3FigpMfmAyZGJl   # Offerzone network
+https://t.me/+AqIAH4O7egMyNzU1   # Offerzone network
+https://t.me/+S10mjKiu1xNjNzZl   # Offerzone network
+
 # --- quick commerce and food (Blinkit, Zepto, Swiggy Instamart, BigBasket)
 FoodJunction                  # FRJ food coupons (11K)
 swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots (6K)
@@ -58,6 +72,14 @@ swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots (6K)
 #     inflated list prices ("99% off" shoes still at Rs 1,700, "MRP" ten times the real one): freekaamaalindia
 #     removed on 20 Nov 2026 at the owner's request, its "loots" being sale collections and ordinary
 #       fashion (a sari): GrabOnIndiaOfficial
+#     checked on 25 Nov 2026 and left out, from about 50 more: quiet for weeks or years (most of the big
+#       ones moved to the invite links above, or to WhatsApp): dealspoint, dealdost, PremiumLootDeals,
+#       nonstopdeals, dealblast, quickdealsx_quick_deals, Cheapestdeals247, pricebefore, Freekalooto, magiXdeals,
+#       Offerzone_Deals_Loots, Deals_Offerzone_Loots and 12 small ones; private now: Flipkart_Shopping_Loots_Deals
+#       ("Offerzone 2.0"), lootsszone, offers_flipkart, slashdeal, gopaisadeals, ShoppingMantras; "LOOT ALERT" on
+#       everything, a MacBook at full price included: loot_deals_channel; sale banners and Hamara Mall:
+#       dailydealspoint; card referrals: tbkkabi; copies Offerzone Tricks minutes later: dealztrendz; nothing
+#       our rules would push: pwoffers, indlootdeals, Shopping_deal_offerss, Smartprix_Deals, Technicalsheikh
 #     checked on 21 Nov 2026 and left out: ordinary deals (a "Deal Price" with no list price, sale
 #       banners, card offers) that our rules would hardly ever push: iamprasadtech, viraloffersindia,
 #       dealsheaven, loot_dealsj, Tricksbystg, TeluguTechTVDeals, turbotechplus1, techofferstoday;

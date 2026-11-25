@@ -30,7 +30,10 @@ Each scan (default: every 60 seconds) it looks in four places:
    would be too, but since 18 November 2026 it refuses GitHub's servers); a price tracker's live
    list of drops covers Amazon. Both are read every 20 seconds (lines marked `!` in `feeds.txt`).
    27 public Telegram channels are read from the web once a minute, or within seconds once the
-   Telegram login has joined them (see "Invite-only channels"). A loot a channel posts without a
+   Telegram login has joined them (see "Invite-only channels"); so are the two big Offerzone
+   channels and, on trial since 25 November 2026, eight more invite-only ones (Dealdost, Premium
+   Deals and its Instamart loots, DC Loots, four from the Offerzone network), which only the login
+   can read. A loot a channel posts without a
    list price ("Loot @ ₹100", "BIG LOOT 😱") goes out at once at the ordinary priority (₹10 or
    less: high); if the price tracker lists the same Amazon or Flipkart product within the hour,
    far below its usual price, a second push says "Checked loot" at high or max priority. A
@@ -423,9 +426,12 @@ the two channels with the others. What to know:
   (`# Offerzone`), and from then on by their chat id, kept in the state file: their invite links are
   looked up only the first time. Telegram allows those look-ups only so often, and when every run
   asked again (23-24 Nov 2026) it refused them for hours, and the channels could not be read.
-- New posts are caught within seconds: the two channels are read every 5 seconds through the
-  login (`TG_FAST_SECONDS`), each time asking only for messages newer than the last one seen. When
-  Telegram asks for a slower pace, the next runs keep it for three hours.
+- New posts are caught within seconds: the invite-only channels marked `!` (the two Offerzone
+  channels) are read every 5 seconds through the login (`TG_FAST_SECONDS`), each time asking only for
+  messages newer than the last one seen; the other invite-only channels once a minute, their posts
+  pushed by Telegram within seconds meanwhile, so the login stays well inside what Telegram allows
+  however many channels it reads. When Telegram asks for a slower pace, the next runs keep it for
+  three hours.
   Telegram also pushes new posts to the login, but on a channel with millions of members that
   push came half a minute late, so asking wins. The scan log shows how late the pushes come
   (`Telegram pushed 2 post(s) 3-35s after they were published`). A post is pushed to you once,
@@ -436,7 +442,17 @@ the two channels with the others. What to know:
   login as they appear, and the scan log says `Telegram pushes the posts of N of the 27 public
   channels`. If Telegram asks the account to wait before joining more, the rest are joined by a
   later run. Channels not joined yet are read from their web page once a minute, as before.
-- Apart from joining the public channels of `channels.txt` (muted, archived), the monitor only
+- **Invite links are joined too.** Many of the big deal channels went private in October 2026 and
+  left only an invite link behind. For each invite link in `channels.txt` the login is not in, the
+  monitor first looks at what the link leads to and joins only a broadcast channel with 1,000
+  members or more, never a group chat; muted and archived like the rest. The scan log then names
+  it (`now reading the invite-only channel https://t.me/+... through the Telegram login: "Dealdost",
+  3,100,000 members ...`) and shows its latest posts with what the rules make of each (`first look
+  at Dealdost: #1234 2.0h ago | urgent | ...`; none of them is pushed, being old news), to judge the
+  channel by. A link that cannot be joined (a request the channel's admins have to accept, a link
+  that no longer works, a group chat) is left alone for a day and then tried again. A channel the
+  account is in already is left as you set it, neither muted nor archived.
+- Apart from joining the channels of `channels.txt` (muted, archived), the monitor only
   reads. Telegram's terms allow that for your own account, but it is your account that does it; if
   Telegram ever asks it to slow down, it reads (or joins) less often on its own.
 
@@ -490,7 +506,7 @@ python -m lootwatch               # scan forever
 | `HEALTHCHECK_URL` | – | A [healthchecks.io](https://healthchecks.io) ping URL; it alerts you if scans stop |
 | `TG_API_ID` / `TG_API_HASH` / `TG_SESSION` | – | Secrets: the Telegram login for invite-only channels (see "Invite-only channels") |
 | `TG_FAST_SECONDS` | 5 | Seconds between two readings of the invite-only channels through that login (0: once a scan) |
-| `TG_JOIN_CHANNELS` | 1 | The login joins the public channels of `channels.txt` (muted, archived) so their posts come within seconds; 0: never |
+| `TG_JOIN_CHANNELS` | 1 | The login joins the channels of `channels.txt` it is not in, public ones and invite links (muted, archived), so their posts come within seconds; 0: never |
 | `MRP_MIN_DISCOUNT` | 85 | A deal judged only by its list price alerts from this % off (or `MIN_DISCOUNT`, if higher) |
 | `FAVOURITE_MIN_DISCOUNT` | 70 | The same for things on `favourites.txt`, which also ring one step louder |
 | `FAST_FEED_SECONDS` | 20 | Seconds between two readings of a `feeds.txt` line marked `!` (0: once a scan); a site that refuses is read half as often from then on |

@@ -141,6 +141,32 @@ class JoiningClient(FakeClient):
         return SimpleNamespace()
 
 
+class InviteClient(JoiningClient):
+    """Answers an invite look-up with what the link leads to, and joins it."""
+
+    def __init__(self, invite, import_error=None, **kwargs):
+        super().__init__(**kwargs)
+        self.invite, self.import_error = invite, import_error
+
+    async def __call__(self, request):
+        kind = type(request).__name__
+        if kind == "CheckChatInviteRequest":
+            self.asked.append(request.hash)
+            return self.invite
+        if kind == "ImportChatInviteRequest":
+            if self.import_error:
+                raise self.import_error
+            self.requests.append((kind, request))
+            return SimpleNamespace(chats=[SimpleNamespace(id=900, title=self.invite.title, broadcast=True)])
+        return await super().__call__(request)
+
+
+def a_channel(title="Dealdost", members=3_100_000, broadcast=True):
+    """What Telegram says of an invite link the account is not in yet (a ChatInvite)."""
+    return SimpleNamespace(title=title, participants_count=members, channel=True, broadcast=broadcast,
+                           about="India's Most Trusted Deals Channel (Since 2015)")
+
+
 @unittest.skipUnless(HAS_TELETHON, "needs telethon")
 class Reader(unittest.TestCase):
     def reader(self, client):
@@ -339,6 +365,76 @@ class Reader(unittest.TestCase):
             self.reader(FakeClient(error=error)).read("7rHGiXC8TnsxN2I9")
         self.assertIn("wait 3600s (CheckChatInviteRequest)", logs.output[0])
 
+    def test_an_invite_link_to_a_big_channel_is_joined_quietly(self):
+        import threading
+
+        client = InviteClient(a_channel(), messages=[])
+        reader = self.reader(client)
+        reader.use_known({}, {"6c3lXEpYo5U3Njc1": "Dealdost"})
+        self.assertIsNone(reader.missing_private(), "not known before the chat list is looked at")
+        got, done = [], threading.Event()
+        reader.listen(lambda code, post: (got.append(code), done.set()), public=[])
+        reader.read("7rHGiXC8TnsxN2I9")  # any reading looks at the chat list first
+        self.assertEqual(reader.missing_private(), ["6c3lXEpYo5U3Njc1"])
+        why, info = reader.join_invite("6c3lXEpYo5U3Njc1")
+        self.assertEqual(why, "")
+        self.assertIn('"Dealdost", 3,100,000 members: India\'s Most Trusted Deals Channel', info)
+        self.assertIn("(joined, muted and archived)", info)
+        kinds = [kind for kind, _ in client.requests]
+        self.assertEqual(kinds, ["ImportChatInviteRequest", "UpdateNotifySettingsRequest", "EditPeerFoldersRequest"])
+        self.assertEqual(client.requests[1][1].settings.mute_until, 2 ** 31 - 1, "muted for good")
+        self.assertEqual(client.requests[2][1].folder_peers[0].folder_id, 1, "put in the archive")
+        self.assertEqual((reader.missing_private(), reader.chat_id("6c3lXEpYo5U3Njc1")), ([], 900))
+        (handler, _), = client.handlers
+        message = SimpleNamespace(id=8, date=datetime.now(timezone.utc), message="Loot ₹1 https://amzn.to/x", entities=[],
+                                  peer_id=SimpleNamespace(channel_id=900))
+        asyncio.run_coroutine_threadsafe(handler(SimpleNamespace(message=message)), reader._loop).result(5)
+        self.assertTrue(done.wait(5))
+        self.assertEqual(got, ["6c3lXEpYo5U3Njc1"], "its posts are pushed from now on")
+
+    def test_an_invite_link_to_a_group_chat_or_a_tiny_channel_is_left_alone(self):
+        for invite, why in ((a_channel(broadcast=False), "a group chat, not a channel: left alone"),
+                            (a_channel(members=300), "only 300 members: left alone")):
+            client = InviteClient(invite, messages=[])
+            self.assertEqual(self.reader(client).join_invite("6c3lXEpYo5U3Njc1")[0], why)
+            self.assertEqual(client.requests, [], "nothing joined")
+
+    def test_a_channel_the_account_is_in_already_is_left_as_the_owner_set_it(self):
+        client = InviteClient(SimpleNamespace(chat=SimpleNamespace(id=901, title="My deals")), messages=[])
+        reader = self.reader(client)
+        self.assertEqual(reader.join_invite("6c3lXEpYo5U3Njc1"), ("", '"My deals" (the account is in it already)'))
+        self.assertEqual(client.requests, [], "neither muted nor archived")
+        self.assertEqual(reader.chat_id("6c3lXEpYo5U3Njc1"), 901)
+
+    def test_a_join_request_or_a_dead_link_says_so(self):
+        for error, why in ((type("InviteRequestSentError", (Exception,), {})("sent"),
+                            "asked to join: the channel's admins have to accept the request"),
+                           (type("InviteHashExpiredError", (Exception,), {})("expired"),
+                            "the invite link no longer works (InviteHashExpiredError)")):
+            client = InviteClient(a_channel(), import_error=error, messages=[])
+            self.assertEqual(self.reader(client).join_invite("6c3lXEpYo5U3Njc1")[0], why)
+
+    def test_while_joining_the_reading_never_looks_an_invite_link_up(self):
+        client = InviteClient(a_channel(), messages=[])
+        reader = self.reader(client)
+        reader.use_known({}, {"6c3lXEpYo5U3Njc1": "Dealdost"})
+        reader.joining = True
+        page, error = reader.read("6c3lXEpYo5U3Njc1", newer_only=True)
+        self.assertIn("has not joined this channel yet: the monitor joins it shortly", error)
+        self.assertEqual(client.asked, [], "only the joining asks Telegram about the link")
+        self.assertEqual(reader.join_invite("6c3lXEpYo5U3Njc1")[0], "")
+        self.assertEqual(client.asked, ["6c3lXEpYo5U3Njc1"])
+        page, error = reader.read("6c3lXEpYo5U3Njc1", newer_only=True)
+        self.assertEqual(error, "")
+
+    def test_a_link_the_account_is_not_in_is_looked_up_only_now_and_then(self):
+        client = FakeClient(joined=False)
+        reader = self.reader(client)
+        for _ in range(3):
+            page, error = reader.read("7rHGiXC8TnsxN2I9", newer_only=True)
+            self.assertIn("has not joined this channel", error)
+        self.assertEqual(client.asked, ["7rHGiXC8TnsxN2I9"], "the fast reading does not ask Telegram every few seconds")
+
     def test_without_listen_no_handler_is_added(self):
         client = FakeClient(messages=[])
         self.reader(client).read("uV5wcTkUWJEwM2Y1")
@@ -399,6 +495,7 @@ class FakeAccount:
         self.on_post = None
         self.public = None
         self.reads = []
+        self.read_codes = []
         self.titles = {"7rHGiXC8TnsxN2I9": "Offerzone"}
 
     def listen(self, on_post, public=()):
@@ -409,6 +506,7 @@ class FakeAccount:
 
     def read(self, code, newer_only=False):
         self.reads.append(newer_only)
+        self.read_codes.append(code)
         if code in self.errors:
             return None, self.errors[code]
         return self.pages.get(code, ChannelPage("empty", title="Offerzone")), ""
@@ -448,9 +546,10 @@ class RememberingInTheMonitor(unittest.TestCase):
 
 
 class JoiningAccount(FakeAccount):
-    def __init__(self, missing, answers):
+    def __init__(self, missing, answers, invites=()):
         super().__init__()
         self.missing, self.answers, self.joined = missing, answers, []
+        self.invites = list(invites)
 
     def missing_public(self):
         return self.missing
@@ -458,6 +557,19 @@ class JoiningAccount(FakeAccount):
     def join(self, name):
         self.joined.append(name)
         return self.answers.get(name, "")
+
+    def missing_private(self):
+        return [code for code in self.invites if code not in self.joined]
+
+    def join_invite(self, code):
+        self.joined.append(code)
+        why = self.answers.get(code, "")
+        if not why:
+            self.titles[code] = "Dealdost"
+        return why, '"Dealdost", 3,100,000 members'
+
+    def chat_id(self, code):
+        return 900
 
 
 class JoiningInTheMonitor(unittest.TestCase):
@@ -497,6 +609,45 @@ class JoiningInTheMonitor(unittest.TestCase):
         self.assertEqual(account.joined, ["dealsmagnet", "ttsdeals"])
         self.assertIn("joined @dealsmagnet with the Telegram login (muted, archived)", lines)
         self.assertIn("could not join @ttsdeals", lines)
+
+    def test_an_invite_link_is_joined_and_its_latest_posts_are_logged_for_judging(self):
+        account = JoiningAccount([], {}, invites=["6c3lXEpYo5U3Njc1"])
+        now = time.time()
+        account.pages["6c3lXEpYo5U3Njc1"] = ChannelPage("ok", title="Dealdost", posts=[
+            TgPost("c/900", 4, now - 7200, "Good morning", "Good morning"),
+            TgPost("c/900", 5, now - 600, "Price Error 😱 Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)",
+                   "Price Error 😱 Sony WH-1000XM5 @ ₹499 (MRP ₹34,990)")])
+        lines = self.run_join(account)
+        self.assertEqual(account.joined, ["6c3lXEpYo5U3Njc1"])
+        self.assertIn('now reading the invite-only channel https://t.me/+6c3lXEpYo5U3Njc1 through the Telegram login: '
+                      '"Dealdost", 3,100,000 members', lines)
+        self.assertIn("first look at Dealdost: #4 2.0h ago | -- | Good morning", lines)
+        self.assertIn("first look at Dealdost: #5 10m ago | urgent | Price Error 😱 Sony WH-1000XM5", lines)
+        self.assertIn("first look at Dealdost: 2 posts, the oldest 2.0h ago; the rules would push 1 urgent, 0 high, "
+                      "0 normal", lines)
+        self.assertEqual(self.monitor.db.get("tg_invite:6c3lXEpYo5U3Njc1"), "900", "found by its id from now on")
+        self.assertEqual(self.monitor.stats["sent_urgent"], 0, "the first look pushes nothing: old news")
+
+    def test_an_invite_link_that_could_not_be_joined_waits_a_day(self):
+        why = "asked to join: the channel's admins have to accept the request"
+        account = JoiningAccount([], {"6c3lXEpYo5U3Njc1": why}, invites=["6c3lXEpYo5U3Njc1"])
+        lines = self.run_join(account)
+        self.assertIn(f"did not join the invite-only channel https://t.me/+6c3lXEpYo5U3Njc1: {why}", lines)
+        self.assertEqual(self.monitor._private, [], "not read for the rest of the run")
+        account.joined.clear()
+        self.run_join(account, self.monitor)
+        self.assertEqual(account.joined, [], "not asked again within the day")
+        # If read all the same, its failing readings say why.
+        account.errors["6c3lXEpYo5U3Njc1"] = "the Telegram account has not joined this channel: open ..."
+        self.assertEqual(self.monitor._scan_private("6c3lXEpYo5U3Njc1", time.time() + 30),
+                         f"the Telegram login could not join it: {why}")
+
+    def test_a_channel_about_to_be_joined_is_not_a_broken_source(self):
+        account = JoiningAccount([], {}, invites=["6c3lXEpYo5U3Njc1"])
+        account.errors["6c3lXEpYo5U3Njc1"] = "the Telegram account has not joined this channel: open ..."
+        monitor = self.make_monitor(account)
+        monitor._scan_private("6c3lXEpYo5U3Njc1", time.time() + 30)
+        self.assertEqual([row for row in monitor.db.health_rows() if row[0] == "tg:+6c3lXEpYo5U3Njc1"], [])
 
     def test_stops_for_the_run_when_telegram_says_wait(self):
         account = JoiningAccount(["a_one", "b_two", "c_three"], {"b_two": "wait 900s"})
@@ -649,6 +800,7 @@ class InTheMonitor(unittest.TestCase):
 
     def test_the_invite_only_channels_are_read_every_few_seconds(self):
         self.settings.tg_fast_seconds = 0.2
+        self.settings.loot_channels = ["7rHGiXC8TnsxN2I9"]  # marked "!" in channels.txt
         self.web.redirects["/r/1"] = "https://www.amazon.in/dp/B0SONYXM51"
         welcome = TgPost("c/1357275556", 1, time.time() - 7200, "Welcome", "Welcome")
         self.page(welcome)
@@ -666,6 +818,17 @@ class InTheMonitor(unittest.TestCase):
         self.assertTrue(self.account.closed)
         row = next(r for r in monitor.db.health_rows() if r[0] == "tg:+7rHGiXC8TnsxN2I9")
         self.assertEqual(row[1], 1, "its health is recorded once a minute, like any source's")
+
+    def test_an_unmarked_invite_only_channel_is_asked_once_a_minute(self):
+        # Telegram pushes its posts within seconds; asking every few seconds is for the marked ones.
+        self.settings.tg_fast_seconds = 0.1
+        self.settings.private_channels = ["7rHGiXC8TnsxN2I9", "6c3lXEpYo5U3Njc1"]
+        self.settings.loot_channels = ["7rHGiXC8TnsxN2I9"]
+        self.page(TgPost("c/1357275556", 1, time.time() - 7200, "Welcome", "Welcome"))
+        stop = self.run_in_background(self.monitor())
+        self.assertTrue(self.wait_for(lambda: self.account.read_codes.count("7rHGiXC8TnsxN2I9") >= 5))
+        stop()
+        self.assertEqual(self.account.read_codes.count("6c3lXEpYo5U3Njc1"), 1)
 
     def test_the_fast_reading_slows_down_when_telegram_asks(self):
         self.settings.tg_fast_seconds = 0.1

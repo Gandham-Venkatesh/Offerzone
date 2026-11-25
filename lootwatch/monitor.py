@@ -51,6 +51,13 @@ PRODUCT_REPEAT_HOURS = 72
 SLOW_PACE_HOURS = 3
 JOIN_GAP_SECONDS = 60.0
 JOIN_PER_RUN = 10
+# An invite link that could not be joined (a request the channel's admins have not accepted, a link
+# that no longer works) is tried again after this long.
+JOIN_RETRY_HOURS = 24
+# An invite-only channel not marked "!" is asked for new posts this often; Telegram pushes them
+# within seconds anyway. Asking every few seconds is kept for the marked ones, so that the login
+# stays well inside what Telegram allows however many channels it reads.
+PRIVATE_SLOW_SECONDS = 60.0
 # How long Flipkart's answer on a product is kept: sold out stays sold out for half an hour, in stock
 # is believed for two minutes.
 STOCK_SOLD_OUT_MEMORY = 1800.0
@@ -182,6 +189,10 @@ class Monitor:
             else:
                 log.warning("invite-only channels need the telethon package (pip install telethon); skipping them")
         self._private = list(settings.private_channels) if self.account is not None else []
+        if self._private and hasattr(self.account, "missing_private"):
+            # A link the login could not join lately (a request the admins have not accepted, a group
+            # chat, a link that no longer works) is left alone until the joining is tried again.
+            self._private = [code for code in self._private if not self._join_failed_lately(code)]
         if self._private and hasattr(self.account, "use_known"):
             known = {code: self.db.get(f"tg_invite:{code}") for code in self._private}
             self.account.use_known({code: int(chat) for code, chat in known.items() if chat.isdigit()},
@@ -249,6 +260,11 @@ class Monitor:
         source = f"tg:+{code}"
         page, error = self.account.read(code, newer_only=True) if newer_only else self.account.read(code)
         if page is None:
+            failed = self.db.get(f"tg_join_fail:{code}")
+            if failed and "has not joined" in error:
+                error = f"the Telegram login could not join it: {failed.partition(':')[2]}"
+            elif "has not joined" in error and self.s.tg_join_channels and hasattr(self.account, "missing_private"):
+                return error  # the login joins it shortly (_join_channels): not a broken source
             if record:
                 self.db.health_fail(source, error)
                 self._count("source_failures")
@@ -274,11 +290,16 @@ class Monitor:
             gap = max(gap, float(kept or gap))  # Telegram asked an earlier run to slow down lately
             log.info("the invite-only channels are read every %.0fs: Telegram asked for a slower pace lately", gap)
         recorded: Dict[str, float] = {}
+        asked: Dict[str, float] = {}
         while not self._fast_stop.is_set():
             started = time.time()
             for code in self._private:
                 if self._fast_stop.is_set():
                     break
+                if (not self._is_loot_channel(f"tg:+{code}")
+                        and started - asked.get(code, 0.0) < max(gap, PRIVATE_SLOW_SECONDS)):
+                    continue  # not marked "!": asked once a minute, its new posts pushed within seconds
+                asked[code] = started
                 record = started - recorded.get(code, 0.0) >= 60
                 try:
                     error = self._scan_private(code, started + 30, newer_only=True, record=record)
@@ -295,12 +316,16 @@ class Monitor:
             self._fast_stop.wait(max(0.5, started + gap - time.time()))
 
     def _join_channels(self) -> None:
-        """The public channels of channels.txt that the Telegram login has not joined, joined with it
-        (TG_JOIN_CHANNELS, on unless set to 0): then Telegram pushes their posts within seconds,
-        where the web pages are read once a minute. Muted for good and archived, so the owner's
-        phone stays quiet. One at a time, JOIN_GAP_SECONDS apart and at most JOIN_PER_RUN a run:
+        """The channels of channels.txt that the Telegram login is not in, joined with it
+        (TG_JOIN_CHANNELS, on unless set to 0): Telegram then pushes their posts within seconds,
+        where public web pages are read once a minute, and an invite-only channel can be read at
+        all. Muted for good and archived, so the owner's phone stays quiet. An invite link is joined
+        only when it leads to a broadcast channel of some size, never a group chat, and the
+        channel's latest posts then go to the log with what the rules make of them (_first_look),
+        to judge it by. One at a time, JOIN_GAP_SECONDS apart and at most JOIN_PER_RUN a run:
         Telegram limits how many channels an account joins in a while, and when it says so the
-        rest wait for a later run (reading goes on regardless)."""
+        rest wait for a later run (reading goes on regardless). A link that could not be joined is
+        tried again after JOIN_RETRY_HOURS."""
         waited = self.db.get("tg_join_wait_until")
         if waited.isdigit() and int(waited) > time.time():
             return  # Telegram asked an earlier run to wait before joining more: asking again would not help
@@ -309,23 +334,91 @@ class Monitor:
         missing = self.account.missing_public()
         if missing is None and not self._fast_stop.wait(JOIN_START_SECONDS):
             missing = self.account.missing_public()
-        if not missing:
+        invites = self._invites_to_join()
+        if not missing and not invites:
             return
-        log.info("joining %d public channel(s) with the Telegram login, each muted and archived: %s", len(missing),
-                 ", ".join("@" + name for name in missing))
-        for number, name in enumerate(missing[:JOIN_PER_RUN]):
-            if number and self._fast_stop.wait(JOIN_GAP_SECONDS):
+        if missing:
+            log.info("joining %d public channel(s) with the Telegram login, each muted and archived: %s", len(missing),
+                     ", ".join("@" + name for name in missing))
+        tries = 0
+        for name in (missing or [])[:JOIN_PER_RUN]:
+            if tries and self._fast_stop.wait(JOIN_GAP_SECONDS):
                 return
+            tries += 1
             why = self.account.join(name)
             if not why:
                 log.info("joined @%s with the Telegram login (muted, archived): its posts now come within seconds", name)
             elif why.startswith("wait"):
-                seconds = int(re.sub(r"\D", "", why) or 3600)
-                self.db.set("tg_join_wait_until", int(time.time()) + seconds)
-                log.warning("Telegram wants no more channels joined for now (%s): the rest are joined by a later run", why)
+                self._join_later(why)
                 return
             else:
                 log.warning("could not join @%s with the Telegram login: %s", name, why)
+        for code in invites[:max(0, JOIN_PER_RUN - tries)]:
+            if tries and self._fast_stop.wait(JOIN_GAP_SECONDS):
+                return
+            tries += 1
+            why, info = self.account.join_invite(code)
+            if not why:
+                chat = self.account.chat_id(code) if hasattr(self.account, "chat_id") else None
+                if chat:
+                    self.db.set(f"tg_invite:{code}", chat)
+                title = (getattr(self.account, "titles", None) or {}).get(code) or code
+                self._names[f"tg:+{code}"] = f"{title} (invite-only)"
+                log.info("now reading the invite-only channel https://t.me/+%s through the Telegram login: %s", code, info)
+                self._first_look(code)
+            elif why.startswith("wait"):
+                self._join_later(why)
+                return
+            else:
+                self.db.set(f"tg_join_fail:{code}", f"{int(time.time())}:{why[:150]}")
+                self._private = [other for other in self._private if other != code]  # cannot be read this run
+                log.warning("did not join the invite-only channel https://t.me/+%s: %s%s", code, why,
+                            f" | {info}" if info else "")
+
+    def _join_later(self, why: str) -> None:
+        seconds = int(re.sub(r"\D", "", why) or 3600)
+        self.db.set("tg_join_wait_until", int(time.time()) + seconds)
+        log.warning("Telegram wants no more channels joined for now (%s): the rest are joined by a later run", why)
+
+    def _invites_to_join(self) -> List[str]:
+        """The invite links of channels.txt whose channels the login is not in, but for those that
+        could not be joined lately."""
+        if not hasattr(self.account, "missing_private"):
+            return []
+        return [code for code in self.account.missing_private() or [] if not self._join_failed_lately(code)]
+
+    def _join_failed_lately(self, code: str) -> bool:
+        stamp = self.db.get(f"tg_join_fail:{code}").partition(":")[0]
+        return stamp.isdigit() and time.time() - int(stamp) < JOIN_RETRY_HOURS * 3600
+
+    def _first_look(self, code: str) -> None:
+        """A newly joined invite-only channel's latest posts, in the log with what the rules make of
+        each (none is pushed: they are old news), to judge the channel by what it really posts."""
+        try:
+            page, error = self.account.read(code)
+        except Exception as exc:  # the channel is read in the usual way regardless
+            page, error = None, type(exc).__name__
+        title = (getattr(self.account, "titles", None) or {}).get(code) or code
+        if page is None or not page.posts:
+            log.info("first look at %s: nothing to read (%s)", title, error or getattr(page, "status", ""))
+            return
+        marked = self._is_loot_channel(f"tg:+{code}")
+        now = time.time()
+        tiers: collections.Counter = collections.Counter()
+        for post in page.posts:
+            try:
+                verdict = evaluate_text(post.analysis_text, self.s, links=post.links, loot_channel=marked)
+            except Exception:
+                verdict = None
+            tier = TIER_NAMES.get(verdict.tier, str(verdict.tier)) if verdict else "--"
+            tiers[tier] += 1
+            text = " ⏎ ".join(line.strip() for line in (post.text or "").splitlines() if line.strip())
+            log.info("first look at %s: #%s %s | %s | %s", title, post.post_id,
+                     _age(now - post.ts) if post.ts else "?", tier, text[:220])
+        oldest = min((post.ts for post in page.posts if post.ts), default=None)
+        log.info("first look at %s: %d posts%s; the rules would push %d urgent, %d high, %d normal", title,
+                 len(page.posts), f", the oldest {_age(now - oldest)}" if oldest else "", tiers["urgent"],
+                 tiers["high"], tiers["normal"])
 
     def _fast_reading(self) -> bool:
         return self._fast_thread is not None and self._fast_thread.is_alive()
@@ -1343,6 +1436,8 @@ class Monitor:
             self.account.listen(self._live_post, public=list(self.s.channels))  # posts as Telegram pushes them
         if (self._private and self.s.tg_join_channels and not once and not self.s.dry_run
                 and hasattr(self.account, "missing_public")):
+            if hasattr(self.account, "missing_private"):
+                self.account.joining = True  # links not in the chat list: looked up by the joining only
             threading.Thread(target=self._join_channels, name="telegram-join", daemon=True).start()
         if self._private and self.s.tg_fast_seconds > 0 and not once:
             self._fast_thread = threading.Thread(target=self._read_private_often, name="telegram-fast", daemon=True)
