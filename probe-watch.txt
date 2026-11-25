@@ -1,0 +1,7 @@
+# Probe (25 Nov 2026, night): can the quick-commerce stores be read from GitHub's servers?
+https://www.bigbasket.com/ps/?q=Society+Tea&nc=as&page=1 | 0 | BigBasket search: Society Tea
+https://www.bigbasket.com/pc/beverages/tea/ | 0 | BigBasket tea category
+https://www.jiomart.com/search/tea | 0 | JioMart search: tea
+https://www.zepto.com/pn/bombay-shaving-company-toxic-fruit-perfume-for-men-bold-oud-eau-de-parfum-long-lasting/pvid/ea0b541c-4e55-43af-b4e6-333fc74a3 | | Zepto product page
+https://blinkit.com/s/?q=tea | 0 | Blinkit search: tea
+https://www.swiggy.com/instamart/search?query=tea | 0 | Instamart search: tea
