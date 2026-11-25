@@ -323,7 +323,7 @@ class Doctor(CleanEnv):
         now = time.time()
         self.web.redirects["/r/x"] = "https://www.amazon.in/dp/B0ABCDEFGH"
         self.web.post("alpha", 1, 'Sony XM5 @ ₹400 (MRP ₹34,990) <a href="https://amzn.to/abc">x</a>', now - 90)
-        self.web.post("alpha", 2, 'USB cable @ ₹99 (MRP ₹1,999) <a href="https://lootshop.example/p/1">x</a>', now - 30)
+        self.web.post("alpha", 2, 'USB mouse @ ₹99 (MRP ₹1,999) <a href="https://lootshop.example/p/1">x</a>', now - 30)
         self.web.post("quiet", 1, "hello", now - 10 * 86400)
         self.web.no_preview.add("ghost")
         self.web.pages["/feed.xml"] = '<?xml version="1.0"?><rss version="2.0"><channel><item><title>A @ ₹1 (MRP ₹9,000)</title></item></channel></rss>'

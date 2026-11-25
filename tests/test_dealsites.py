@@ -242,8 +242,12 @@ class Judging(unittest.TestCase):
         self.assertEqual((watch.tier, watch.price), (TIER_HIGH, 1099))
         tv = evaluate_stated("Sony Bravia 55 inch 4K TV (MRP ₹79,990)", "", 2499, None, self.s)
         self.assertEqual((tv.tier, tv.price, tv.mrp), (TIER_URGENT, 2499, 79990))
+        # 99% off at ₹49 with no list price to show it: pushed, but not at max priority (of the cards and
+        # posts worded that way none was a loot); with the list price on the card it rings.
         earbuds = evaluate_stated("Boat earbuds 99% off", "", 49, None, self.s)  # as a post "... 99% off @49" would be
-        self.assertEqual((earbuds.tier, earbuds.price), (TIER_URGENT, 49))
+        self.assertEqual((earbuds.tier, earbuds.price), (TIER_NORMAL, 49))
+        earbuds = evaluate_stated("Boat earbuds 99% off", "", 49, 4990, self.s)
+        self.assertEqual((earbuds.tier, earbuds.price, earbuds.mrp), (TIER_URGENT, 49, 4990))
         self.assertIsNone(evaluate_stated("[Pre Order] PS5 Grand Theft Auto VI (Standard)", "", 6048, None, self.s))
         self.assertIsNone(evaluate_stated("Trial pack, 3 for 29500, earlier 99", "", 450, None, self.s), "bare numbers are not a list price")
 
@@ -1007,6 +1011,32 @@ class SitePagesInTheMonitor(unittest.TestCase):
                              product=f"B0TREAD00{n}", low="1") for n in range(4)])
             monitor.cycle()
         self.assertEqual(sorted(push["priority"] for push in self.deals()), [4, 4, 4, 4])
+
+    def test_a_product_pushed_lately_is_not_pushed_again_at_the_same_price(self):
+        # The same LEGO set at ₹319 rang at max priority every 13-24 hours on 22-25 Nov 2026.
+        stamp = lambda ago: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - ago))  # noqa: E731
+        usual = '<p class="phd-range"><span>Low ₹5,990</span> <span>High ₹58,000</span></p>' \
+                '<p class="phd-save">₹46,010 below its average</p>'
+        cheaper = usual.replace("₹46,010", "₹46,610")
+        self.web.pages["/new"] = tracker_page(tracker_card("old-one", "Old one", 5990, usual, stamp=stamp(7200)))
+        with mock.patch("lootwatch.monitor.site_reader", return_value=parse_pricehistory), \
+                mock.patch("lootwatch.monitor.site_label", return_value="PriceHistory tracker"):
+            monitor = self.monitor()
+            monitor.cycle()
+            self.web.pages["/new"] = tracker_page(tracker_card("ideapad-x", "Lenovo IdeaPad Slim 3", 5990, usual,
+                                                               stamp=stamp(60), product="B0IDEAPAD1", low="1"))
+            monitor.cycle()
+            self.assertEqual(len(self.deals()), 1)
+            with monitor.db._lock, monitor.db._conn:  # a day later the tracker lists it again
+                monitor.db._conn.execute("UPDATE alerts SET created_at = created_at - 86400")
+            self.web.pages["/new"] = tracker_page(tracker_card("ideapad-x", "Lenovo IdeaPad Slim 3", 5990, usual,
+                                                               stamp=stamp(30), product="B0IDEAPAD1", low="1"))
+            monitor.cycle()
+            self.assertEqual(len(self.deals()), 1, "same price a day later: not again")
+            self.web.pages["/new"] = tracker_page(tracker_card("ideapad-x", "Lenovo IdeaPad Slim 3", 5390, cheaper,
+                                                               stamp=stamp(10), product="B0IDEAPAD1", low="1"))
+            monitor.cycle()
+        self.assertEqual(len(self.deals()), 2, "10% cheaper: news again")
 
     def test_one_push_per_product_not_per_size(self):
         # A shoe that drops in nine sizes is listed by the tracker nine times: one deal, one push.

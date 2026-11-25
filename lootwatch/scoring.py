@@ -188,10 +188,11 @@ def _mentions(parsed: ParsedText, traps: Sequence[Trap], in_post: bool):
             # tests are for traps on the devices such things are named after.
             if not _ACCESSORY.fullmatch(match.group(0).strip()) and is_accessory(parsed.text, match.start(), match.end()):
                 continue
-            if in_post:
-                start, end = _line_bounds(parsed.text, match.start())
-                if _NOT_ITS_PRICE.search(parsed.text[start:end]):
-                    continue
+            start, end = _line_bounds(parsed.text, match.start())
+            if is_cable(parsed.text[start:end]):
+                continue  # "Type C to Type C cable ... iPhone" was a trap hit at max priority on 25 Nov 2026
+            if in_post and _NOT_ITS_PRICE.search(parsed.text[start:end]):
+                continue
             yield trap, match.start()
 
 
@@ -245,9 +246,76 @@ def is_printer_ink(text: str) -> bool:
     return not (printer and not re.search(r"\bcartridges?\b|\btoners?\b|\bbottles?\b|\brefills?\b", text, re.I))
 
 
+# Cables of any kind, and the things made for them (protectors, organisers): the owner wants none
+# unless free ("Type C to Type C" cables at 71% and 95% off rang at max priority on 24-25 Nov 2026).
+# A charger, an extension board or earphones that come with a cable are not cables.
+_CABLE = re.compile(r"\b(?:cables?|cords?)\b", re.I)
+_CABLE_OF_ANOTHER = re.compile(r"\b(?:with|without|w/o|includes?|including|built[- ]in|detachable)\b[^\n,|]{0,30}$",
+                               re.I)
+_CABLE_NOT_IN = re.compile(r"^\s*[()]?\s*(?:not\s+included|sold\s+separately|free\b|included|in\s+(?:the\s+)?box"
+                           r"|length|knit|cross[- ]?over|machine|pulley)", re.I)
+_CORD_SET = re.compile(r"^\s*sets?\b", re.I)  # "Cotton Cord Set": a co-ord set, clothing
+# What lists a cable among its parts or features ("Wired Gaming Mouse | ... | 1.5M Paracord Cable",
+# "Earphones with in-Line Mic for Clear Calling,1.2M Cable", "Laptop Backpack - Navy | ... | USB Cable
+# holder Pocket"): the product named first, then a break, then the cable. "Laptop Charging Cable" or
+# "Printer 1.5M Cable" has no break: a cable.
+_COMES_WITH_A_CABLE = re.compile(
+    r"\b(?:ear(?:phones?|buds?|pods)|head(?:phones?|sets?)|neckbands?|airdopes|rockerz|bassheads|mouse|mice"
+    r"|keyboards?|speakers?|soundbars?|chargers?|adapt[eo]rs?|power\s*banks?|hubs?|docks?|docking\s+stations?"
+    r"|webcams?|microphones?|controllers?|gamepads?|backpacks?|bags?|stands?|holders?|lamps?|lights?|fans?"
+    r"|routers?|cameras?|printers?|scanners?|monitors?|laptops?|tablets?|i?phones?|smartphones?|mobiles?|ipads?"
+    r"|macbooks?|smart\s?watch(?:es)?|watch(?:es)?|trimmers?|shavers?|dryers?|irons?|kettles?|boards?|strips?"
+    r"|drives?|consoles?|projectors?|desks?|cabinets?|massagers?)\b"
+    r"[^\n]*?(?:[,|;(•–—+&]|\s-\s|\b(?:with|and|plus)\b)", re.I)
+CABLE_FREE_PRICE = 1.0  # a cable at this price or less ("free") still counts
+
+
+def is_cable(text: str) -> bool:
+    """A cable (or a cable protector or organiser) is what is on sale, not a part of something else."""
+    text = text.replace("\n" + SOFT, " | ")  # the parser's line break for a " | " separator
+    for match in _CABLE.finditer(text):
+        before = text[text.rfind("\n", 0, match.start()) + 1:match.start()]
+        if _CABLE_OF_ANOTHER.search(before[-40:]) or _COMES_WITH_A_CABLE.search(before):
+            continue
+        after = text[match.end():match.end() + 25]
+        if _CABLE_NOT_IN.match(after) or (match.group().lower().startswith("cord") and _CORD_SET.match(after)):
+            continue
+        return True
+    return False
+
+
+def _cable_unless_free(verdict: Optional[Verdict], text: str, parsed: Optional[ParsedText] = None) -> Optional[Verdict]:
+    if verdict is None or verdict.label == "Trap hit":  # a trap's product is never read off a cable's line
+        return verdict
+    if verdict.price is not None and verdict.price <= CABLE_FREE_PRICE:
+        return verdict
+    return None if is_cable(_deal_part(parsed, verdict.price) if parsed else text) else verdict
+
+
+def _deal_part(parsed: ParsedText, price: Optional[float]) -> str:
+    """What names the product ``price`` is for. In a post that lists several deals ("1. Type C cable
+    ₹49 / 2. boAt Airdopes ₹399"), the lines from just after the previous price to this one's; in a
+    post about one deal, all of it."""
+    prices = [amount for amount in parsed.amounts if amount.kind in ("sell", "plain")]
+    if price is None or len({amount.seg for amount in prices}) < 2:
+        return parsed.text
+    mine = next((amount for amount in prices if abs(amount.value - price) < 0.5), None)
+    if mine is None:
+        return parsed.text
+    earlier = [amount.end for amount in prices if amount.seg < mine.seg]
+    start = parsed.text.find("\n", max(earlier)) + 1 if earlier else 0
+    end = parsed.text.find("\n", mine.end)
+    return parsed.text[start:end if end >= 0 else len(parsed.text)]
+
+
+# LEGO: the owner wants none ("LEGO Speed Champions Dodge Challenger SRT Hellcat", ₹319 on the price
+# tracker, rang at max priority day after day, 21-25 Nov 2026).
+_LEGO = re.compile(r"\blego\b", re.I)
+
+
 def is_unwanted(text: str) -> bool:
-    """Things the owner never wants pushed, whatever their price: phone cases, printer ink."""
-    return is_phone_case(text) or is_printer_ink(text)
+    """Things the owner never wants pushed, whatever their price: phone cases, printer ink, LEGO."""
+    return is_phone_case(text) or is_printer_ink(text) or bool(_LEGO.search(text))
 
 
 # Memberships, subscriptions, TV packs and restaurant deals are services, not loots on something to
@@ -332,7 +400,8 @@ def evaluate_text(text: str, settings: Settings, links: Sequence[str] = (),
     verdict = _judge(parsed, settings) or _quick_commerce(parsed, settings, hosts)
     if loot_channel:
         verdict = loot_channel_verdict(parsed, verdict, hosts)
-    return _unmuted(_hedge(_favoured(verdict, parsed.text, settings), parsed), parsed.text, settings)
+    return _cable_unless_free(_unmuted(_hedge(_favoured(verdict, parsed.text, settings), parsed), parsed.text, settings),
+                              parsed.text, parsed)
 
 
 # What a missed loot would look like: logged when such a post is not pushed, so that a day's log
@@ -350,7 +419,7 @@ def tracker_near_miss(price: float, usual: Optional[float], low: Optional[float]
                       mrp: Optional[float], title: str = "") -> str:
     """For the log: a tracker drop at its lowest price, 45% or more under its usual price, that was
     not pushed (""  when it is no such drop, or a phone case, which is never pushed)."""
-    if not usual or not price or usual <= price or is_unwanted(title):
+    if not usual or not price or usual <= price or is_unwanted(title) or is_cable(title):
         return ""
     drop = (usual - price) / usual * 100
     lowest = new_low or (low is not None and price <= low * 1.03)
@@ -612,6 +681,10 @@ def _price_loot(parsed: ParsedText, settings: Settings, hosts: Sequence[str]) ->
                 and not _BULLION.search(parsed.text):
             return Verdict(TIER_HIGH, f"{app} at {fmt_inr(price)}, no list price to check it against", price, None, 0.0,
                            label="Quick loot", max_tier=TIER_HIGH)
+        if app in _INSTANT_APPS and price is not None and price > 0 and is_favourite(parsed.text, settings):
+            # "Blinkit: HEALTHFARM 1KG WHEY" was left out on 24 Nov 2026 for want of the word "loot".
+            return Verdict(TIER_NORMAL, f"{app} at {fmt_inr(price)}", price, None, 0.0, label="Quick loot",
+                           max_tier=TIER_HIGH)
         return None
     if app is None and not _shop_hosts(hosts):
         return None  # a link to another channel, a folder of channels, a betting site: an advert
@@ -721,7 +794,8 @@ def evaluate_stated(title: str, body: str, price: Optional[float], mrp: Optional
     the card (trap names, "price error" wording, sold-out notes, conditions) is read as in a post.
     """
     text = title + ("\n" + body if body else "")
-    return _unmuted(_evaluate_stated(title, body, text, price, mrp, settings, links), text, settings)
+    return _cable_unless_free(_unmuted(_evaluate_stated(title, body, text, price, mrp, settings, links), text, settings),
+                              text)
 
 
 def _evaluate_stated(title: str, body: str, text: str, price: Optional[float], mrp: Optional[float],
@@ -796,7 +870,7 @@ def evaluate_tracked(title: str, price: float, usual: Optional[float], settings:
     product's list price; the price is then measured against the list price (``mrp``) instead.
     A product the tracker shows as out of stock is not announced at all.
     """
-    if not in_stock or is_unwanted(title):
+    if not in_stock or is_unwanted(title) or (is_cable(title) and price > CABLE_FREE_PRICE):
         return None
     reference, called = usual, "it usually costs"
     # A "list price" barely above the price and under a third of the usual one is no list price (a
@@ -985,6 +1059,10 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
             cap, reason = TIER_HIGH, reason + " (another amount stands beside the MRP)"
         if parsed.conditional and cap > TIER_HIGH:
             cap, reason = TIER_HIGH, reason + " (needs a qualifying purchase)"
+        if claim is not None and discount > claim + 10 and cap > TIER_NORMAL:
+            # "85% Off - Little Rides Baby Stroller", read as ₹1 against ₹2,640 (its price written
+            # "₹1 399"), rang at max priority on 24 Nov 2026: the post's own word on the discount wins.
+            cap, reason = TIER_NORMAL, reason + f" (the post itself says {claim:.0f}% off)"
         if cap > TIER_NORMAL and is_clothing(parsed.text):
             cap, reason = TIER_NORMAL, reason + " (clothing list prices are often inflated)"
         return Verdict(min(tier, cap), reason, parsed.price, parsed.mrp, discount,
@@ -999,6 +1077,14 @@ def _judge(parsed: ParsedText, settings: Settings) -> Optional[Verdict]:
             return None
         cap = TIER_HIGH if parsed.conditional else TIER_URGENT
         reason = f"stated as {claim:.0f}% off, about {fmt_inr(saving)} saved"
+        low, high = (lone / (1 - (claim - 0.5) / 100), lone / (1 - min(claim + 0.5, 99.9) / 100))
+        backed = any(low * 0.9 <= amount.value <= high * 1.1 for amount in parsed.amounts if amount.kind != "excluded")
+        if (claim >= settings.urgent_discount and settings.loot_price < lone < STATED_DOUBT_PRICE and not backed
+                and not _BIG_TICKET_THING.search(parsed.text)):
+            # "Organza Scrunchies for Women - 99% off - Rs. 199" rang at max priority on 25 Nov 2026: a
+            # list price of ₹19,900 for hair bands. Of the deals posted that way none was a loot. A laptop
+            # or a phone at "100% off", ₹400, is the price error the monitor is for: still believed.
+            cap, reason = TIER_NORMAL, reason + " (no list price to show a discount that deep)"
         if is_clothing(parsed.text):
             cap, reason = TIER_NORMAL, reason + " (clothing list prices are often inflated)"
         return Verdict(min(tier, cap), reason, lone, None, claim, max_tier=cap)
@@ -1039,6 +1125,19 @@ def _ladder(discount: float, saving: float, price: Optional[float], settings: Se
         return TIER_NORMAL if saving >= settings.urgent_min_saving else None
     return None
 
+
+# A stated percentage of URGENT_DISCOUNT or more, on a price over LOOT_PRICE and under this, with no list
+# price to show it and nothing in the post that would make such a list price likely: ordinary priority.
+STATED_DOUBT_PRICE = 1000.0
+# Things whose list price really runs into tens of thousands, where "99% off" at a few hundred rupees is
+# the price error the monitor is for. Earbuds, smartwatches, soundbars and projectors are left out: their
+# list prices are the ones most often inflated.
+_BIG_TICKET_THING = re.compile(
+    r"\b(?:laptops?|macbook|chromebook|smartphones?|mobile\s+phones?|iphone|ipad|galaxy\s+(?:s|z|tab)\w*"
+    r"|pixel\s*\d+|smart\s*tv|led\s+tv|oled|qled|televisions?|dslr|mirrorless|playstation|ps5|xbox"
+    r"|air\s+conditioners?|(?:split|window|inverter)\s+ac|refrigerators?|washing\s+machines?|dishwashers?"
+    r"|vivobook|zenbook|ideapad|thinkpad|thinkbook|inspiron|vostro|victus"
+    r"|\d+\s*gb\s*(?:ram\s*)?[/+|,]\s*\d+\s*(?:gb|tb))\b", re.I)
 
 # A give-away price (LOOT_PRICE or less) rings whatever it saves, if the thing is worth this much:
 # "100% off on - Sunfeast Marie Light", ₹0 against a list price of ₹10, rang at high priority on
@@ -1154,7 +1253,7 @@ def evaluate_offer(title: str, price: float, mrp: Optional[float], info: PriceIn
     search/category page ("nothing here should cost this little"). ``baseline`` marks the very
     first read of a listing, which only records what is normal there.
     """
-    if (listing and baseline) or is_unwanted(title):
+    if (listing and baseline) or is_unwanted(title) or (is_cable(title) and price > CABLE_FREE_PRICE):
         return None
 
     if target is not None and _entered(price, target, info, settings):

@@ -86,9 +86,20 @@ class TextVerdicts(unittest.TestCase):
 
     def test_price_with_a_stated_percentage(self):
         # DesiDime's format: a price and a percentage, no MRP. The saving follows from the two.
-        verdict = evaluate_text("🔥 Nothing Earbuds Pro\n💰 ₹400 / 99% off\n🔗 On Flipkart", make_settings())
-        self.assertEqual((verdict.tier, verdict.price, verdict.mrp), (TIER_URGENT, 400, None))
-        self.assertIn("about ₹39,600 saved", verdict.reason)
+        verdict = evaluate_text("🔥 Nothing Earbuds Pro\n💰 ₹4,000 / 95% off\n🔗 On Flipkart", make_settings())
+        self.assertEqual((verdict.tier, verdict.price, verdict.mrp), (TIER_URGENT, 4000, None))
+        self.assertIn("about ₹76,000 saved", verdict.reason)
+        # Under ₹1,000, a claim of 95% off and more with no list price is believed loudly only for a
+        # big-ticket thing: "Organza Scrunchies ... 99% off - Rs. 199" rang at max priority on 25 Nov 2026.
+        for text, price in (("🔥 Nothing Earbuds Pro\n💰 ₹400 / 99% off\n🔗 On Flipkart", 400),
+                            ("Organza Scrunchies for Women, Gift hamper - 99% off - Rs. 199", 199),
+                            ("Classmate Notebook, 6 pack - 96% off - Rs. 49", 49)):
+            verdict = evaluate_text(text, make_settings())
+            self.assertEqual((verdict.tier, verdict.price), (TIER_NORMAL, price), text)
+            self.assertIn("(no list price to show a discount that deep)", verdict.reason)
+        for text in ("Redmi 13 5G (8GB/128GB) - 99% off - Rs. 199", "Samsung 1.5 Ton Split AC - 98% off - ₹699",
+                     "HP Victus Gaming Laptop 99% off at ₹499"):
+            self.assertEqual(evaluate_text(text, make_settings()).tier, TIER_URGENT, text)
         self.assertEqual(self.tier("🧹 MILAGROW Robotic Vacuum Cleaner\n💰 ₹4,294 / 86% off"), TIER_NORMAL)
         self.assertIsNone(self.tier("🧹 MILAGROW Robotic Vacuum Cleaner\n💰 ₹6,294 / 80% off"))
         self.assertIsNone(self.tier("🌿 Plant Stand\n💰 ₹290 / 82% off"))
@@ -199,8 +210,8 @@ class TextVerdicts(unittest.TestCase):
         verdict = evaluate_text(digest, plain)
         self.assertEqual((verdict.tier, verdict.price), (TIER_HIGH, None))  # and without it: a bare claim, never "₹2,700 at 99% off"
         # A bare price line next to the percentage line does belong to it.
-        verdict = evaluate_text("Sony WH-1000XM5\nPrice: ₹400\nDiscount: 99% off\nhttps://amzn.to/x", plain)
-        self.assertEqual((verdict.tier, verdict.price), (TIER_URGENT, 400))
+        verdict = evaluate_text("Sony WH-1000XM5\nPrice: ₹1,499\nDiscount: 99% off\nhttps://amzn.to/x", plain)
+        self.assertEqual((verdict.tier, verdict.price), (TIER_URGENT, 1499))
 
     def test_accessories_named_after_the_device_without_any_accessory_word(self):
         s = make_settings("iphone | 12000\nnothing phone | 6000\n")
@@ -1144,6 +1155,90 @@ class TheDaysNoise(unittest.TestCase):
         self.assertIsNone(evaluate_text("Kanjivaram silk sarees Loot @ ₹257 https://amzn.to/x", self.s, links=self.link,
                                         loot_channel=True))
         self.assertIsNotNone(evaluate_text("Kanjivaram silk saree @ ₹99 (MRP ₹12,999)", self.s))
+
+    def test_cables_are_never_loots_unless_free(self):
+        # 24-25 Nov 2026: "Wayona Type C to Type C Fast Charging Cable" and "USB C Type C to Micro-B" at max priority.
+        for text in ("Wayona Type C to Type C Fast Charging Cable 65W Braided @ ₹319 (MRP ₹1,099)",
+                     "rts usb c hard drive cable USB C Type C to Micro-B USB 3.0 @ ₹249 (MRP ₹4,999)",
+                     "AmazonBasics HDMI Cable 2m Loot @ ₹99 https://amzn.to/x",
+                     "ZEBRONICS CP100, 12 Pcs, Flexible Spiral Cable Protector @ ₹99 (MRP ₹1,188)",
+                     "Portronics Konnect Core USB-A to Micro Cable 90% off - Rs. 39",
+                     "Printlink - USB A To USB B For Printer 3M Cable @ ₹49 (MRP ₹1,599)",
+                     "boAt Type C and Lightning 2-in-1 Charging Cable @ ₹49 (MRP ₹1,599)",
+                     "Laptop Charging Cord for HP, 65W @ ₹99 (MRP ₹2,999)"):
+            with self.subTest(text=text):
+                self.assertIsNone(evaluate_text(text, self.s, links=self.link))
+                self.assertIsNone(evaluate_text(text, self.s, links=self.link, loot_channel=True))
+        self.assertIsNone(evaluate_tracked("Zebronics Type C - Type C Magnetic Braided Cable", 99, 899, self.s, low=99))
+        self.assertIsNone(evaluate_stated("Ambrane 60W Type C to Type C Cable, 1.5m", "", 99, 1999, self.s))
+        self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Ambrane Type C to C Cable"), "")
+        # Free is still worth it; and a charger or a power bank that comes with a cable is not a cable.
+        self.assertEqual(evaluate_text("Type C to Type C Cable Loot @ ₹1 https://amzn.to/x", self.s, links=self.link).tier,
+                         TIER_HIGH)
+        self.assertEqual(evaluate_text("Samsung 45W Travel Adaptor (Without Cable) @ ₹199 (MRP ₹4,999)", self.s).tier,
+                         TIER_URGENT)
+        self.assertEqual(evaluate_text("Ambrane 20000mAh Power Bank with built-in cable @ ₹199 (MRP ₹4,999)", self.s).tier,
+                         TIER_URGENT)
+        # A post listing several deals keeps the ones that are not cables.
+        verdict = evaluate_text("Loot deals:\n1. Portronics Type C cable @ ₹49\n2. boAt Airdopes 141 @ ₹199 (MRP ₹4,990)",
+                                self.s)
+        self.assertEqual((verdict.tier, verdict.price), (TIER_URGENT, 199))
+        self.assertIsNone(evaluate_text("1. boAt Airdopes 141 @ ₹1,499 (MRP ₹1,990)\n2. Portronics Type C cable @ ₹49"
+                                        " (MRP ₹1,999)", self.s))
+        self.assertIsNone(evaluate_text("🔥 Lowest Ever 🔥\nWayona Type C Cable 65W\n✅ Deal Price: ₹49\n❌ MRP: ₹1,999",
+                                        self.s))
+        # Nor is what names a cable among its features (all seen on the channels, Nov 2026).
+        for text in ("Acer Nitro 7 Wired Gaming Mouse | 7-Button RGB Lighting | 1000Hz Polling Rate | 1.5M Paracord Cable |"
+                     "\n💰Deal Price: ₹199🔥\n❌MRP: ₹4,999",
+                     "🔥Ambrane Type C Wired in Ear Earphones with in-Line Mic for Clear Calling,1.2M Cable,10Mm Dynamic"
+                     " Drivers\n✅Deal Price: ₹199\n❌MRP: ₹4,999",
+                     "🔥 Tommy Hilfiger Laptop Backpack - Navy | 21 Ltr Capacity | USB Cable holder Pocket\n✅ Deal Price: ₹199"
+                     "\n❌ MRP: ₹4,999",
+                     "GM 10 Amp Extension Board with 2 Metre Heavy Duty Copper Extension Cord – 4 Sockets @ ₹199 (MRP ₹4,999)",
+                     "boAt Airdopes 141\n• Type-C cable included\n₹199 (MRP ₹4,999)",
+                     "Women's Cable Knit Cardigan @ ₹199 (MRP ₹4,999)"):
+            with self.subTest(text=text):
+                self.assertIsNotNone(evaluate_text(text, self.s))
+
+    def test_a_trap_is_never_read_off_a_cables_line(self):
+        # "Wayona Type C to Type C Fast Charging Cable" was a trap hit ("iphone") at max priority on 25 Nov 2026.
+        s = make_settings("iphone | 12000\n")
+        self.assertIsNone(evaluate_text("Wayona Type C to Type C Fast Charging Cable 65W for iPhone 16 @ ₹319 (MRP ₹1,099)", s,
+                                        links=self.link))
+        self.assertEqual(evaluate_text("boAt cable @ ₹99\niPhone 16 Pro @ ₹9,900", s).label, "Trap hit")
+
+    def test_lego_is_never_pushed(self):
+        # "LEGO Speed Champions Dodge Challenger SRT Hellcat" at ₹319 rang at max priority day after day.
+        self.assertIsNone(evaluate_tracked("LEGO Speed Champions Dodge Challenger SRT Hellcat Sports Car", 319, 2898,
+                                           self.s, low=319))
+        self.assertIsNone(evaluate_text("LEGO City Police Car @ ₹99 (MRP ₹2,999)", self.s))
+
+    def test_the_posts_own_percentage_beats_a_misread_pair(self):
+        # "85% Off - Little Rides Baby Stroller", read as ₹1 against ₹2,640, rang at max priority on 24 Nov 2026.
+        verdict = evaluate_text("85% Off - Little Rides Baby Stroller At ₹1 MRP ₹2,640", self.s)
+        self.assertEqual(verdict.tier, TIER_NORMAL)
+        self.assertIn("the post itself says 85% off", verdict.reason)
+        self.assertEqual(evaluate_text("Little Rides Baby Stroller\n₹1 399\nMRP ₹12,640", self.s).price, 1399,
+                         "a price written with a space for its thousands")
+
+    def test_loot_shorthand_prices(self):
+        self.assertEqual(evaluate_text("169 loot : https://amazon.in/dp/B0BFHSF4GQ", self.s,
+                                       links=["https://amazon.in/dp/B0BFHSF4GQ"]).price, 169)
+        for text, price in (("Blinkit | 99\nhttps://blinkit.com/x", 99), ("Zepto - 49\nhttps://zepto.com/x", 49)):
+            with self.subTest(text=text):
+                verdict = evaluate_text(text, self.s, links=["https://blinkit.com/x"])
+                self.assertEqual((verdict.tier, verdict.label, verdict.price), (TIER_HIGH, "Quick loot", price))
+        self.assertIsNone(evaluate_text("Swiggy | 2024 Black Friday\nhttps://swiggy.com/x", self.s,
+                                        links=["https://swiggy.com/x"]))
+
+    def test_a_favourite_on_a_quick_delivery_app_counts_with_its_price(self):
+        # "Blinkit: HEALTHFARM 1KG WHEY" was left out on 24 Nov 2026 for want of the word "loot".
+        self.s.favourites = ["whey", "protein"]
+        verdict = evaluate_text("Blinkit: HEALTHFARM 1KG WHEY @ ₹649\nhttps://blinkit.com/x", self.s,
+                                links=["https://blinkit.com/x"])
+        self.assertEqual((verdict.tier, verdict.label, verdict.price), (TIER_HIGH, "Quick loot", 649))
+        self.assertIsNone(evaluate_text("Blinkit: Amul Butter 500g @ ₹649\nhttps://blinkit.com/x", self.s,
+                                        links=["https://blinkit.com/x"]), "not a favourite: no word of a loot either")
 
     def test_a_phone_case_is_never_logged_as_a_near_miss(self):
         self.assertEqual(tracker_near_miss(299, 1499, 299, True, None, title="Spigen Liquid Air iPhone 16 Case"), "")

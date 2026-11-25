@@ -45,6 +45,8 @@ STOCK_CHECK_SECONDS = 6.0
 # Joining the public channels with the Telegram login (TG_JOIN_CHANNELS): after this long, this far
 # apart, at most this many a run.
 JOIN_START_SECONDS = 45.0
+# A store's product already pushed is not pushed again at the same price, or dearer, for this long.
+PRODUCT_REPEAT_HOURS = 72
 # A slower pace Telegram asked for is kept by the next runs for this long.
 SLOW_PACE_HOURS = 3
 JOIN_GAP_SECONDS = 60.0
@@ -946,7 +948,12 @@ class Monitor:
         with self._emit_lock:
             now = time.time()
             since = now - self.s.dedup_hours * 3600
-            previous = self.db.last_alert(fingerprint, since)
+            # A store's product the tracker lists again day after day ("LEGO Speed Champions" at ₹319, a
+            # Zebronics soundbar at ₹1,170, both pushed again every 13-24 hours on 22-25 Nov 2026) is news
+            # once: again only if it gets cheaper, or louder.
+            remembered = now - max(self.s.dedup_hours, PRODUCT_REPEAT_HOURS) * 3600 if fingerprint.startswith(
+                ("amazon:", "flipkart:", "myntra:", "ajio:")) else since
+            previous = self.db.last_alert(fingerprint, remembered)
             if previous is None and name and verdict.price is not None:
                 twin = self._twin(name, verdict.price, since)
                 if twin:

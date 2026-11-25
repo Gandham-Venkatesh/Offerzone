@@ -37,8 +37,9 @@ _UNIT_GUARD = (
     r"|years?|yrs?|months?|days?|hrs?|hours?|mins?|minutes?|secs?|off|stars?|st|nd|rd|th)\b))"
 )
 
-# "₹400", "Rs. 1,49,999", "INR 60k"
-_P_PREFIX = re.compile(_CUR + r"\s*[:.]?\s*(?P<num>" + _NUM + r")(?!\d)" + _SUF, re.I)
+# "₹400", "Rs. 1,49,999", "INR 60k", "₹1 399" (thousands set off with a space, after a rupee sign only)
+_P_PREFIX = re.compile(_CUR + r"\s*[:.]?\s*(?P<num>\d{1,2}[ \u00a0\u202f]\d{3}(?![\d,.])|" + _NUM + r")(?!\d)" + _SUF,
+                       re.I)
 # "400/-", "400 Rs", "400₹" - but not the "2" in "pack of 2 ₹199"
 _P_SUFFIX = re.compile(
     r"(?<![\d.,])(?P<num>" + _NUM + r")(?!\d)" + _SUF
@@ -66,8 +67,12 @@ _P_AT_END = re.compile(
 )
 # "Coffee Loot 239 : link": another channel's habit.
 _P_LOOT = re.compile(r"(?<![a-z])loot\s+(?P<num>" + _NUM + r")(?!\d)" + _SUF + r"(?=[ \t]*(?::|\n|$))", re.I)
-_BARE = (_P_AT_END, _P_LOOT)  # no currency sign at all: only believed from ₹10 up
-_PATTERNS = (_P_PREFIX, _P_SUFFIX, _P_LABEL, _P_AT, _P_AT_END, _P_LOOT)  # in priority order
+# "169 loot : link", "Blinkit | 99": the same habit the other way round, and a quick-delivery app's.
+_P_LOOT_AFTER = re.compile(r"(?<![\w.,])(?P<num>" + _NUM + r")" + _SUF + r"\s+loot\b(?=[ \t]*(?::|\n|$))", re.I)
+_P_APP = re.compile(r"(?<![a-z])(?:blinkit|zepto|instamart|bigbasket|big\s?basket|jiomart|swiggy)[ \t]*(?:[|:\-–]|\n" + SOFT
+                    + r")[ \t" + SOFT + r"]*(?P<num>" + _NUM + r")(?!\d)" + _SUF + r"(?=[ \t]*(?:\n|$))", re.I)
+_BARE = (_P_AT_END, _P_LOOT, _P_LOOT_AFTER, _P_APP)  # no currency sign at all: only believed from ₹10 up
+_PATTERNS = (_P_PREFIX, _P_SUFFIX, _P_LABEL, _P_AT, _P_AT_END, _P_LOOT, _P_LOOT_AFTER, _P_APP)  # in priority order
 
 _TRAIL = re.compile(r"[\s\x1f:\-=–—(\[*_~>|•.,]+$")
 _CUR_TOKENS = re.compile(r"₹|\brs\.?|\binr\b|\brupees?\b|/-", re.I)
@@ -431,7 +436,7 @@ def _line_bounds(text: str, position: int) -> Tuple[int, int]:
 
 def _to_value(num: str, suffix: Optional[str]) -> Optional[float]:
     try:
-        value = float(num.replace(",", ""))
+        value = float(re.sub(r"[,\s\u00a0\u202f]", "", num))
     except ValueError:
         return None
     suffix = (suffix or "").lower()

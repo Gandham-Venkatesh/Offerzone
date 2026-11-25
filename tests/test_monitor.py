@@ -123,8 +123,8 @@ class EndToEnd(unittest.TestCase):
 
     def test_trending_across_channels_upgrades_a_quiet_deal_to_urgent(self):
         now = time.time()
-        self.web.redirects["/r/c"] = "https://www.flipkart.com/cable/p/itmcable1?pid=ACCCABLE00000001"
-        text = f'boAt cable @ ₹99 (MRP ₹1,999) <a href="{self.web.base}/r/c">buy</a>'
+        self.web.redirects["/r/c"] = "https://www.flipkart.com/mouse/p/itmmouse1?pid=ACCMOUSE00000001"
+        text = f'boAt mouse @ ₹99 (MRP ₹1,999) <a href="{self.web.base}/r/c">buy</a>'
         monitor = self.monitor()
         self.web.post("alpha", 1, text, now - 30)
         monitor.cycle()
@@ -338,11 +338,20 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(monitor.stats["sent_urgent"], 1)  # counted as handled, not left in the outbox
         self.assertEqual(monitor.db.pending_alerts(), [])
 
+    def test_a_cable_is_never_pushed_unless_it_is_free(self):
+        now = time.time()
+        self.web.post("alpha", 1, "Price error: Ambrane Type-C to Type-C cable @ ₹49 (MRP ₹1,999)", now - 30)
+        self.web.post("alpha", 2, "Portronics USB to Type C Cable, 1.2m @ ₹29 (MRP ₹999) 97% off", now - 25)
+        self.web.post("alpha", 3, "Loot: boAt Type C to Lightning cable @ ₹1 (MRP ₹799)", now - 20)
+        self.monitor().cycle()
+        self.assertEqual([p["priority"] for p in self.web.pushes], [4])  # only the free one, at high
+        self.assertIn("₹1", self.web.pushes[0]["title"])
+
     def test_daily_budget_keeps_room_for_urgent_alerts(self):
         self.settings.daily_alert_limit = 2
         now = time.time()
         for index in range(4):
-            self.web.post("alpha", index + 1, f"Cable model {index}X{index} @ ₹99 (MRP ₹1,999)", now - 10)
+            self.web.post("alpha", index + 1, f"Mouse model {index}X{index} @ ₹99 (MRP ₹1,999)", now - 10)
         monitor = self.monitor()
         monitor.cycle()
         self.assertEqual([p["priority"] for p in self.web.pushes], [4, 4])  # two high alerts, then the budget bites

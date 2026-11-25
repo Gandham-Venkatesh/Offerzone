@@ -39,6 +39,8 @@ Each scan (default: every 60 seconds) it looks in four places:
    Flipkart Minutes, JioMart), and their "search X, sort by discount" hints, ring at high priority.
 5. **Your favourites** (`favourites.txt`: protein, whey, gym equipment, ... edit it freely). A deal
    on one of them rings one step louder, and one judged by its list price alone counts from 70% off.
+   A favourite posted with only a price in a quick-delivery app ("Blinkit | 99" under a whey
+   protein) rings at high priority.
    Every other deal judged only by its list price needs 85% (`MRP_MIN_DISCOUNT`), since inflated
    list prices make 80% off an everyday sight. Posts are parsed for price, MRP and discount, de-duplicated across
    all of these, and filtered hard.
@@ -190,8 +192,12 @@ restaurant deals (Swiggy Dineout), and offers whose links lead only to a payment
 PhonePe; from a channel marked `!` these are still believed). A product that comes with a
 subscription ("Echo Dot with 6 months of Amazon Music") is still a product, and a membership for
 something on your favourites list (a gym) is judged like any deal. Staycations and holiday packages
-count as services too. Phone cases and pouches, printer ink and toner (a printer is still a printer), and gold
-or jewellery "loots" never alert; a spare part or accessory on the price tracker (a vacuum filter)
+count as services too. Phone cases and pouches, printer ink and toner (a printer is still a printer),
+LEGO, and gold or jewellery "loots" never alert. Nor do **cables** of any kind (Type-C to Type-C,
+USB, Lightning, HDMI, LAN, power cords, and cable protectors and organisers), at any discount, unless
+they are free (₹1 or less). A charger, an extension board, earphones or a mouse that comes with a
+cable ("Wired Gaming Mouse | ... | 1.5M Paracord Cable") is not a cable, and a cable's line is never
+read as a trap's product ("Type C Cable for iPhone 16"). A spare part or accessory on the price tracker (a vacuum filter)
 comes at Quiet at most; and clothing judged by its list price alone stays at Quiet: a
 ₹100 kurta with an "MRP" of ₹2,499 is an everyday sight. Posts about **DigiHaat** (₹18 snack bars,
 ₹50 makhana packs) and about sarees are muted, from every channel, unless they show a huge discount
@@ -213,9 +219,15 @@ and names in which another product's name runs straight into it ("OtterBox React
 A stated percentage only counts together with a price written beside it, or on the line next
 to it. Without any price it alerts (High) from 95%, or from 90% when it is claimed for a product
 you set a trap on. Daily digest posts ("Top 5 Hot Threads Today") are on the default ignore list.
+A claim of 95% off or more on a price between ₹10 and ₹1,000, with no list price to back it, comes
+at Quiet ("Organza Scrunchies for Women - 99% off - Rs. 199" would mean hair bands listed at
+₹19,900), except for a laptop, phone, TV, AC, fridge, washing machine, camera or console, where
+such a price is the price error the monitor is for. When the prices read from a post show a much
+deeper discount than the post itself states (more than 10 points), the post's own figure wins and
+the alert comes at Quiet.
 
 Prices are read in the ways the watched channels really write them: "₹599", "@599", "at 599",
-"Loot 239 :", "Deal Price: ₹349 (MRP ₹2,599)", "₹6,294 / 80% off". When a post names its product
+"Loot 239 :", "169 loot", "Blinkit | 99", "₹1 399", "Deal Price: ₹349 (MRP ₹2,599)", "₹6,294 / 80% off". When a post names its product
 only in the link ("Zepto Loot / @ 9 / zepto.com/pn/haldirams-gulab-jamun..."), the words of the
 link's address are read as the name.
 
@@ -468,7 +480,7 @@ python -m lootwatch               # scan forever
 | `ABSENCE_HOURS` | `24` | A reported product that was gone this long is judged afresh when it returns |
 | `MAX_POST_AGE_MIN` | `20` | Channel posts older than this are ignored |
 | `LATE_POST_MIN` | `60` | After a gap in reading a channel (a late run), posts up to this old are still judged |
-| `DEDUP_HOURS` | `12` | Same deal is not pushed again within this time unless it gets 10% cheaper |
+| `DEDUP_HOURS` | `12` | Same deal is not pushed again within this time unless it gets 10% cheaper; a product known by its Amazon, Flipkart, Myntra or Ajio product id, not within 3 days |
 | `TRENDING_CHANNELS` / `TRENDING_WINDOW_MIN` | `3` / `20` | When a quiet deal turns urgent |
 | `DAILY_ALERT_LIMIT` | `200` | Stays inside ntfy.sh's free daily allowance; urgent alerts get the last of it |
 | `CHECK_INTERVAL` | `60` | Seconds between scans |
