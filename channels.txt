@@ -46,6 +46,10 @@ DesidimeHot                   # DesiDime handpicked (18K)
 #     still never are. Any channel can be marked this way.
 ! https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone (3.9M)
 ! https://t.me/+uV5wcTkUWJEwM2Y1 # Offerzone Tricks (3.0M)
+! https://t.me/+S1zaVBoakn3KkBbY # DV Offers (63K)
+#     DV Offers: quick-commerce and food loots, added 25 Nov 2026 at the owner's request: its "BigBasket Loot:
+#     Upto 98% Off On Society Tea" came 3-4 minutes before Offerzone Tricks'. The owner's own account is in it,
+#     so it is found by its name in the login's chat list.
 
 # --- invite-only, on trial since 25 Nov 2026, judged like any channel (not marked). The login joins an
 #     invite link it is not in, muted and archived, once a look at the link shows a broadcast channel (never
