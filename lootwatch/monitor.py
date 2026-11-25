@@ -189,14 +189,21 @@ class Monitor:
             else:
                 log.warning("invite-only channels need the telethon package (pip install telethon); skipping them")
         self._private = list(settings.private_channels) if self.account is not None else []
+        self._held: List[str] = []
         if self._private and hasattr(self.account, "missing_private"):
             # A link the login could not join lately (a request the admins have not accepted, a group
-            # chat, a link that no longer works) is left alone until the joining is tried again.
-            self._private = [code for code in self._private if not self._join_failed_lately(code)]
-        if self._private and hasattr(self.account, "use_known"):
-            known = {code: self.db.get(f"tg_invite:{code}") for code in self._private}
+            # chat, a link that no longer works) is not read until the joining is tried again; a channel
+            # whose admins accept the request meanwhile is found in the chat list (_take_accepted).
+            self._held = [code for code in self._private if self._join_failed_lately(code)]
+            self._private = [code for code in self._private if code not in self._held]
+            if hasattr(self.account, "requested"):
+                self.account.requested = {code for code in self._held if self.db.get(
+                    f"tg_join_fail:{code}").partition(":")[2].startswith("asked to join")}
+        if (self._private or self._held) and hasattr(self.account, "use_known"):
+            codes = self._private + self._held
+            known = {code: self.db.get(f"tg_invite:{code}") for code in codes}
             self.account.use_known({code: int(chat) for code, chat in known.items() if chat.isdigit()},
-                                   {code: settings.private_names.get(code, "") for code in self._private})
+                                   {code: settings.private_names.get(code, "") for code in codes})
         self._names.update({f"tg:+{code}": f"invite-only channel {code[:6]}…" for code in self._private})
         # Whose turn it is survives a restart: with a long list and short runs, the pages at the
         # top of the file would otherwise be read again and again and the rest hardly ever.
@@ -326,11 +333,12 @@ class Monitor:
         Telegram limits how many channels an account joins in a while, and when it says so the
         rest wait for a later run (reading goes on regardless). A link that could not be joined is
         tried again after JOIN_RETRY_HOURS."""
+        if self._fast_stop.wait(JOIN_START_SECONDS):  # the first readings look at the account's chat list
+            return
+        self._take_accepted()
         waited = self.db.get("tg_join_wait_until")
         if waited.isdigit() and int(waited) > time.time():
             return  # Telegram asked an earlier run to wait before joining more: asking again would not help
-        if self._fast_stop.wait(JOIN_START_SECONDS):  # the first readings look at the account's chat list
-            return
         missing = self.account.missing_public()
         if missing is None and not self._fast_stop.wait(JOIN_START_SECONDS):
             missing = self.account.missing_public()
@@ -374,6 +382,19 @@ class Monitor:
                 self._private = [other for other in self._private if other != code]  # cannot be read this run
                 log.warning("did not join the invite-only channel https://t.me/+%s: %s%s", code, why,
                             f" | {info}" if info else "")
+
+    def _take_accepted(self) -> None:
+        """Channels whose admins accepted the login's join request since: found in its chat list (and
+        muted there, see AccountReader.requested), they are read from now on."""
+        for code in list(self._held):
+            chat = self.account.chat_id(code) if hasattr(self.account, "chat_id") else None
+            if not chat:
+                continue
+            self._held.remove(code)
+            self.db.set(f"tg_join_fail:{code}", "")
+            self.db.set(f"tg_invite:{code}", chat)
+            self._private = self._private + [code]
+            log.info("now reading the invite-only channel https://t.me/+%s: the login is in it now", code)
 
     def _join_later(self, why: str) -> None:
         seconds = int(re.sub(r"\D", "", why) or 3600)

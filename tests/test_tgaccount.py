@@ -406,6 +406,21 @@ class Reader(unittest.TestCase):
         self.assertEqual(client.requests, [], "neither muted nor archived")
         self.assertEqual(reader.chat_id("6c3lXEpYo5U3Njc1"), 901)
 
+    def test_a_channel_that_accepts_the_join_request_is_muted_once_it_shows_up(self):
+        client = InviteClient(a_channel(), messages=[])
+        client.dialogs = [SimpleNamespace(entity=SimpleNamespace(id=950, title="Instamart/Blinkit/Zepto", username=None,
+                                                                 usernames=None))]
+        reader = self.reader(client)
+        reader.use_known({}, {"SdXYwHH_G3VkZWVl": "Instamart/Blinkit/Zepto"})
+        reader.requested = {"SdXYwHH_G3VkZWVl"}
+        with self.assertLogs("lootwatch", level="INFO") as logs:
+            page, error = reader.read("SdXYwHH_G3VkZWVl")
+        self.assertEqual(error, "")
+        kinds = [kind for kind, _ in client.requests]
+        self.assertEqual(kinds, ["UpdateNotifySettingsRequest", "EditPeerFoldersRequest"])
+        self.assertIn("Instamart/Blinkit/Zepto accepted the join request: muted for good and archived", "\n".join(logs.output))
+        self.assertEqual(reader.requested, set())
+
     def test_a_join_request_or_a_dead_link_says_so(self):
         for error, why in ((type("InviteRequestSentError", (Exception,), {})("sent"),
                             "asked to join: the channel's admins have to accept the request"),
@@ -653,6 +668,18 @@ class JoiningInTheMonitor(unittest.TestCase):
         account.errors["6c3lXEpYo5U3Njc1"] = "the Telegram account has not joined this channel: open ..."
         self.assertEqual(self.monitor._scan_private("6c3lXEpYo5U3Njc1", time.time() + 30),
                          f"the Telegram login could not join it: {why}")
+
+    def test_a_channel_whose_admins_accepted_is_read_again(self):
+        why = "asked to join: the channel's admins have to accept the request"
+        account = JoiningAccount([], {}, invites=[])
+        monitor = self.make_monitor(account)
+        monitor._held = ["SdXYwHH_G3VkZWVl"]
+        monitor._private = ["7rHGiXC8TnsxN2I9"]
+        monitor.db.set("tg_join_fail:SdXYwHH_G3VkZWVl", f"{int(time.time())}:{why}")
+        lines = self.run_join(account, monitor)
+        self.assertIn("now reading the invite-only channel https://t.me/+SdXYwHH_G3VkZWVl: the login is in it now", lines)
+        self.assertEqual(monitor._private, ["7rHGiXC8TnsxN2I9", "SdXYwHH_G3VkZWVl"])
+        self.assertEqual(monitor.db.get("tg_join_fail:SdXYwHH_G3VkZWVl"), "")
 
     def test_a_channel_about_to_be_joined_is_not_a_broken_source(self):
         account = JoiningAccount([], {}, invites=["6c3lXEpYo5U3Njc1"])

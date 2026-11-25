@@ -28,7 +28,7 @@ import logging
 import re
 import threading
 import time
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from .telegram import ChannelPage, TgPost
 
@@ -147,6 +147,9 @@ class AccountReader:
         # up without stopping the reading of the rest (Offerzone could not be read for hours on 23-24
         # Nov 2026, when every run looked its links up).
         self.joining = False
+        # Invite codes of channels whose admins have a join request from the monitor: once accepted, such
+        # a channel shows up in the chat list unmuted, and is then muted for good and archived.
+        self.requested: Set[str] = set()
         self._newest: Dict[str, int] = {}  # invite code -> newest message id read
         self._public: Dict[str, str] = {}  # public channels to take pushed posts from: lower-case name -> name
         self.known_chats: Dict[str, int] = {}  # invite code -> channel id, kept from an earlier run
@@ -273,6 +276,13 @@ class AccountReader:
                     self._chats[code] = entity
                     self.titles[code] = getattr(entity, "title", "") or code
                     self._chat_codes[chat] = code
+                    if code in self.requested:
+                        self.requested.discard(code)
+                        try:
+                            await self._quieten(entity)
+                            log.info("%s accepted the join request: muted for good and archived", self.titles[code])
+                        except Exception as exc:  # reading goes on regardless
+                            log.warning("could not mute %s (%s)", self.titles[code], type(exc).__name__)
                     continue
                 names = [getattr(entity, "username", None)]
                 names += [getattr(extra, "username", None) for extra in getattr(entity, "usernames", None) or []]
@@ -353,9 +363,12 @@ class AccountReader:
         invite = await client(functions.messages.CheckChatInviteRequest(code))
         chat = getattr(invite, "chat", None)
         if chat is not None and not hasattr(invite, "expires"):  # ChatInviteAlready: a member already
-            # One of the owner's own channels, perhaps: taken as it is, neither muted nor archived.
-            info = f'"{getattr(chat, "title", "") or code}" (the account is in it already)'
-            joined = False
+            # One of the owner's own channels, perhaps: taken as it is, neither muted nor archived. Unless
+            # the monitor asked to join it, and its admins have accepted.
+            joined = code in self.requested
+            self.requested.discard(code)
+            info = f'"{getattr(chat, "title", "") or code}" ' + ("(the join request was accepted)" if joined
+                                                                else "(the account is in it already)")
         else:  # ChatInvite, or ChatInvitePeek (a preview for a while): not a member
             title = getattr(invite, "title", "") or getattr(chat, "title", "") or code
             members = int(getattr(invite, "participants_count", 0) or getattr(chat, "participants_count", 0) or 0)
@@ -384,11 +397,7 @@ class AccountReader:
         self._not_member.pop(code, None)
         if joined:
             info += " (joined, muted and archived)"
-            peer = await client.get_input_entity(chat)
-            await client(functions.account.UpdateNotifySettingsRequest(  # muted until 2038: for good
-                peer=types.InputNotifyPeer(peer), settings=types.InputPeerNotifySettings(mute_until=2 ** 31 - 1)))
-            await client(functions.folders.EditPeerFoldersRequest(  # folder 1 is the archive
-                folder_peers=[types.InputFolderPeer(peer=peer, folder_id=1)]))
+            await self._quieten(chat)
         return "", info
 
     def join(self, name: str) -> str:
@@ -418,13 +427,18 @@ class AccountReader:
         client = await self._connected()
         channel = await client.get_entity(name)
         await client(functions.channels.JoinChannelRequest(channel))
+        await self._quieten(channel)
+        self._chat_codes[int(getattr(channel, "id", 0))] = "@" + self._public.get(name.lower(), name)
+        return ""
+
+    async def _quieten(self, channel) -> None:
+        """Mute a channel for good and put it in the archive, so the owner's phone stays quiet."""
+        client = self._client
         peer = await client.get_input_entity(channel)
         await client(functions.account.UpdateNotifySettingsRequest(  # muted until 2038: for good
             peer=types.InputNotifyPeer(peer), settings=types.InputPeerNotifySettings(mute_until=2 ** 31 - 1)))
         await client(functions.folders.EditPeerFoldersRequest(  # folder 1 is the archive
             folder_peers=[types.InputFolderPeer(peer=peer, folder_id=1)]))
-        self._chat_codes[int(getattr(channel, "id", 0))] = "@" + self._public.get(name.lower(), name)
-        return ""
 
     async def _fetch(self, code: str, limit: int, min_id: int = 0):
         client = await self._connected()
