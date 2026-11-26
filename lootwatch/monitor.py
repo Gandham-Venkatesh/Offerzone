@@ -21,7 +21,7 @@ from .config import Settings, WatchItem
 from .db import DB
 from .fetch import Fetcher, policy_for
 from .links import (TRUSTED_KINDS, LinkResolver, classify_host, deal_links, host_of, model_name, product_key,
-                    same_product_name, text_fingerprint)
+                    quick_app, same_product_name, same_quick_loot, text_fingerprint)
 from .notify import Notifier, build_payload
 from .scoring import (TIER_HIGH, TIER_NAMES, TIER_NORMAL, TIER_URGENT, Verdict, confirm_loot, evaluate_offer,
                       evaluate_stated, evaluate_text, evaluate_tracked, is_payment_app, looks_like_loot, tracker_near_miss,
@@ -1070,6 +1070,14 @@ class Monitor:
                 return alert_id, tier, alert_price, created_at, fingerprint
         return None
 
+    def _quick_twin(self, name: str, since: float) -> Optional[tuple]:
+        """An alert already raised for the same quick-commerce loot, worded otherwise by another channel,
+        whatever price either gives (see links.same_quick_loot)."""
+        for alert_id, tier, alert_price, created_at, fingerprint, title in self.db.recent_alerts(since):
+            if same_quick_loot(name, str(title).rsplit(" — ", 1)[-1]):
+                return alert_id, tier, alert_price, created_at, fingerprint
+        return None
+
     def _emit(self, fingerprint: str, verdict: Verdict, payload: Dict[str, object], source: str,
               posted: Optional[float] = None, name: str = "") -> bool:
         """De-duplicate, respect the daily budget, then send (or queue for retry)."""
@@ -1086,6 +1094,10 @@ class Monitor:
                 twin = self._twin(name, verdict.price, since)
                 if twin:
                     previous, fingerprint = twin[:4], twin[4]  # from here on it is that deal
+            if previous is None and name and quick_app(name):
+                twin = self._quick_twin(name, since)
+                if twin:
+                    previous, fingerprint = twin[:4], twin[4]
             sources = self.db.add_sighting(fingerprint, source, self.s.trending_window_min * 60, now)
             if previous:
                 _, prev_tier, prev_price, _ = previous

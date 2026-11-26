@@ -127,6 +127,15 @@ class DB:
             ).fetchone()
         return tuple(row) if row else None
 
+    def recent_alerts(self, since: float, limit: int = 100) -> List[Tuple[int, int, Optional[float], int, str, str]]:
+        """(id, tier, price, created_at, fingerprint, title) of the latest alerts since ``since``, newest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, tier, price, created_at, fingerprint, title FROM alerts WHERE created_at >= ? AND dropped = 0 "
+                "ORDER BY created_at DESC LIMIT ?", (int(since), int(limit)),
+            ).fetchall()
+        return [tuple(row) for row in rows]
+
     def alerts_near_price(self, price: float, since: float) -> List[Tuple[int, int, Optional[float], int, str, str]]:
         """(id, tier, price, created_at, fingerprint, title) of the alerts since ``since`` priced within 1% of ``price``."""
         margin = max(1.0, price * 0.01)

@@ -501,7 +501,7 @@ python -m lootwatch               # scan forever
 | `ABSENCE_HOURS` | `24` | A reported product that was gone this long is judged afresh when it returns |
 | `MAX_POST_AGE_MIN` | `20` | Channel posts older than this are ignored |
 | `LATE_POST_MIN` | `60` | After a gap in reading a channel (a late run), posts up to this old are still judged |
-| `DEDUP_HOURS` | `12` | Same deal is not pushed again within this time unless it gets 10% cheaper; a product known by its Amazon, Flipkart, Myntra or Ajio product id, not within 3 days |
+| `DEDUP_HOURS` | `12` | Same deal is not pushed again within this time unless it gets 10% cheaper; a product known by its Amazon, Flipkart, Myntra or Ajio product id, not within 3 days; one quick-commerce loot posted by two channels in words of their own ("BigBasket Loot: Upto 98% Off On Society Tea", "99% off on - Bigbasket Society Tea Loot") counts as one deal |
 | `TRENDING_CHANNELS` / `TRENDING_WINDOW_MIN` | `3` / `20` | When a quiet deal turns urgent |
 | `DAILY_ALERT_LIMIT` | `200` | Stays inside ntfy.sh's free daily allowance; urgent alerts get the last of it |
 | `CHECK_INTERVAL` | `60` | Seconds between scans |

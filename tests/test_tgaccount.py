@@ -779,6 +779,19 @@ class InTheMonitor(unittest.TestCase):
         self.assertEqual(pushes[1][0], 3)
         self.assertIn("links only to Telegram channels", self.web.pushes[1]["message"])
 
+    def test_one_quick_commerce_loot_from_two_channels_rings_once(self):
+        monitor = self.monitor()
+        first = "BigBasket Loot : Upto 98% Off On Society Tea.\nhttps://www.bigbasket.com/ps/?q=Society+Tea"
+        monitor._handle_post("tg:+7rHGiXC8TnsxN2I9", "Offerzone Tricks", first, first,
+                             ["https://www.bigbasket.com/ps/?q=Society+Tea"], "https://t.me/c/1/1", time.time() - 5)
+        self.assertEqual(len(self.web.pushes), 1)
+        second = "BigBasket Loot: Society Tea, 98% off\nhttps://www.bigbasket.com/pd/40012345/society-tea-1kg/"
+        monitor._handle_post("tg:desidime", "@desidime", second, second,
+                             ["https://www.bigbasket.com/pd/40012345/society-tea-1kg/"], "https://t.me/desidime/2",
+                             time.time() - 5)
+        self.assertEqual(len(self.web.pushes), 1, "the same loot, worded and linked otherwise")
+        self.assertEqual(monitor.stats["duplicates"], 1)
+
     def test_a_channel_on_trial_is_logged_and_never_pushed(self):
         self.settings.trial_channels = ["7rHGiXC8TnsxN2I9"]
         self.web.redirects["/r/1"] = "https://www.amazon.in/dp/B0SONYXM51"

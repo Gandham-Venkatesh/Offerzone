@@ -2,7 +2,7 @@ import unittest
 
 from lootwatch.config import load_channels, load_traps, load_watchlist, parse_channel
 from lootwatch.links import (LinkResolver, classify_host, deal_links, host_of, model_name, product_key,
-                             same_product_name, text_fingerprint)
+                             same_product_name, same_quick_loot, text_fingerprint)
 from tests.helpers import FakeWeb
 
 
@@ -37,6 +37,32 @@ class SameProductByName(unittest.TestCase):
             with self.subTest(first=first, second=second):
                 self.assertFalse(same_product_name(first, second))
                 self.assertFalse(same_product_name(second, first))
+
+
+class SameQuickLoot(unittest.TestCase):
+    """One quick-commerce loot, posted by two channels in words of their own, prices or none."""
+
+    def test_one_loot_worded_two_ways(self):
+        # "BigBasket Loot : Upto 98% Off On Society Tea" (Offerzone Tricks, no price) and DesiDime's
+        # "99% off on - Bigbasket Society Tea Loot" at ₹5 rang 4 hours apart on 25-26 Nov 2026.
+        for first, second in (
+            ("BigBasket Loot : Upto 98% Off On Society Tea.", "99% off on - Bigbasket Society Tea Loot"),
+            ("Swiggy Instamart : Star Lemon Salted Soda Set Of 6 for ₹65", "Instamart Loot: Star Lemon Salted Soda (Set of 6) @ 65"),
+            ("Blinkit Loot : Ambrane Magsafe Powerbank at 799", "Blinkit Deal: Ambrane Wireless Magsafe Powerbank at 799/-"),
+        ):
+            with self.subTest(first=first, second=second):
+                self.assertTrue(same_quick_loot(first, second))
+                self.assertTrue(same_quick_loot(second, first))
+
+    def test_different_loots(self):
+        for first, second in (
+            ("Zepto Loot : Search Jensons", "Zepto LOOT : Search Kurkure"),
+            ("Swiggy Instamart Loot", "Swiggy Instamart Loot"),  # nothing says what: other means decide
+            ("BigBasket Loot : Society Tea", "Zepto Loot : Society Tea"),
+            ("Society Tea 1kg at 5", "Society Tea 1kg at 5"),  # no app named: not a quick-commerce loot
+        ):
+            with self.subTest(first=first, second=second):
+                self.assertFalse(same_quick_loot(first, second))
 
 
 class Hosts(unittest.TestCase):

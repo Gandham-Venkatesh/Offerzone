@@ -198,6 +198,44 @@ def same_product_name(first: str, second: str) -> bool:
     return shared >= (len(short) if len(short) <= 3 else len(short) - 1)
 
 
+# Quick-commerce loots come with no price, or with one channel's price and not another's, and with
+# links of each channel's own: "BigBasket Loot : Upto 98% Off On Society Tea" (no price given) and
+# "99% off on - Bigbasket Society Tea Loot" at ₹5 rang 4 hours apart on 25-26 Nov 2026.
+_QUICK_APP = re.compile(r"\b(big\s?basket|bb\s?now|zepto|swiggy\s+instamart|instamart|swiggy|blinkit|jio\s?mart"
+                        r"|flipkart\s+minutes|amazon\s+now)\b", re.I)
+_QUICK_APP_KEY = {"bbnow": "bigbasket", "swiggyinstamart": "instamart", "swiggy": "instamart"}
+_LOOT_FILLER = {"search", "sort", "sorted", "discount", "high", "low", "filter", "selected", "location", "locations",
+                "pincode", "pincodes", "available", "availability", "check", "your", "apply", "coupon", "code",
+                "items", "products", "item", "product", "starts", "starting", "from", "by", "app", "account",
+                "accounts", "specific", "user", "users", "again", "back", "live", "over", "loots", "tricks", "trick"}
+
+
+def quick_app(text: str) -> str:
+    """The quick-commerce app a post is about ("bigbasket", "zepto", "instamart", ...), or ""."""
+    match = _QUICK_APP.search(text)
+    if not match:
+        return ""
+    word = re.sub(r"\s+", "", match.group(1).lower())
+    return _QUICK_APP_KEY.get(word, word)
+
+
+def _loot_words(text: str) -> List[str]:
+    text = re.sub(r"\d+(?:\.\d+)?\s*%|(?:₹|\brs\.?)\s*[\d,]+(?:\.\d+)?|\b\d+\b", " ", text, flags=re.I)
+    return [word for word in name_words(_QUICK_APP.sub(" ", text), limit=8) if word not in _LOOT_FILLER]
+
+
+def same_quick_loot(first: str, second: str) -> bool:
+    """Two quick-commerce loots, worded by different channels, for the same thing in the same app?
+    Two words at least must say what it is, all of them in the other post: "Zepto Loot: search X,
+    sort by discount" and the same for Y are different loots."""
+    app = quick_app(first)
+    if not app or app != quick_app(second):
+        return False
+    a, b = _loot_words(first), _loot_words(second)
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    return len(short) >= 2 and all(word in long_ for word in short)
+
+
 # "(Blue, 13.5)", "(Black, 10)", "(Onyx Black, 256 GB)", "(UK 8)", "(XL)": the size or colour a store
 # names after a product. A model number in brackets ("(UA65DUE77AKLXL)") is not one.
 _VARIANT_TAIL = re.compile(
