@@ -47,6 +47,8 @@ DesidimeHot                   # DesiDime handpicked (18K)
 #     A "?" puts a channel on trial instead: it is read (and joined) like the rest, every post goes to
 #     the log with what the rules would make of it, and nothing is pushed.
 ! https://t.me/+7rHGiXC8TnsxN2I9 # Offerzone (3.9M)
+#     Offerzone itself has posted nothing since about 8 Nov 2026 (its newest post was 17.5 days old on 26 Nov);
+#     kept in case it starts again. Offerzone Tricks below is the one that posts.
 ! https://t.me/+uV5wcTkUWJEwM2Y1 # Offerzone Tricks (3.0M)
 ! https://t.me/+S1zaVBoakn3KkBbY # DV Offers (63K)
 #     DV Offers: quick-commerce and food loots, added 25 Nov 2026 at the owner's request: its "BigBasket Loot:
@@ -57,7 +59,6 @@ DesidimeHot                   # DesiDime handpicked (18K)
 #     invite link it is not in, muted and archived, once a look at the link shows a broadcast channel (never
 #     a group chat), and the log then shows its latest posts ("first look at ...") to judge it by. Unmarked
 #     invite-only channels are asked for new posts once a minute; Telegram pushes them within seconds.
-https://t.me/+9MtPJAnaAnBkMmU1   # PD Tricks (Premium Deals' tricks: Instamart, Zepto and BigBasket searches, app freebies; posts rarely)
 ? https://t.me/+SdXYwHH_G3VkZWVl # Instamart/Blinkit/Zepto (50K)
 #     Instamart/Blinkit/Zepto: a quick-commerce loot channel of about 50K members, found the night DV Offers
 #     was added; on trial (logged, not pushed) until its posts show it is ahead of the channels above.
@@ -79,7 +80,8 @@ swiggyLoots                   # Swiggy / Blinkit / Zepto / BigBasket loots (6K)
 #       (t.me/+S10mjKiu1xNjNzZl) repost the same stream of ordinary Amazon deals, nothing our rules push;
 #       Dealdost (t.me/+6c3lXEpYo5U3Njc1) and Offerzone 2.0 (t.me/+LQ3FigpMfmAyZGJl, also t.me/+AqIAH4O7egMyNzU1)
 #       call ordinary deals "Loot", minutes after other channels, and Dealdost adds card adverts;
-#       t.me/+sX1Ht4p33nFjZDE1 no longer works
+#       t.me/+sX1Ht4p33nFjZDE1 no longer works; PD Tricks (t.me/+9MtPJAnaAnBkMmU1), on trial for a day: its
+#       newest post was 18 days old on 26 Nov 2026
 #     checked on 25 Nov 2026 and left out, from about 50 more: quiet for weeks or years (most of the big
 #       ones moved to the invite links above, or to WhatsApp): dealspoint, dealdost, PremiumLootDeals,
 #       nonstopdeals, dealblast, quickdealsx_quick_deals, Cheapestdeals247, pricebefore, Freekalooto, magiXdeals,
