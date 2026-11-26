@@ -98,4 +98,7 @@ class Notifier:
         return last
 
     def send_status(self, title: str, message: str, priority: int = 2, tags: Sequence[str] = ("information_source",)) -> SendResult:
+        # What the owner is told about the monitor itself goes to the log as well: a note saying that
+        # sources "stopped working" named them on the phone only (26 Nov 2026).
+        log.info("status note: %s | %s", title, " / ".join(line.strip() for line in message.splitlines() if line.strip()))
         return self.send(build_payload(title, message, priority, tags), topic=self.health_topic)

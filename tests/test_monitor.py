@@ -414,12 +414,18 @@ class EndToEnd(unittest.TestCase):
         for _ in range(FAIL_STREAK_NOTE - 1):
             monitor.cycle()
         self.assertEqual(self.web.pushes, [])
-        for _ in range(4):
-            monitor.cycle()
+        with self.assertLogs("lootwatch", level="INFO") as logs:
+            for _ in range(4):
+                monitor.cycle()
         self.assertEqual(self.titles(), ["1 source(s) stopped working"])
         self.assertIn("@ghost: no public preview", self.web.pushes[0]["message"])
-        # A restart in the middle of the trouble does not repeat the note either.
+        self.assertTrue(any("status note: 1 source(s) stopped working | Failed" in line and "@ghost: no public preview"
+                            in line for line in logs.output), "what the phone is told is in the log too")
+        # A restart in the middle of the trouble does not repeat the note either; its log names the source.
         restarted = self.monitor()
+        with self.assertLogs("lootwatch", level="WARNING") as logs:
+            restarted._log_failing_sources()
+        self.assertIn("failing source: @ghost, 13 checks in a row: no public preview", "\n".join(logs.output))
         for _ in range(3):
             restarted.cycle()
         self.assertEqual(len(self.web.pushes), 1)

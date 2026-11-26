@@ -1286,6 +1286,14 @@ class Monitor:
     def _all_sources(self) -> List[str]:
         return self._feed_sources() + [source_key("watch", w.url) for w in self.s.watchlist]
 
+    def _log_failing_sources(self) -> None:
+        """The sources failing as the run starts, each by name and why. The owner's phone was told that
+        sources "stopped working" while the log named none of them (26 Nov 2026)."""
+        configured = set(self._all_sources())
+        for source, _, _, streak, _, _, error, _ in self.db.health_rows():
+            if source in configured and streak >= 3:
+                log.warning("failing source: %s, %d checks in a row: %s", self._display(source), streak, error or "?")
+
     def _site_checks(self) -> None:
         """One clear alarm when a whole store stops answering, instead of a trickle of page notes."""
         for host, outcomes in self._site_scan.items():
@@ -1479,6 +1487,7 @@ class Monitor:
             self.s.interval,
             " | DRY RUN" if self.s.dry_run else "",
         )
+        self._log_failing_sources()
         if self._private and hasattr(self.account, "listen"):
             self.account.listen(self._live_post, public=list(self.s.channels))  # posts as Telegram pushes them
         if (self._private and self.s.tg_join_channels and not once and not self.s.dry_run
