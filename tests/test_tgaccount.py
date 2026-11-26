@@ -792,6 +792,17 @@ class InTheMonitor(unittest.TestCase):
         self.assertEqual(len(self.web.pushes), 1, "the same loot, worded and linked otherwise")
         self.assertEqual(monitor.stats["duplicates"], 1)
 
+    def test_each_run_logs_how_recent_an_invite_only_channels_newest_post_is(self):
+        self.page(TgPost("c/1357275556", 41, time.time() - 7200, "Welcome", "Welcome"),
+                  TgPost("c/1357275556", 42, time.time() - 600, "Hello", "Hello"))
+        monitor = self.monitor()
+        with self.assertLogs("lootwatch", level="INFO") as logs:
+            monitor.cycle()
+            monitor.cycle()
+        lines = [line for line in logs.output if "newest post" in line]
+        self.assertEqual(len(lines), 1, "once a run")
+        self.assertIn("invite-only channel Offerzone: newest post #42, 10m ago", lines[0])
+
     def test_a_channel_on_trial_is_logged_and_never_pushed(self):
         self.settings.trial_channels = ["7rHGiXC8TnsxN2I9"]
         self.web.redirects["/r/1"] = "https://www.amazon.in/dp/B0SONYXM51"

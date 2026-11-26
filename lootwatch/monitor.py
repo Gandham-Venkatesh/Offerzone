@@ -190,6 +190,7 @@ class Monitor:
                 log.warning("invite-only channels need the telethon package (pip install telethon); skipping them")
         self._private = list(settings.private_channels) if self.account is not None else []
         self._held: List[str] = []
+        self._looked_at: Set[str] = set()  # invite-only channels whose newest post this run has logged
         if self._private and hasattr(self.account, "missing_private"):
             # A link the login could not join lately (a request the admins have not accepted, a group
             # chat, a link that no longer works) is not read until the joining is tried again; a channel
@@ -277,6 +278,13 @@ class Monitor:
                 self._count("source_failures")
             return error
         self._names[source] = f"{page.title} (invite-only)"
+        if code not in self._looked_at and page.posts:
+            # Once a run: how recent the channel's newest post is. A channel that posts twice a day and a
+            # channel the login reads wrongly look the same in a log of alerts (26 Nov 2026).
+            self._looked_at.add(code)
+            newest = max(page.posts, key=lambda post: post.post_id)
+            log.info("invite-only channel %s: newest post #%s, %s", page.title, newest.post_id,
+                     _age(time.time() - newest.ts) if newest.ts else "of unknown age")
         chat = self.account.chat_id(code) if hasattr(self.account, "chat_id") else None
         if chat and self.db.get(f"tg_invite:{code}") != str(chat):
             self.db.set(f"tg_invite:{code}", chat)  # found by its chat id from now on, not its invite link
