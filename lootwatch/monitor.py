@@ -252,7 +252,7 @@ class Monitor:
             self._count("unreached")
             return  # ran out of time this cycle; not the channel's fault
         if not result.ok:
-            self.db.health_fail(source, result.problem)
+            self._health_fail(source, result.problem)
             self._count("source_failures")
             return
         page = parse_channel_page(result.text, channel, result.final_url)
@@ -273,7 +273,7 @@ class Monitor:
             elif "has not joined" in error and self.s.tg_join_channels and hasattr(self.account, "missing_private"):
                 return error  # the login joins it shortly (_join_channels): not a broken source
             if record:
-                self.db.health_fail(source, error)
+                self._health_fail(source, error)
                 self._count("source_failures")
             return error
         self._names[source] = f"{page.title} (invite-only)"
@@ -481,7 +481,7 @@ class Monitor:
                 "empty": "page loaded but shows no posts",
             }.get(page.status, "page layout not recognised")
             if record:
-                self.db.health_fail(source, reason)
+                self._health_fail(source, reason)
                 self._count("source_failures")
             return
         previous_ok = self.db.last_ok(source)
@@ -685,13 +685,13 @@ class Monitor:
             return result.error
         if not result.ok:
             if record:
-                self.db.health_fail(source, result.problem)
+                self._health_fail(source, result.problem)
                 self._count("source_failures")
             return "refused" if result.blocked else result.problem
 
         def failed(why: str) -> str:
             if record:
-                self.db.health_fail(source, why)
+                self._health_fail(source, why)
                 self._count("source_failures")
             return why
 
@@ -790,13 +790,13 @@ class Monitor:
             # after a refusal, the page keeps its place: first in line when the store answers again.
             self._watch_checked[item.url] = time.time()
         if not result.ok:
-            self.db.health_fail(source, result.problem)
+            self._health_fail(source, result.problem)
             self._count("source_failures")
             self._site_result(host, False, result.problem)
             return
         page = extract_page(item.url, result.text)
         if page.kind == "none":
-            self.db.health_fail(source, page.note)
+            self._health_fail(source, page.note)
             self._count("source_failures")
             self._site_result(host, False, page.note)
             return
@@ -808,7 +808,7 @@ class Monitor:
         # through the health record, and keep judging what can still be judged.
         with_list_price = sum(1 for o in page.offers if o.mrp)
         if listing and len(page.offers) >= 5 and not with_list_price and self.db.get(f"mrps:{source}"):
-            self.db.health_fail(source, "products are listed but none shows a list price any more (layout change?)")
+            self._health_fail(source, "products are listed but none shows a list price any more (layout change?)")
             self._count("source_failures")
         else:
             self.db.health_ok(source, len(page.offers))
@@ -1282,6 +1282,12 @@ class Monitor:
     def _feed_sources(self) -> List[str]:
         return ([f"tg:{c}" for c in self.s.channels] + [f"tg:+{code}" for code in self._private]
                 + [source_key("feed", u) for u in self.s.feeds])
+
+    def _health_fail(self, source: str, reason: str) -> int:
+        """A failed reading, recorded and logged by name: the log only counted them before (26 Nov 2026)."""
+        streak = self.db.health_fail(source, reason)
+        log.info("source failed: %s (%d in a row): %s", self._display(source), streak, reason)
+        return streak
 
     def _all_sources(self) -> List[str]:
         return self._feed_sources() + [source_key("watch", w.url) for w in self.s.watchlist]
